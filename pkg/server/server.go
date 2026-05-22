@@ -21,6 +21,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
+	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sirupsen/logrus"
 
@@ -38,6 +39,7 @@ type Server struct {
 	jsxEngine        *jsx.Engine
 	kvStore          kv.Store
 	sessionStore     *auth.SessionStore
+	webauthn         *webauthn.WebAuthn
 	staticHandler    http.Handler
 	endpointRouter   *endpointRouter
 	projectRouter    *projectRouter
@@ -108,6 +110,15 @@ func NewServer(ctx context.Context) (*Server, error) {
 	}
 	sessionStore := auth.NewSessionStore(kvStore, config.SessionTTL)
 
+	wa, err := auth.NewWebAuthn(config)
+	if err != nil {
+		return nil, fmt.Errorf("init webauthn: %w", err)
+	}
+	logx.WithContext(ctx).WithFields(logrus.Fields{
+		"rp_id":   config.WebAuthnRPID,
+		"origins": config.PublicOrigins,
+	}).Info("auth ready")
+
 	router := chi.NewMux()
 	router.Use(auth.LoadSession(config, queries, sessionStore))
 	api := humachi.New(router, huma.DefaultConfig("PicoTera Management API", "1.0.0"))
@@ -152,6 +163,7 @@ func NewServer(ctx context.Context) (*Server, error) {
 		jsxEngine:        jsxEngine,
 		kvStore:          kvStore,
 		sessionStore:     sessionStore,
+		webauthn:         wa,
 		staticHandler:    static.Handler(),
 		endpointRouter:   newEndpointRouter(queries),
 		projectRouter:    projectRouter,
@@ -176,6 +188,16 @@ func (s *Server) registerOperations() {
 	mgmt := huma.NewGroup(s.api, "/api/picotera")
 
 	var admin = contract.AuthRequirement{Kind: contract.AuthAdmin}
+
+	// Auth — public (status/login) or any session (logout)
+	registerOp(mgmt, contract.OperationAuthStatus, s.handleAuthStatus,
+		contract.AuthRequirement{Kind: contract.AuthPublic})
+	registerOpHTTP(s.router, "POST", "/api/picotera/auth/login/begin",
+		contract.AuthRequirement{Kind: contract.AuthPublic}, s.handleLoginBeginHTTP)
+	registerOpHTTP(s.router, "POST", "/api/picotera/auth/login/complete",
+		contract.AuthRequirement{Kind: contract.AuthPublic}, s.handleLoginCompleteHTTP)
+	registerOpHTTP(s.router, "POST", "/api/picotera/auth/logout",
+		contract.AuthRequirement{Kind: contract.AuthPublic}, s.handleLogoutHTTP)
 
 	// Providers — all admin
 	registerOp(mgmt, contract.OperationListProviders, s.handleListProviders, admin)

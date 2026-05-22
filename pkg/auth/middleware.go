@@ -68,7 +68,7 @@ func LoadSession(cfg *configx.Config, q db.Querier, store *SessionStore) func(ht
 				next.ServeHTTP(w, r)
 				return
 			}
-			ip := clientIP(r, cfg.TrustProxy)
+			ip := ClientIP(r, cfg.TrustProxy)
 			data, refreshed, err := store.Load(r.Context(), accountID, token, ip)
 			if err != nil {
 				// Invalid/expired session: clear the cookie, continue unauthenticated.
@@ -194,9 +194,9 @@ func isSecure(r *http.Request, trustProxy bool) bool {
 	return false
 }
 
-// clientIP returns the client's IP, honoring X-Forwarded-For / X-Real-IP only
+// ClientIP returns the client's IP, honoring X-Forwarded-For / X-Real-IP only
 // when TrustProxy is on. Otherwise falls back to RemoteAddr's host portion.
-func clientIP(r *http.Request, trustProxy bool) string {
+func ClientIP(r *http.Request, trustProxy bool) string {
 	if trustProxy {
 		if v := r.Header.Get("X-Forwarded-For"); v != "" {
 			if i := strings.IndexByte(v, ','); i > 0 {
