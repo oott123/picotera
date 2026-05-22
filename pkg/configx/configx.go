@@ -2,6 +2,7 @@ package configx
 
 import (
 	"errors"
+	"net/url"
 	"reflect"
 	"strings"
 	"time"
@@ -24,6 +25,10 @@ type Config struct {
 	LLMBridgeWASMPath     string        `mapstructure:"llmbridge_wasm_path"`
 	LLMBridgeWASMCacheDir string        `mapstructure:"llmbridge_wasm_cache_dir"`
 	LLMBridgeWASMRuntime  string        `mapstructure:"llmbridge_wasm_runtime"`
+	PublicOrigins         []string      `mapstructure:"public_origin"`
+	WebAuthnRPID          string        `mapstructure:"webauthn_rp_id"`
+	SessionTTL            time.Duration `mapstructure:"session_ttl"`
+	TrustProxy            bool          `mapstructure:"trust_proxy"`
 }
 
 type KVConfig struct {
@@ -70,11 +75,35 @@ func Parse() (*Config, error) {
 	viper.SetDefault("kv.redis_url", "localhost:6379")
 	viper.SetDefault("llmbridge_wasm_pool_size", 1)
 	viper.SetDefault("llmbridge_wasm_runtime", "compiler")
+	viper.SetDefault("public_origin", "http://localhost:9898")
+	viper.SetDefault("webauthn_rp_id", "")
+	viper.SetDefault("session_ttl", 24*time.Hour)
+	viper.SetDefault("trust_proxy", false)
 
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
 	bindEnvs(Config{})
 	viper.Unmarshal(&config)
+
+	// PublicOrigins: split comma-separated env value. viper.Unmarshal puts the
+	// raw string into PublicOrigins[0] via the strings-to-[]string mapper —
+	// but to be deterministic, re-read the raw env and parse explicitly.
+	if raw := viper.GetString("public_origin"); raw != "" {
+		config.PublicOrigins = nil
+		for _, s := range strings.Split(raw, ",") {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				config.PublicOrigins = append(config.PublicOrigins, s)
+			}
+		}
+	}
+	// Derive WebAuthnRPID from the first PublicOrigin's hostname if not set.
+	if config.WebAuthnRPID == "" && len(config.PublicOrigins) > 0 {
+		if u, err := url.Parse(config.PublicOrigins[0]); err == nil && u.Hostname() != "" {
+			config.WebAuthnRPID = u.Hostname()
+		}
+	}
+
 	return &config, nil
 }
 
