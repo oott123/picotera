@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"picotera/db/migrations"
 	"picotera/pkg/artifacts"
+	"picotera/pkg/auth"
 	"picotera/pkg/configx"
 	"picotera/pkg/contract"
 	"picotera/pkg/db"
@@ -36,6 +37,7 @@ type Server struct {
 	artifacts        artifacts.Sink
 	jsxEngine        *jsx.Engine
 	kvStore          kv.Store
+	sessionStore     *auth.SessionStore
 	staticHandler    http.Handler
 	endpointRouter   *endpointRouter
 	projectRouter    *projectRouter
@@ -100,13 +102,15 @@ func NewServer(ctx context.Context) (*Server, error) {
 		sink, _ = artifacts.NewSink(configx.S3Config{}, logx.WithContext(ctx))
 	}
 
-	router := chi.NewMux()
-	api := humachi.New(router, huma.DefaultConfig("PicoTera Management API", "1.0.0"))
-
 	kvStore, err := kv.New(config.KV.Driver, kv.WithRedisURL(config.KV.RedisURL))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kv store: %w", err)
 	}
+	sessionStore := auth.NewSessionStore(kvStore, config.SessionTTL)
+
+	router := chi.NewMux()
+	router.Use(auth.LoadSession(config, queries, sessionStore))
+	api := humachi.New(router, huma.DefaultConfig("PicoTera Management API", "1.0.0"))
 
 	jsxEngine := jsx.NewEngine(jsx.Config{
 		HookTimeout:      config.JSHookTimeout,
@@ -147,6 +151,7 @@ func NewServer(ctx context.Context) (*Server, error) {
 		artifacts:        sink,
 		jsxEngine:        jsxEngine,
 		kvStore:          kvStore,
+		sessionStore:     sessionStore,
 		staticHandler:    static.Handler(),
 		endpointRouter:   newEndpointRouter(queries),
 		projectRouter:    projectRouter,
@@ -169,54 +174,82 @@ func NewHuma() huma.API {
 
 func (s *Server) registerOperations() {
 	mgmt := huma.NewGroup(s.api, "/api/picotera")
-	huma.Register(mgmt, contract.OperationListProviders, s.handleListProviders)
-	huma.Register(mgmt, contract.OperationGetProvider, s.handleGetProvider)
-	huma.Register(mgmt, contract.OperationCreateProvider, s.handleCreateProvider)
-	huma.Register(mgmt, contract.OperationUpsertProvider, s.handleUpsertProvider)
-	huma.Register(mgmt, contract.OperationUpdateProviderModels, s.handleUpdateProviderModels)
-	huma.Register(mgmt, contract.OperationDeleteProvider, s.handleDeleteProvider)
-	huma.Register(mgmt, contract.OperationListModels, s.handleListModels)
-	huma.Register(mgmt, contract.OperationGetModel, s.handleGetModel)
-	huma.Register(mgmt, contract.OperationPutModel, s.handlePutModel)
-	huma.Register(mgmt, contract.OperationDeleteModel, s.handleDeleteModel)
-	huma.Register(mgmt, contract.OperationListEndpoints, s.handleListEndpoints)
-	huma.Register(mgmt, contract.OperationUpsertEndpoint, s.handleUpsertEndpoint)
-	huma.Register(mgmt, contract.OperationDeleteEndpoint, s.handleDeleteEndpoint)
-	huma.Register(mgmt, contract.OperationListProviderEndpoints, s.handleListProviderEndpoints)
-	huma.Register(mgmt, contract.OperationUpsertProviderEndpoint, s.handleUpsertProviderEndpoint)
-	huma.Register(mgmt, contract.OperationDeleteProviderEndpoint, s.handleDeleteProviderEndpoint)
-	huma.Register(mgmt, contract.OperationFetchModels, s.handleFetchModels)
-	huma.Register(mgmt, contract.OperationListRequests, s.handleListRequests)
-	huma.Register(mgmt, contract.OperationListRequestTraces, s.handleListRequestTraces)
-	huma.Register(mgmt, contract.OperationGetRequest, s.handleGetRequest)
-	huma.Register(mgmt, contract.OperationListRequestSpans, s.handleListRequestSpans)
-	huma.Register(mgmt, contract.OperationListExchangeRates, s.handleListExchangeRates)
-	huma.Register(mgmt, contract.OperationGetExchangeRate, s.handleGetExchangeRate)
-	huma.Register(mgmt, contract.OperationPutExchangeRate, s.handlePutExchangeRate)
-	huma.Register(mgmt, contract.OperationDeleteExchangeRate, s.handleDeleteExchangeRate)
-	huma.Register(mgmt, contract.OperationMatchPricing, s.handleMatchPricing)
-	huma.Register(mgmt, contract.OperationListApiKeys, s.handleListApiKeys)
-	huma.Register(mgmt, contract.OperationGetApiKey, s.handleGetApiKey)
-	huma.Register(mgmt, contract.OperationCreateApiKey, s.handleCreateApiKey)
-	huma.Register(mgmt, contract.OperationUpdateApiKey, s.handleUpdateApiKey)
-	huma.Register(mgmt, contract.OperationDeleteApiKey, s.handleDeleteApiKey)
-	huma.Register(mgmt, contract.OperationGetOverviewSummary, s.handleGetOverviewSummary)
-	huma.Register(mgmt, contract.OperationGetOverviewDistribution, s.handleGetOverviewDistribution)
-	huma.Register(mgmt, contract.OperationGetOverviewSeries, s.handleGetOverviewSeries)
-	huma.Register(mgmt, contract.OperationListProjects, s.handleListProjects)
-	huma.Register(mgmt, contract.OperationGetProject, s.handleGetProject)
-	huma.Register(mgmt, contract.OperationUpsertProject, s.handleUpsertProject)
-	huma.Register(mgmt, contract.OperationDeleteProject, s.handleDeleteProject)
-	huma.Register(mgmt, contract.OperationListScripts, s.handleListScripts)
-	huma.Register(mgmt, contract.OperationGetScript, s.handleGetScript)
-	huma.Register(mgmt, contract.OperationCreateScript, s.handleCreateScript)
-	huma.Register(mgmt, contract.OperationUpdateScript, s.handleUpdateScript)
-	huma.Register(mgmt, contract.OperationDeleteScript, s.handleDeleteScript)
-	huma.Register(mgmt, contract.OperationSimulateDispatch, s.handleSimulateDispatch)
-	huma.Register(mgmt, contract.OperationListKvEntries, s.handleListKvEntries)
-	huma.Register(mgmt, contract.OperationGetKvEntry, s.handleGetKvEntry)
-	huma.Register(mgmt, contract.OperationUpsertKvEntry, s.handleUpsertKvEntry)
-	huma.Register(mgmt, contract.OperationDeleteKvEntry, s.handleDeleteKvEntry)
+
+	var admin = contract.AuthRequirement{Kind: contract.AuthAdmin}
+
+	// Providers — all admin
+	registerOp(mgmt, contract.OperationListProviders, s.handleListProviders, admin)
+	registerOp(mgmt, contract.OperationGetProvider, s.handleGetProvider, admin)
+	registerOp(mgmt, contract.OperationCreateProvider, s.handleCreateProvider, admin)
+	registerOp(mgmt, contract.OperationUpsertProvider, s.handleUpsertProvider, admin)
+	registerOp(mgmt, contract.OperationUpdateProviderModels, s.handleUpdateProviderModels, admin)
+	registerOp(mgmt, contract.OperationDeleteProvider, s.handleDeleteProvider, admin)
+
+	// Models — reads gated by view_models, writes admin
+	registerOp(mgmt, contract.OperationListModels, s.handleListModels, contract.RequirePermission(contract.PermViewModels))
+	registerOp(mgmt, contract.OperationGetModel, s.handleGetModel, contract.RequirePermission(contract.PermViewModels))
+	registerOp(mgmt, contract.OperationPutModel, s.handlePutModel, admin)
+	registerOp(mgmt, contract.OperationDeleteModel, s.handleDeleteModel, admin)
+
+	// Endpoints — reads gated by view_models, writes admin
+	registerOp(mgmt, contract.OperationListEndpoints, s.handleListEndpoints, contract.RequirePermission(contract.PermViewModels))
+	registerOp(mgmt, contract.OperationUpsertEndpoint, s.handleUpsertEndpoint, admin)
+	registerOp(mgmt, contract.OperationDeleteEndpoint, s.handleDeleteEndpoint, admin)
+
+	// ProviderEndpoints — all admin (configuration surface)
+	registerOp(mgmt, contract.OperationListProviderEndpoints, s.handleListProviderEndpoints, admin)
+	registerOp(mgmt, contract.OperationUpsertProviderEndpoint, s.handleUpsertProviderEndpoint, admin)
+	registerOp(mgmt, contract.OperationDeleteProviderEndpoint, s.handleDeleteProviderEndpoint, admin)
+
+	// Fetch models — admin
+	registerOp(mgmt, contract.OperationFetchModels, s.handleFetchModels, admin)
+
+	// Requests
+	registerOp(mgmt, contract.OperationListRequests, s.handleListRequests, contract.RequirePermission(contract.PermViewOwnUsage))
+	registerOp(mgmt, contract.OperationListRequestTraces, s.handleListRequestTraces, contract.RequirePermission(contract.PermViewOwnTraces))
+	registerOp(mgmt, contract.OperationGetRequest, s.handleGetRequest, contract.RequirePermission(contract.PermViewOwnUsage))
+	registerOp(mgmt, contract.OperationListRequestSpans, s.handleListRequestSpans, contract.RequirePermission(contract.PermViewOwnTraces))
+
+	// Exchange rates + pricing — admin
+	registerOp(mgmt, contract.OperationListExchangeRates, s.handleListExchangeRates, admin)
+	registerOp(mgmt, contract.OperationGetExchangeRate, s.handleGetExchangeRate, admin)
+	registerOp(mgmt, contract.OperationPutExchangeRate, s.handlePutExchangeRate, admin)
+	registerOp(mgmt, contract.OperationDeleteExchangeRate, s.handleDeleteExchangeRate, admin)
+	registerOp(mgmt, contract.OperationMatchPricing, s.handleMatchPricing, admin)
+
+	// API keys — permission-gated
+	registerOp(mgmt, contract.OperationListApiKeys, s.handleListApiKeys, contract.RequirePermission(contract.PermManageOwnAPIKeys))
+	registerOp(mgmt, contract.OperationGetApiKey, s.handleGetApiKey, contract.RequirePermission(contract.PermManageOwnAPIKeys))
+	registerOp(mgmt, contract.OperationCreateApiKey, s.handleCreateApiKey, contract.RequirePermission(contract.PermManageOwnAPIKeys))
+	registerOp(mgmt, contract.OperationUpdateApiKey, s.handleUpdateApiKey, contract.RequirePermission(contract.PermManageOwnAPIKeys))
+	registerOp(mgmt, contract.OperationDeleteApiKey, s.handleDeleteApiKey, contract.RequirePermission(contract.PermManageOwnAPIKeys))
+
+	// Overview metrics — view_own_usage
+	registerOp(mgmt, contract.OperationGetOverviewSummary, s.handleGetOverviewSummary, contract.RequirePermission(contract.PermViewOwnUsage))
+	registerOp(mgmt, contract.OperationGetOverviewDistribution, s.handleGetOverviewDistribution, contract.RequirePermission(contract.PermViewOwnUsage))
+	registerOp(mgmt, contract.OperationGetOverviewSeries, s.handleGetOverviewSeries, contract.RequirePermission(contract.PermViewOwnUsage))
+
+	// Projects — admin
+	registerOp(mgmt, contract.OperationListProjects, s.handleListProjects, admin)
+	registerOp(mgmt, contract.OperationGetProject, s.handleGetProject, admin)
+	registerOp(mgmt, contract.OperationUpsertProject, s.handleUpsertProject, admin)
+	registerOp(mgmt, contract.OperationDeleteProject, s.handleDeleteProject, admin)
+
+	// Scripts — admin
+	registerOp(mgmt, contract.OperationListScripts, s.handleListScripts, admin)
+	registerOp(mgmt, contract.OperationGetScript, s.handleGetScript, admin)
+	registerOp(mgmt, contract.OperationCreateScript, s.handleCreateScript, admin)
+	registerOp(mgmt, contract.OperationUpdateScript, s.handleUpdateScript, admin)
+	registerOp(mgmt, contract.OperationDeleteScript, s.handleDeleteScript, admin)
+
+	// Simulate — admin
+	registerOp(mgmt, contract.OperationSimulateDispatch, s.handleSimulateDispatch, admin)
+
+	// KV — admin
+	registerOp(mgmt, contract.OperationListKvEntries, s.handleListKvEntries, admin)
+	registerOp(mgmt, contract.OperationGetKvEntry, s.handleGetKvEntry, admin)
+	registerOp(mgmt, contract.OperationUpsertKvEntry, s.handleUpsertKvEntry, admin)
+	registerOp(mgmt, contract.OperationDeleteKvEntry, s.handleDeleteKvEntry, admin)
 }
 
 func (s *Server) registerEndpoints() {

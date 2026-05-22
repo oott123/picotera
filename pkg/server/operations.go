@@ -2,12 +2,14 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
 
 	"picotera/pkg/auth"
 	"picotera/pkg/contract"
+	"picotera/pkg/errorx"
 )
 
 // registerOp wraps huma.Register so every operation declares its auth
@@ -34,7 +36,7 @@ func registerOp[I, O any](
 		sess := auth.SessionFromContext(ctx.Context())
 		if err := auth.Check(sess, req); err != nil {
 			ae := auth.AsAuthError(err)
-			_ = huma.WriteErr(api, ctx, ae.Status, ae.Message)
+			_ = huma.WriteErr(api, ctx, ae.Status, ae.Message, errorx.ErrorCode(ae.Code))
 			return
 		}
 		next(ctx)
@@ -64,65 +66,13 @@ func registerOpHTTP(
 		sess := auth.SessionFromContext(r.Context())
 		if err := auth.Check(sess, req); err != nil {
 			ae := auth.AsAuthError(err)
+			errResp := huma.NewError(ae.Status, ae.Message, errorx.ErrorCode(ae.Code))
 			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(ae.Status)
-			// Minimal envelope mirroring huma.WriteErr's shape.
-			_, _ = w.Write([]byte(`{"$schema":"","title":"` + http.StatusText(ae.Status) + `","status":` + itoa(ae.Status) + `,"detail":"` + jsonStr(ae.Code) + `"}`))
+			w.WriteHeader(errResp.GetStatus())
+			_ = json.NewEncoder(w).Encode(errResp)
 			return
 		}
 		h(w, r)
 	})
 	router.Method(method, path, wrapped)
-}
-
-// itoa avoids strconv import for a single use.
-func itoa(i int) string {
-	// Only used for small HTTP status codes (100-599). Sprintf would also work.
-	if i == 0 {
-		return "0"
-	}
-	negative := false
-	if i < 0 {
-		negative = true
-		i = -i
-	}
-	var b [4]byte
-	pos := len(b)
-	for i > 0 {
-		pos--
-		b[pos] = byte('0' + i%10)
-		i /= 10
-	}
-	if negative {
-		pos--
-		b[pos] = '-'
-	}
-	return string(b[pos:])
-}
-
-// jsonStr escapes a string for embedding in a small fixed-shape JSON
-// response above. Escapes the minimal set: quote, backslash, control chars.
-func jsonStr(s string) string {
-	// Codes are constants from pkg/auth/errors.go — ASCII letters + underscore.
-	// But escape defensively in case someone adds an unusual code later.
-	out := make([]byte, 0, len(s))
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		switch c {
-		case '"', '\\':
-			out = append(out, '\\', c)
-		case '\n':
-			out = append(out, '\\', 'n')
-		case '\r':
-			out = append(out, '\\', 'r')
-		case '\t':
-			out = append(out, '\\', 't')
-		default:
-			if c < 0x20 {
-				continue // drop weird control chars
-			}
-			out = append(out, c)
-		}
-	}
-	return string(out)
 }
