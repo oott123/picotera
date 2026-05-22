@@ -1,0 +1,377 @@
+package server
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"time"
+
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-webauthn/webauthn/protocol"
+	"github.com/go-webauthn/webauthn/webauthn"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"picotera/pkg/auth"
+	"picotera/pkg/contract"
+	"picotera/pkg/db"
+	"picotera/pkg/errorx"
+)
+
+// authErrToHuma converts an *auth.AuthError into a huma.StatusError so typed
+// Huma handlers return the correct HTTP status code AND the project's
+// machine-readable code in the response envelope. Without errorx.ErrorCode,
+// huma.NewError defaults the code to "UNKNOWN".
+func authErrToHuma(err error) error {
+	ae := auth.AsAuthError(err)
+	if ae == nil {
+		return err
+	}
+	return huma.NewError(ae.Status, ae.Message, errorx.ErrorCode(ae.Code))
+}
+
+// ----- preview (typed) -----------------------------------------------------
+
+type previewIn struct {
+	Token string `path:"token"`
+}
+
+type previewOut struct {
+	Body contract.EnrollmentPreview
+}
+
+func (s *Server) handlePreviewEnrollment(ctx context.Context, in *previewIn) (*previewOut, error) {
+	e, err := auth.LoadEnrollment(ctx, s.queries, in.Token)
+	if err != nil {
+		return nil, authErrToHuma(err)
+	}
+	out := contract.EnrollmentPreview{
+		Intent:    e.Intent,
+		ExpiresAt: e.ExpiresAt.Time,
+	}
+	if e.TargetAccountID.Valid {
+		a, gerr := s.queries.GetAccountByID(ctx, e.TargetAccountID.Int32)
+		if gerr == nil {
+			out.Target = &contract.EnrollmentTarget{
+				Username:    a.Username,
+				DisplayName: a.DisplayName,
+			}
+		}
+	}
+	return &previewOut{Body: out}, nil
+}
+
+// ----- begin (raw chi — sets KV ceremony stash) ----------------------------
+
+// enrollBeginBody carries the username + display_name for bootstrap. Empty for
+// invite/reset. Optional nickname for the credential being registered.
+type enrollBeginBody struct {
+	Username    string `json:"username,omitempty"`    // bootstrap only
+	DisplayName string `json:"displayName,omitempty"` // bootstrap only
+}
+
+// enrollCeremonyStash combines the WebAuthn session data with the pending
+// account info — for bootstrap, we don't have an account row yet and must
+// remember the proposed username/display_name + generated user handle until
+// /complete runs the TX.
+type enrollCeremonyStash struct {
+	Data      webauthn.SessionData `json:"data"`
+	Bootstrap *bootstrapCeremony   `json:"bootstrap,omitempty"`
+}
+
+type bootstrapCeremony struct {
+	Username           string `json:"username"`
+	DisplayName        string `json:"displayName"`
+	WebauthnUserHandle []byte `json:"webauthn_user_handle"`
+}
+
+func (s *Server) handleEnrollmentBeginHTTP(w http.ResponseWriter, r *http.Request) {
+	token := chi.URLParam(r, "token")
+	e, err := auth.LoadEnrollment(r.Context(), s.queries, token)
+	if err != nil {
+		writeAuthErr(w, err)
+		return
+	}
+
+	var body enrollBeginBody
+	if r.ContentLength > 0 {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+	}
+
+	var (
+		wu    *auth.WebAuthnAccount
+		stash enrollCeremonyStash
+	)
+	switch e.Intent {
+	case auth.IntentBootstrap:
+		if err := auth.ValidateUsername(body.Username); err != nil {
+			writeAuthErr(w, err)
+			return
+		}
+		if err := auth.ValidateDisplayName(body.DisplayName); err != nil {
+			writeAuthErr(w, err)
+			return
+		}
+		// Username must be unique at /begin time.
+		_, gerr := s.queries.GetAccountByUsername(r.Context(), body.Username)
+		if gerr == nil {
+			writeAuthErr(w, auth.ErrUsernameTaken())
+			return
+		} else if !errors.Is(gerr, pgx.ErrNoRows) {
+			writeAuthErr(w, fmt.Errorf("enrollment/begin: check username: %w", gerr))
+			return
+		}
+		handle, err := auth.GenerateUserHandle()
+		if err != nil {
+			writeAuthErr(w, err)
+			return
+		}
+		wu = &auth.WebAuthnAccount{
+			Account: &db.Account{
+				ID:                 0,
+				Username:           body.Username,
+				DisplayName:        body.DisplayName,
+				WebauthnUserHandle: handle,
+				Role:               "admin",
+			},
+		}
+		stash.Bootstrap = &bootstrapCeremony{
+			Username:           body.Username,
+			DisplayName:        body.DisplayName,
+			WebauthnUserHandle: handle,
+		}
+
+	case auth.IntentInvite, auth.IntentReset:
+		if !e.TargetAccountID.Valid {
+			writeAuthErr(w, auth.ErrEnrollmentConsumed())
+			return
+		}
+		a, err := s.queries.GetAccountByID(r.Context(), e.TargetAccountID.Int32)
+		if err != nil {
+			writeAuthErr(w, auth.ErrEnrollmentConsumed())
+			return
+		}
+		creds, _ := s.queries.ListCredentialsByAccount(r.Context(), a.ID)
+		// On reset, the existing credentials are exclusions for the ceremony
+		// (you can't re-register the same authenticator); they're DELETED at
+		// /complete commit time, not here.
+		wu = &auth.WebAuthnAccount{Account: &a, Credentials: creds}
+
+	default:
+		writeAuthErr(w, auth.ErrEnrollmentConsumed())
+		return
+	}
+
+	// Build exclusion list for invite/reset; bootstrap has nothing.
+	var exclude []protocol.CredentialDescriptor
+	for _, c := range wu.Credentials {
+		exclude = append(exclude, protocol.CredentialDescriptor{
+			Type:         protocol.PublicKeyCredentialType,
+			CredentialID: c.CredentialID,
+		})
+	}
+
+	creation, sessionData, err := s.webauthn.BeginRegistration(wu, auth.RegistrationOptions(exclude)...)
+	if err != nil {
+		writeAuthErr(w, auth.ErrWebAuthnCeremony(err.Error()))
+		return
+	}
+	stash.Data = *sessionData
+	raw, err := json.Marshal(stash)
+	if err != nil {
+		writeAuthErr(w, fmt.Errorf("enrollment/begin: marshal: %w", err))
+		return
+	}
+	if err := s.kvStore.SetEx(r.Context(), "webauthn_ceremony:enroll:"+token, string(raw), 5*time.Minute); err != nil {
+		writeAuthErr(w, fmt.Errorf("enrollment/begin: setex: %w", err))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(creation.Response)
+}
+
+// ----- complete (raw chi — runs the TX, issues session) --------------------
+
+func (s *Server) handleEnrollmentCompleteHTTP(w http.ResponseWriter, r *http.Request) {
+	token := chi.URLParam(r, "token")
+	e, err := auth.LoadEnrollment(r.Context(), s.queries, token)
+	if err != nil {
+		writeAuthErr(w, err)
+		return
+	}
+
+	raw, err := s.kvStore.Get(r.Context(), "webauthn_ceremony:enroll:"+token)
+	if err != nil {
+		writeAuthErr(w, auth.ErrWebAuthnCeremony("ceremony expired"))
+		return
+	}
+	var stash enrollCeremonyStash
+	if err := json.Unmarshal([]byte(raw), &stash); err != nil {
+		writeAuthErr(w, auth.ErrWebAuthnCeremony("ceremony corrupt"))
+		return
+	}
+
+	parsed, err := protocol.ParseCredentialCreationResponseBody(r.Body)
+	if err != nil {
+		writeAuthErr(w, auth.ErrWebAuthnCeremony(err.Error()))
+		return
+	}
+
+	tx, err := s.dbPool.Begin(r.Context())
+	if err != nil {
+		writeAuthErr(w, fmt.Errorf("enrollment/complete: begin tx: %w", err))
+		return
+	}
+	defer tx.Rollback(r.Context()) //nolint:errcheck
+
+	qtx := s.queries.WithTx(tx)
+
+	var account db.Account
+
+	switch e.Intent {
+	case auth.IntentBootstrap:
+		if stash.Bootstrap == nil {
+			writeAuthErr(w, auth.ErrWebAuthnCeremony("missing bootstrap ceremony state"))
+			return
+		}
+		wu := &auth.WebAuthnAccount{Account: &db.Account{
+			Username:           stash.Bootstrap.Username,
+			DisplayName:        stash.Bootstrap.DisplayName,
+			WebauthnUserHandle: stash.Bootstrap.WebauthnUserHandle,
+		}}
+		cred, err := s.webauthn.CreateCredential(wu, stash.Data, parsed)
+		if err != nil {
+			writeAuthErr(w, auth.ErrWebAuthnCeremony(err.Error()))
+			return
+		}
+		a, err := qtx.InsertAccount(r.Context(), db.InsertAccountParams{
+			Username:            stash.Bootstrap.Username,
+			DisplayName:         stash.Bootstrap.DisplayName,
+			WebauthnUserHandle:  stash.Bootstrap.WebauthnUserHandle,
+			Role:                "admin",
+			CanViewOwnUsage:     true,
+			CanManageOwnApiKeys: true,
+			CanViewModels:       true,
+			CanViewOwnTraces:    true,
+			Disabled:            false,
+		})
+		if err != nil {
+			writeAuthErr(w, auth.ErrUsernameTaken())
+			return
+		}
+		account = a
+		if _, err := insertCredentialForTx(qtx, r.Context(), a.ID, cred); err != nil {
+			writeAuthErr(w, fmt.Errorf("enrollment/complete: insert credential: %w", err))
+			return
+		}
+
+	case auth.IntentInvite:
+		if !e.TargetAccountID.Valid {
+			writeAuthErr(w, auth.ErrEnrollmentConsumed())
+			return
+		}
+		a, err := qtx.GetAccountByID(r.Context(), e.TargetAccountID.Int32)
+		if err != nil {
+			writeAuthErr(w, auth.ErrEnrollmentConsumed())
+			return
+		}
+		creds, _ := qtx.ListCredentialsByAccount(r.Context(), a.ID)
+		wu := &auth.WebAuthnAccount{Account: &a, Credentials: creds}
+		cred, err := s.webauthn.CreateCredential(wu, stash.Data, parsed)
+		if err != nil {
+			writeAuthErr(w, auth.ErrWebAuthnCeremony(err.Error()))
+			return
+		}
+		account = a
+		if _, err := insertCredentialForTx(qtx, r.Context(), a.ID, cred); err != nil {
+			writeAuthErr(w, fmt.Errorf("enrollment/complete: insert credential: %w", err))
+			return
+		}
+
+	case auth.IntentReset:
+		if !e.TargetAccountID.Valid {
+			writeAuthErr(w, auth.ErrEnrollmentConsumed())
+			return
+		}
+		a, err := qtx.GetAccountByID(r.Context(), e.TargetAccountID.Int32)
+		if err != nil {
+			writeAuthErr(w, auth.ErrEnrollmentConsumed())
+			return
+		}
+		// Reset: delete all existing credentials, then register the new one.
+		if err := qtx.DeleteAllCredentialsForAccount(r.Context(), a.ID); err != nil {
+			writeAuthErr(w, fmt.Errorf("enrollment/complete: delete creds: %w", err))
+			return
+		}
+		// Build the user adapter with no credentials (we just deleted them).
+		wu := &auth.WebAuthnAccount{Account: &a, Credentials: nil}
+		cred, err := s.webauthn.CreateCredential(wu, stash.Data, parsed)
+		if err != nil {
+			writeAuthErr(w, auth.ErrWebAuthnCeremony(err.Error()))
+			return
+		}
+		account = a
+		if _, err := insertCredentialForTx(qtx, r.Context(), a.ID, cred); err != nil {
+			writeAuthErr(w, fmt.Errorf("enrollment/complete: insert credential: %w", err))
+			return
+		}
+
+	default:
+		writeAuthErr(w, auth.ErrEnrollmentConsumed())
+		return
+	}
+
+	if err := auth.ConsumeEnrollment(r.Context(), qtx, token); err != nil {
+		writeAuthErr(w, fmt.Errorf("enrollment/complete: consume: %w", err))
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeAuthErr(w, fmt.Errorf("enrollment/complete: commit: %w", err))
+		return
+	}
+
+	// Post-commit cleanup (best-effort).
+	_ = s.kvStore.Del(r.Context(), "webauthn_ceremony:enroll:"+token)
+	if e.Intent == auth.IntentReset {
+		_, _ = s.sessionStore.RevokeAllForAccount(r.Context(), account.ID)
+	}
+
+	// Issue session for the (new or existing) account.
+	ip := auth.ClientIP(r, s.config.TrustProxy)
+	sessionToken, _, err := s.sessionStore.Issue(r.Context(), account.ID, ip)
+	if err != nil {
+		writeAuthErr(w, fmt.Errorf("enrollment/complete: session issue: %w", err))
+		return
+	}
+	http.SetCookie(w, auth.FreshSessionCookie(s.config, r, account.ID, sessionToken, s.config.SessionTTL))
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(sessionView(&account))
+}
+
+// insertCredentialForTx persists a webauthn.Credential into webauthn_credential
+// inside an existing TX. Returns the new row's id (unused at present but
+// available for logging/audit).
+func insertCredentialForTx(q db.Querier, ctx context.Context, accountID int32, cred *webauthn.Credential) (int32, error) {
+	transports := make([]string, 0, len(cred.Transport))
+	for _, t := range cred.Transport {
+		transports = append(transports, string(t))
+	}
+	row, err := q.InsertCredential(ctx, db.InsertCredentialParams{
+		AccountID:       accountID,
+		CredentialID:    cred.ID,
+		PublicKey:       cred.PublicKey,
+		SignCount:       int64(cred.Authenticator.SignCount),
+		Transports:      transports,
+		Aaguid:          cred.Authenticator.AAGUID,
+		AttestationType: cred.AttestationType,
+		BackupEligible:  cred.Flags.BackupEligible,
+		BackupState:     cred.Flags.BackupState,
+		Nickname:        pgtype.Text{}, // not collected in v1
+	})
+	return row.ID, err
+}

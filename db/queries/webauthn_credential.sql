@@ -22,3 +22,6 @@ WHERE id = $1 AND account_id = $2;
 
 -- name: CountCredentialsByAccount :one
 SELECT COUNT(*) FROM webauthn_credential WHERE account_id = $1;
+
+-- name: DeleteAllCredentialsForAccount :exec
+DELETE FROM webauthn_credential WHERE account_id = $1;

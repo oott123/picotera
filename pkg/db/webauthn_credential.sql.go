@@ -22,6 +22,15 @@ func (q *Queries) CountCredentialsByAccount(ctx context.Context, accountID int32
 	return count, err
 }
 
+const deleteAllCredentialsForAccount = `-- name: DeleteAllCredentialsForAccount :exec
+DELETE FROM webauthn_credential WHERE account_id = $1
+`
+
+func (q *Queries) DeleteAllCredentialsForAccount(ctx context.Context, accountID int32) error {
+	_, err := q.db.Exec(ctx, deleteAllCredentialsForAccount, accountID)
+	return err
+}
+
 const deleteCredentialByID = `-- name: DeleteCredentialByID :exec
 DELETE FROM webauthn_credential
 WHERE id = $1 AND account_id = $2

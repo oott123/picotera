@@ -16,6 +16,7 @@ type Querier interface {
 	CountTraces(ctx context.Context, arg CountTracesParams) (int64, error)
 	CountTracesFiltered(ctx context.Context, arg CountTracesFilteredParams) (int64, error)
 	CreateProvider(ctx context.Context, arg CreateProviderParams) (Provider, error)
+	DeleteAllCredentialsForAccount(ctx context.Context, accountID int32) error
 	DeleteApiKey(ctx context.Context, id int32) error
 	DeleteCredentialByID(ctx context.Context, arg DeleteCredentialByIDParams) error
 	DeleteEndpoint(ctx context.Context, path string) error

@@ -30,6 +30,7 @@ import (
 
 type Server struct {
 	queries          *db.Queries
+	dbPool           *pgxpool.Pool
 	router           *chi.Mux
 	api              huma.API
 	config           *configx.Config
@@ -155,6 +156,7 @@ func NewServer(ctx context.Context) (*Server, error) {
 	server := &Server{
 		config:           config,
 		queries:          queries,
+		dbPool:           conn,
 		router:           router,
 		api:              api,
 		httpClient:       httpClient,
@@ -198,6 +200,14 @@ func (s *Server) registerOperations() {
 		contract.AuthRequirement{Kind: contract.AuthPublic}, s.handleLoginCompleteHTTP)
 	registerOpHTTP(s.router, "POST", "/api/picotera/auth/logout",
 		contract.AuthRequirement{Kind: contract.AuthPublic}, s.handleLogoutHTTP)
+
+	// Enrollment
+	registerOp(mgmt, contract.OperationPreviewEnrollment, s.handlePreviewEnrollment,
+		contract.AuthRequirement{Kind: contract.AuthPublic})
+	registerOpHTTP(s.router, "POST", "/api/picotera/enrollments/{token}/register/begin",
+		contract.AuthRequirement{Kind: contract.AuthPublic}, s.handleEnrollmentBeginHTTP)
+	registerOpHTTP(s.router, "POST", "/api/picotera/enrollments/{token}/register/complete",
+		contract.AuthRequirement{Kind: contract.AuthPublic}, s.handleEnrollmentCompleteHTTP)
 
 	// Providers — all admin
 	registerOp(mgmt, contract.OperationListProviders, s.handleListProviders, admin)
