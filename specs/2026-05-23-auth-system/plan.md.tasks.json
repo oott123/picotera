@@ -1,0 +1,35 @@
+{
+  "planPath": "specs/2026-05-23-auth-system/plan.md",
+  "lastUpdated": "2026-05-23T03:55:00Z",
+  "tasks": [
+    {"id": "17", "planTask": 1,  "subject": "P1.01 Migration 027 + sqlc scaffolding",                                 "status": "pending"},
+    {"id": "24", "planTask": 2,  "subject": "P1.02 Config keys",                                                       "status": "pending", "blockedBy": ["17"]},
+    {"id": "25", "planTask": 3,  "subject": "P1.03 pkg/contract/auth.go types + operations",                           "status": "pending", "blockedBy": ["17"]},
+    {"id": "20", "planTask": 4,  "subject": "P1.04 pkg/auth errors + account helpers",                                  "status": "pending", "blockedBy": ["25"]},
+    {"id": "23", "planTask": 5,  "subject": "P1.05 pkg/auth/session.go KV-backed sessions",                            "status": "pending", "blockedBy": ["20"]},
+    {"id": "19", "planTask": 6,  "subject": "P1.06 pkg/auth/webauthn.go library wrapper",                              "status": "pending", "blockedBy": ["24", "20"]},
+    {"id": "26", "planTask": 7,  "subject": "P1.07 pkg/auth/enrollment.go helpers",                                     "status": "pending", "blockedBy": ["20"]},
+    {"id": "22", "planTask": 8,  "subject": "P1.08 LoadSession middleware + registerOp helper",                        "status": "pending", "blockedBy": ["23", "25"]},
+    {"id": "18", "planTask": 9,  "subject": "P1.09 Migrate existing ops to registerOp",                                "status": "pending", "blockedBy": ["22"]},
+    {"id": "21", "planTask": 10, "subject": "P1.10 handle_auth.go (status/login/logout)",                              "status": "pending", "blockedBy": ["19", "22"]},
+    {"id": "27", "planTask": 11, "subject": "P1.11 handle_enrollment.go (3 intents)",                                  "status": "pending", "blockedBy": ["19", "22", "26"]},
+    {"id": "28", "planTask": 12, "subject": "P1.12 handle_me.go (self mgmt)",                                          "status": "pending", "blockedBy": ["22", "19"]},
+    {"id": "36", "planTask": 13, "subject": "P1.13 picotera enroll-admin CLI",                                          "status": "pending", "blockedBy": ["26"]},
+    {"id": "35", "planTask": 14, "subject": "P1.14 OpenAPI security scheme + regen",                                    "status": "pending", "blockedBy": ["21", "27", "28", "18"]},
+    {"id": "33", "planTask": 15, "subject": "P1.15 Dashboard plumbing",                                                  "status": "pending", "blockedBy": ["35"]},
+    {"id": "32", "planTask": 16, "subject": "P1.16 Router augmentation + layouts + guard",                              "status": "pending", "blockedBy": ["33"]},
+    {"id": "34", "planTask": 17, "subject": "P1.17 LoginView",                                                            "status": "pending", "blockedBy": ["32"]},
+    {"id": "30", "planTask": 18, "subject": "P1.18 EnrollView",                                                            "status": "pending", "blockedBy": ["32"]},
+    {"id": "31", "planTask": 19, "subject": "P1.19 MeView",                                                                "status": "pending", "blockedBy": ["32"]},
+    {"id": "29", "planTask": 20, "subject": "P1.20 AppSidebar permission filtering",                                       "status": "pending", "blockedBy": ["31"]},
+
+    {"id": "37", "planTask": 21, "subject": "P2.21 sqlc account CRUD + last-admin guard",                                "status": "pending", "blockedBy": ["29"]},
+    {"id": "39", "planTask": 22, "subject": "P2.22 handle_account.go (admin CRUD + invitations)",                        "status": "pending", "blockedBy": ["37"]},
+    {"id": "41", "planTask": 23, "subject": "P2.23 AccountsView + AccountForm",                                            "status": "pending", "blockedBy": ["39"]},
+
+    {"id": "42", "planTask": 24, "subject": "P3.24 Scoped sqlc queries",                                                   "status": "pending", "blockedBy": ["41"]},
+    {"id": "38", "planTask": 25, "subject": "P3.25 Handler scoping + api_key auto-stamp",                                  "status": "pending", "blockedBy": ["42"]},
+    {"id": "40", "planTask": 26, "subject": "P3.26 Dashboard scoped views",                                                "status": "pending", "blockedBy": ["38"]}
+  ],
+  "notes": "Plan task numbers (P1.01 … P3.26) reflect intended execution order; native task IDs were assigned by TaskCreate and are not sequential. Read in `planTask` order or follow the blockedBy graph. Within Phase 1 the dependency graph is more granular than strict sequential — fan-out is possible (e.g. P1.06 and P1.07 can run in parallel after P1.04). Phase boundaries (#37 blocks on #29; #42 blocks on #41) are hard."
+}
