@@ -209,6 +209,16 @@ func (s *Server) registerOperations() {
 	registerOpHTTP(s.router, "POST", "/api/picotera/enrollments/{token}/register/complete",
 		contract.AuthRequirement{Kind: contract.AuthPublic}, s.handleEnrollmentCompleteHTTP)
 
+	// Me — session-gated self-management
+	sessionReq := contract.AuthRequirement{Kind: contract.AuthSession}
+	registerOp(mgmt, contract.OperationGetMe, s.handleGetMe, sessionReq)
+	registerOp(mgmt, contract.OperationListMyCredentials, s.handleListMyCredentials, sessionReq)
+	registerOp(mgmt, contract.OperationDeleteMyCredential, s.handleDeleteMyCredential, sessionReq)
+	registerOpHTTP(s.router, "POST", "/api/picotera/me/credentials/register/begin",
+		sessionReq, s.handleAddCredentialBeginHTTP)
+	registerOpHTTP(s.router, "POST", "/api/picotera/me/credentials/register/complete",
+		sessionReq, s.handleAddCredentialCompleteHTTP)
+
 	// Providers — all admin
 	registerOp(mgmt, contract.OperationListProviders, s.handleListProviders, admin)
 	registerOp(mgmt, contract.OperationGetProvider, s.handleGetProvider, admin)
