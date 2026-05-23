@@ -85,6 +85,12 @@ const router = createRouter({
       meta: { auth: { kind: 'admin' }, layout: 'app' },
     },
     {
+      path: '/me',
+      name: 'me',
+      component: () => import('@/views/MeView.vue'),
+      meta: { auth: { kind: 'session' }, layout: 'app' },
+    },
+    {
       path: '/login',
       name: 'login',
       component: () => import('@/views/LoginView.vue'),

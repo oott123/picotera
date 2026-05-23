@@ -21,6 +21,7 @@ const pageMeta = computed(() => {
     simulate: { title: '模拟', hint: '不蹬也知道蹬到哪' },
     kv: { title: 'KV 存储', hint: '今天存了些什么' },
     rates: { title: '汇率', hint: '今天都蹬什么钱' },
+    me: { title: '我的账户', hint: '今天蹬的是自己' },
   }
   return map[route.name as string] ?? { title: '', hint: '' }
 })
