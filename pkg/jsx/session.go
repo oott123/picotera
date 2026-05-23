@@ -117,12 +117,43 @@ func newSession(ctx context.Context, eng *Engine, requestID string) (*Session, e
 		return nil, fmt.Errorf("jsx: list scripts: %w", err)
 	}
 	for _, sc := range scripts {
-		if _, err := c.Eval("script:"+sc.ID, qjs.Code(sc.Source)); err != nil {
+		wrapped := wrapScriptForSandbox(sc.ID, sc.Source)
+		if _, err := c.Eval("script:"+sc.ID, qjs.Code(wrapped)); err != nil {
 			s.Close()
 			return nil, fmt.Errorf("jsx: eval script %s: %w", sc.ID, err)
 		}
 	}
 	return s, nil
+}
+
+// wrapScriptForSandbox wraps a script's source in an IIFE that shadows
+// `picotera.kv` with a per-script proxy. The proxy prefixes every key with
+// `script:<scriptID>:` before forwarding to the real KV functions, so two
+// scripts cannot read or overwrite each other's KV entries, and no script
+// can write to namespaces the host uses for sessions / ceremonies.
+//
+// Hooks tapped by the script close over the local `picotera` (so callbacks
+// invoked later by runWaterfall still see the sandboxed kv), but the
+// `picotera.hooks.*` references inherit the same Waterfall instances via
+// Object.create, so taps register on the shared dispatch.
+func wrapScriptForSandbox(scriptID, source string) string {
+	idLit, _ := json.Marshal(scriptID)
+	return fmt.Sprintf(`(function(){
+const __picoteraScriptID = %s;
+const __picoteraGlobal = globalThis.picotera;
+const __picoteraKVRaw = __picoteraGlobal.kv;
+const __picoteraKVPrefix = "script:" + __picoteraScriptID + ":";
+const __picoteraSandboxedKV = {
+  get: function(k){ return __picoteraKVRaw.get(__picoteraKVPrefix + String(k)); },
+  set: function(k, v){ return __picoteraKVRaw.set(__picoteraKVPrefix + String(k), v); },
+  setex: function(k, s, v){ return __picoteraKVRaw.setex(__picoteraKVPrefix + String(k), s, v); },
+  ttl: function(k){ return __picoteraKVRaw.ttl(__picoteraKVPrefix + String(k)); },
+  del: function(k){ return __picoteraKVRaw.del(__picoteraKVPrefix + String(k)); },
+};
+const picotera = Object.create(__picoteraGlobal);
+picotera.kv = __picoteraSandboxedKV;
+%s
+})();`, string(idLit), source)
 }
 
 // Close releases the underlying QuickJS runtime. Safe to call multiple times.

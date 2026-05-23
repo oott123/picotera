@@ -579,6 +579,65 @@ func TestSession_Hooks_RewriteProviderModels_FieldTypeMismatch(t *testing.T) {
 	}
 }
 
+func TestSession_KVSandbox_ScriptsIsolated(t *testing.T) {
+	// Two scripts both call picotera.kv with the same key. Without sandboxing
+	// they would clobber each other. With the per-script prefix wrap, each
+	// script's view of "shared" is independent and admin/session/etc. keys
+	// remain unreachable.
+	store := &fakeStore{scripts: []db.Script{
+		{ID: "alpha", Source: `globalThis.alphaWrite = function(){ picotera.kv.set("shared", "from-alpha"); }; globalThis.alphaRead = function(){ return picotera.kv.get("shared"); };`},
+		{ID: "beta", Source: `globalThis.betaWrite = function(){ picotera.kv.set("shared", "from-beta"); }; globalThis.betaRead = function(){ return picotera.kv.get("shared"); };`},
+	}}
+	kvStore := kv.NewMemoryStore()
+	eng := NewEngine(Config{HookTimeout: time.Second, MemoryLimit: 64 * 1024 * 1024}, store, kvStore)
+	s, err := eng.NewSession(context.Background(), "")
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	defer s.Close()
+
+	if _, err := s.Context().Eval("write.js", qjs.Code(`alphaWrite(); betaWrite();`)); err != nil {
+		t.Fatalf("write eval: %v", err)
+	}
+	a, err := s.Context().Eval("readA.js", qjs.Code(`alphaRead()`))
+	if err != nil {
+		t.Fatalf("readA eval: %v", err)
+	}
+	defer a.Free()
+	b, err := s.Context().Eval("readB.js", qjs.Code(`betaRead()`))
+	if err != nil {
+		t.Fatalf("readB eval: %v", err)
+	}
+	defer b.Free()
+	if got := a.String(); got != "from-alpha" {
+		t.Errorf("alpha read: want %q, got %q", "from-alpha", got)
+	}
+	if got := b.String(); got != "from-beta" {
+		t.Errorf("beta read: want %q, got %q", "from-beta", got)
+	}
+
+	// Direct inspection: the underlying KV must have BOTH prefixed entries
+	// and zero raw "shared" entry. A bug that fails to prefix would leave
+	// "shared" populated with one of the values.
+	if v, err := kvStore.Get(context.Background(), "shared"); err == nil {
+		t.Errorf("unprefixed key leaked into kv store: %q", v)
+	}
+	v1, err := kvStore.Get(context.Background(), "script:alpha:shared")
+	if err != nil {
+		t.Fatalf("expected script:alpha:shared in store, got err: %v", err)
+	}
+	if v1 != `"from-alpha"` {
+		t.Errorf("script:alpha:shared = %q, want %q", v1, `"from-alpha"`)
+	}
+	v2, err := kvStore.Get(context.Background(), "script:beta:shared")
+	if err != nil {
+		t.Fatalf("expected script:beta:shared in store, got err: %v", err)
+	}
+	if v2 != `"from-beta"` {
+		t.Errorf("script:beta:shared = %q, want %q", v2, `"from-beta"`)
+	}
+}
+
 func contains(s, substr string) bool {
 	for i := 0; i+len(substr) <= len(s); i++ {
 		if s[i:i+len(substr)] == substr {
