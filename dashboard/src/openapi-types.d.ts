@@ -4,6 +4,109 @@
  */
 
 export interface paths {
+    "/api/picotera/accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List all accounts (admin only). */
+        get: operations["listAccounts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/accounts/credentials/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin force-revoke of a specific credential. */
+        post: operations["deleteAccountCredential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/accounts/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Hard-delete an account; api_key.account_id is set NULL. */
+        post: operations["deleteAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/accounts/reissue-enrollment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Issue a reset-intent enrollment URL for an account; reveal-once. */
+        post: operations["reissueEnrollment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/accounts/revoke-sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Kick all active sessions for an account. */
+        post: operations["revokeAccountSessions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/accounts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get one account by id (admin only). */
+        get: operations["getAccount"];
+        /** Update display name, role, permissions, or disabled flag on an account. */
+        put: operations["updateAccount"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/picotera/api-keys": {
         parameters: {
             query?: never;
@@ -172,6 +275,23 @@ export interface paths {
         get: operations["getExchangeRate"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create an account and an invite-intent enrollment URL; reveal-once. */
+        post: operations["createInvitation"];
         delete?: never;
         options?: never;
         head?: never;
@@ -717,6 +837,27 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AccountView: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/AccountView.json
+             */
+            readonly $schema?: string;
+            /** Format: date-time */
+            createdAt: string;
+            disabled: boolean;
+            displayName: string;
+            /** Format: int32 */
+            id: number;
+            /** Format: date-time */
+            lastSignInAt?: string;
+            permissions: components["schemas"]["Permissions"];
+            role: string;
+            /** Format: date-time */
+            updatedAt: string;
+            username: string;
+        };
         ApiKeyMutateBody: {
             /**
              * Format: uri
@@ -758,6 +899,18 @@ export interface components {
             readonly $schema?: string;
             bootstrapped: boolean;
         };
+        CreateInvitationInBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/CreateInvitationInBody.json
+             */
+            readonly $schema?: string;
+            displayName: string;
+            permissions: components["schemas"]["Permissions"];
+            role: string;
+            username: string;
+        };
         CreateProviderRequestBody: {
             /**
              * Format: uri
@@ -792,6 +945,28 @@ export interface components {
             lastUsedAt?: string;
             nickname?: string;
             transports: string[] | null;
+        };
+        DeleteAccountCredentialInBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/DeleteAccountCredentialInBody.json
+             */
+            readonly $schema?: string;
+            /** Format: int32 */
+            accountId: number;
+            /** Format: int32 */
+            credentialId: number;
+        };
+        DeleteAccountInBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/DeleteAccountInBody.json
+             */
+            readonly $schema?: string;
+            /** Format: int32 */
+            id: number;
         };
         DeleteApiKeyRequestBody: {
             /**
@@ -920,6 +1095,17 @@ export interface components {
             displayName: string;
             username: string;
         };
+        EnrollmentURLResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/EnrollmentURLResponse.json
+             */
+            readonly $schema?: string;
+            /** Format: date-time */
+            expiresAt: string;
+            url: string;
+        };
         ExchangeRateView: {
             /**
              * Format: uri
@@ -954,6 +1140,18 @@ export interface components {
             providerId: number;
             providerModels: components["schemas"]["ProviderModelEntry"][] | null;
             removedModels: string[] | null;
+        };
+        InvitationResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/InvitationResponse.json
+             */
+            readonly $schema?: string;
+            account: components["schemas"]["AccountView"];
+            /** Format: date-time */
+            expiresAt: string;
+            url: string;
         };
         KvEntryView: {
             /**
@@ -1264,6 +1462,16 @@ export interface components {
             proxyUrl?: string;
             supportsNativeWebSearch: boolean;
         };
+        ReissueEnrollmentInBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/ReissueEnrollmentInBody.json
+             */
+            readonly $schema?: string;
+            /** Format: int32 */
+            id: number;
+        };
         RequestTraceView: {
             /** Format: int64 */
             cacheReadTokens: number;
@@ -1337,6 +1545,26 @@ export interface components {
             type: number;
             upstreamModel?: string;
             userMessagePreview?: string;
+        };
+        RevokeAccountSessionsInBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/RevokeAccountSessionsInBody.json
+             */
+            readonly $schema?: string;
+            /** Format: int32 */
+            id: number;
+        };
+        RevokeAccountSessionsOutBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/RevokeAccountSessionsOutBody.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            revoked: number;
         };
         ScriptMutateBody: {
             /**
@@ -1472,6 +1700,19 @@ export interface components {
             amount: number;
             currency: string;
         };
+        UpdateAccountInBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/UpdateAccountInBody.json
+             */
+            readonly $schema?: string;
+            disabled: boolean;
+            displayName: string;
+            permissions: components["schemas"]["Permissions"];
+            role: string;
+            username?: string;
+        };
         UpdateProviderModelsRequestBody: {
             /**
              * Format: uri
@@ -1526,6 +1767,229 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    listAccounts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountView"][] | null;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    deleteAccountCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteAccountCredentialInBody"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    deleteAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteAccountInBody"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    reissueEnrollment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReissueEnrollmentInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrollmentURLResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    revokeAccountSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevokeAccountSessionsInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevokeAccountSessionsOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    getAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    updateAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAccountInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
     listApiKeys: {
         parameters: {
             query?: never;
@@ -1949,6 +2413,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ExchangeRateView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    createInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateInvitationInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationResponse"];
                 };
             };
             /** @description Error */
