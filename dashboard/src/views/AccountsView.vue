@@ -194,6 +194,7 @@ function fmtTime(iso?: string | null): string {
             <Td actions>
               <div class="inline-flex gap-1 opacity-55 group-hover:opacity-100 transition-opacity">
                 <IconButton
+                  v-if="a.role !== 'admin'"
                   :title="a.disabled ? '启用' : '禁用'"
                   :aria-label="a.disabled ? '启用' : '禁用'"
                   @click="confirmToggleDisabled(a)"

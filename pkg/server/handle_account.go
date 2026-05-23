@@ -112,6 +112,12 @@ func (s *Server) handleUpdateAccount(ctx context.Context, in *updateAccountIn) (
 		return nil, authErrToHuma(err)
 	}
 
+	// Admin accounts cannot be disabled — demote first. Keeps the active-admin
+	// invariant clean (a "disabled admin" is a confusing state).
+	if in.Body.Role == "admin" && in.Body.Disabled {
+		return nil, authErrToHuma(auth.ErrAdminCannotBeDisabled())
+	}
+
 	tx, err := s.dbPool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("handleUpdateAccount: begin tx: %w", err)

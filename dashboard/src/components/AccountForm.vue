@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
 import { SidePanel, Button, Input, Field, Icon, SegmentedControl } from '@/ui'
 import type { components } from '@/openapi-types'
@@ -38,6 +38,16 @@ const form = ref({
   permissions: { ...(props.account?.permissions ?? defaultPermissions) } as Permissions,
   disabled: props.account?.disabled ?? false,
 })
+
+// Clear disabled flag when promoting to admin — admins can't be disabled.
+watch(
+  () => form.value.role,
+  (role) => {
+    if (role === 'admin' && form.value.disabled) {
+      form.value.disabled = false
+    }
+  },
+)
 
 const saving = ref(false)
 const error = ref('')
@@ -182,9 +192,17 @@ function fmtTime(iso?: string | null): string {
         </div>
       </Field>
       <Field v-if="isEdit" label="状态" as="div">
-        <label class="inline-flex items-center gap-2 text-sm cursor-pointer">
-          <input v-model="form.disabled" type="checkbox" class="cursor-pointer" />
-          <span>禁用此账户（阻止登录）</span>
+        <label class="flex items-center gap-2 text-sm text-ink-muted cursor-pointer">
+          <input
+            v-model="form.disabled"
+            :disabled="form.role === 'admin'"
+            type="checkbox"
+            class="accent-accent"
+          />
+          <span :class="form.role === 'admin' ? 'text-ink-faint' : ''">
+            禁用账户
+            <span v-if="form.role === 'admin'" class="text-2xs">（管理员不可禁用）</span>
+          </span>
         </label>
       </Field>
     </form>

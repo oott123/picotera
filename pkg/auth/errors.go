@@ -45,6 +45,14 @@ func ErrLastAdmin() *AuthError {
 	return newErr(http.StatusConflict, "last_admin", "cannot demote, disable, or delete the only admin")
 }
 
+// ErrAdminCannotBeDisabled rejects an update that would leave an account in
+// the role=admin AND disabled=true state. Admins must be demoted to 'user'
+// before they can be disabled. Keeps the active-admin set cleanly defined.
+func ErrAdminCannotBeDisabled() *AuthError {
+	return &AuthError{Code: "admin_cannot_be_disabled", Status: 409,
+		Message: "admin accounts cannot be disabled; demote to user first"}
+}
+
 func ErrUsernameTaken() *AuthError {
 	return newErr(http.StatusConflict, "username_taken", "username already exists")
 }
