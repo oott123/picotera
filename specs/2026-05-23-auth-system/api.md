@@ -101,28 +101,33 @@ WebAuthn ceremony payloads use the JSON-friendly shapes defined by `@simplewebau
 
 - Auth: **public**.
 - Path: `token` (string).
-- Body (bootstrap only): `{ username: string; displayName: string }`. Other intents have no body — target account is fixed.
+- Body:
+  - **bootstrap**: `{ username: string; displayName: string; nickname?: string }`. Server validates username uniqueness.
+  - **invite**: `{ username: string; displayName: string; nickname?: string }`. Invitee picks their own username/displayName since no account exists yet.
+  - **reset**: `{ nickname?: string }` (optional). Target account is fixed; username/displayName are already set.
 - Response: `PublicKeyCredentialCreationOptionsJSON`.
-- Side effects: stores `webauthn.SessionData` in KV under `webauthn_ceremony:enroll:<token>`. For bootstrap intent, validates that the proposed `username` is unique and matches `^[a-z0-9_-]{2,32}$`; otherwise reads target from `enrollment.target_account_id`. Generates `webauthn_user_handle` for the future account (bootstrap) or reuses the existing handle (invite/reset).
+- Side effects: stores `webauthn.SessionData` in KV under `webauthn_ceremony:enroll:<token>`. For bootstrap and invite intents, validates that the proposed `username` is unique and matches `^[a-z0-9_-]{2,32}$`; stashes username/displayName alongside ceremony data. For reset, reads target from `enrollment.target_account_id`. Generates `webauthn_user_handle` for the future account (bootstrap/invite) or reuses the existing handle (reset).
 - Errors:
   - `410 enrollment_expired` / `410 enrollment_consumed`.
-  - `400 invalid_username` / `400 invalid_display_name` — bootstrap only.
-  - `409 username_taken` — bootstrap only.
+  - `400 invalid_username` / `400 invalid_display_name` — bootstrap and invite only.
+  - `409 username_taken` — bootstrap and invite only.
 
 ### `POST /enrollments/{token}/register/complete` — `completeEnrollmentRegistration`
 
 - Auth: **public**.
 - Path: `token` (string).
-- Body: `{ attestation: RegistrationResponseJSON; nickname: string | null }` plus, for bootstrap, `{ username: string; displayName: string }` (re-supplied so they're authoritative at TX time).
-- Response: `SessionView` (the newly created or re-credentialed account).
+- Body: `RegistrationResponseJSON` (the attestation object directly, not wrapped).
+- Response: `{ session: SessionView; newCredentialId: number }`.
+  - `session`: the newly issued session (same shape as `GET /me`).
+  - `newCredentialId`: the database ID of the newly inserted `webauthn_credential` row.
 - Side effects:
-  - **bootstrap**: TX inserts `account(role='admin', all can_*=TRUE)`, inserts `webauthn_credential`, marks enrollment consumed. Issues session.
-  - **invite**: TX inserts `webauthn_credential` linked to `target_account_id`, marks enrollment consumed. Issues session.
+  - **bootstrap**: TX inserts `account(role='admin', all can_*=TRUE, username/displayName from stash)`, inserts `webauthn_credential`, marks enrollment consumed. Issues session.
+  - **invite**: TX inserts `account` (username/displayName/role/permissions from stash + template), inserts `webauthn_credential`, marks enrollment consumed. Issues session. The atomic consume guarantees the URL can't be reused.
   - **reset**: TX deletes all `webauthn_credential` for target, inserts new `webauthn_credential`, marks enrollment consumed. After commit, scans `session:<target_account_id>:*` in KV and deletes (best-effort). Issues fresh session.
 - Errors:
   - `400 webauthn_ceremony_failed` — attestation didn't verify.
   - `410 enrollment_expired` / `410 enrollment_consumed`.
-  - `409 username_taken` — bootstrap only (re-checked at TX time).
+  - `409 username_taken` — bootstrap and invite (re-checked at TX time).
 
 ---
 
@@ -149,9 +154,19 @@ WebAuthn ceremony payloads use the JSON-friendly shapes defined by `@simplewebau
 ### `POST /me/credentials/register/complete` — `completeAddCredential`
 
 - Auth: **session**.
-- Body: `{ attestation: RegistrationResponseJSON; nickname: string | null }`.
+- Query param: `nickname` (optional string). Validated server-side (1–60 chars, no control characters). Trimmed before storage; empty after trim → NULL.
+- Body: `RegistrationResponseJSON` (the attestation object directly, not wrapped).
 - Response: `CredentialView`.
-- Errors: `400 webauthn_ceremony_failed`.
+- Errors: `400 webauthn_ceremony_failed`, `400 invalid_nickname`.
+
+### `POST /me/credentials/rename` — `renameMyCredential`
+
+- Auth: **session**.
+- Body: `{ id: number; nickname?: string | null }`.
+- Response: 204.
+- Errors:
+  - `400 invalid_nickname` — nickname exceeds 60 chars or contains control characters.
+  - `404 credential_not_found` — the id doesn't belong to the caller.
 
 ### `POST /me/credentials/delete` — `deleteMyCredential`
 
@@ -238,17 +253,38 @@ WebAuthn ceremony payloads use the JSON-friendly shapes defined by `@simplewebau
 - Body:
   ```ts
   {
-    username: string
-    displayName: string
     role: 'admin' | 'user'
     permissions: Record<Permission, boolean>
   }
   ```
-- Response: `{ account: AccountView; url: string; expiresAt: string }`. **Reveal-once** for `url`.
-- Side effects: TX inserts `account` (no credentials yet, fresh `webauthn_user_handle`) and `enrollment(intent='invite', target=new account, token)`.
+- Response: `{ url: string; expiresAt: string }`.
+- Side effects: Inserts `enrollment(intent='invite', template_role, template_can_*, token, expires=now+24h)`. No `account` row is created yet — the account is created when the invitee consumes the URL (see `completeEnrollmentRegistration`). The URL is also queryable via `GET /invitations` after creation.
+- Errors: none beyond auth.
+
+### `GET /invitations` — `listInvitations`
+
+- Auth: **admin**.
+- Response: `InvitationView[]`, ordered by `created_at DESC`.
+  ```ts
+  type InvitationView = {
+    token: string
+    url: string
+    role: 'admin' | 'user'
+    permissions: Record<Permission, boolean>
+    createdAt: string    // RFC3339
+    expiresAt: string    // RFC3339
+  }
+  ```
+- Only returns invitations that are unconsumed and unexpired (pending invitations). Already-consumed or expired rows are not listed.
+
+### `POST /invitations/revoke` — `revokeInvitation`
+
+- Auth: **admin**.
+- Body: `{ token: string }`.
+- Response: 204.
+- Side effects: marks the enrollment row consumed (`consumed_at = now()`), preventing the invitee from registering. Idempotent in the sense that once marked consumed it stays consumed.
 - Errors:
-  - `400 invalid_username` / `400 invalid_display_name`.
-  - `409 username_taken`.
+  - `404 invitation_not_found` — token doesn't exist or is not a pending invite (already consumed/expired).
 
 ---
 
@@ -319,7 +355,7 @@ This table documents which user-facing pages each permission unlocks and which b
 | `view_own_usage`        | `/requests`, `/requests/{id}`       | `GET /requests`, `GET /requests/{id}`, `GET /requests/{id}/spans`   |
 | `view_own_traces`       | `/traces`                           | `GET /request-traces`                                               |
 | `manage_own_api_keys`   | `/api-keys`                         | All `/api-keys/*`                                                   |
-| `view_models`           | `/models` (read), `/endpoints` (r)  | `GET /models`, `GET /endpoints`, `GET /provider-endpoints`          |
+| `view_models`           | `/models` (read), `/endpoints` (r)  | `GET /models`, `GET /endpoints`                                     |
 | (session — always)      | `/me`, `/me/credentials`            | All `/me/*` + `/me/credentials/*`                                   |
 
 Admin auto-passes every permission gate AND every admin-only endpoint. Non-admin behavior is defined per-permission.

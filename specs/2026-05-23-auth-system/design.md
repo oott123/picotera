@@ -177,13 +177,14 @@ Username for the default and `--new` modes is collected at enrollment time (in t
 
 ### Invitation (any role, by admin)
 
-1. Admin opens `AccountForm` in `AccountsView`. Fills username, display_name, role, permission checkboxes (disabled when role=admin).
-2. SPA calls `POST /invitations`.
-3. Server, in one DB transaction: INSERT `account` (disabled=false, no credentials yet, fresh `webauthn_user_handle`); INSERT `enrollment(intent='invite', target=new account, token)`. Returns `{ url: 'https://.../enroll/<token>' }`.
-4. The `AccountForm` swaps to a "reveal-once" view showing the URL with a copy button and a "Done" close button. After close, the URL is gone from the UI; admin must reissue if they lost it.
-5. Recipient opens URL → SPA `/enroll/:token` → `GET /enrollments/:token` returns `{intent: 'invite', target: { username, display_name }}`.
-6. Form shows target username (read-only) and asks for a passkey nickname.
-7. Ceremony as bootstrap, but at `/complete` the server attaches the credential to the pre-existing account and consumes the enrollment. Issues session.
+1. Admin opens `AccountForm` in `AccountsView`. Fills role and permission checkboxes (disabled when role=admin). No username or displayName at this stage.
+2. SPA calls `POST /invitations` with `{ role, permissions }`.
+3. Server inserts `enrollment(intent='invite', template_role, template_can_*, token, expires=now+24h)`. No `account` row is created yet — the account is deferred to consume time. Returns `{ url: 'https://.../enroll/<token>', expiresAt }`.
+4. The `AccountForm` swaps to the URL-display view. The URL also appears in `GET /invitations` (listInvitations) so the admin can retrieve it again without reissuing.
+5. Recipient opens URL → SPA `/enroll/:token` → `GET /enrollments/:token` returns `{intent: 'invite'}` (no target, since the account doesn't exist yet).
+6. Form prompts the invitee for username, displayName, and optional passkey nickname.
+7. SPA calls `POST /enrollments/:token/register/begin` with `{ username, displayName }`. Server validates username uniqueness and stashes ceremony data.
+8. Browser registers passkey. SPA calls `POST /enrollments/:token/register/complete`. Server, in one DB transaction: validates username again; INSERT `account` (from stash.Invite.Username/DisplayName + template role/permissions); INSERT `webauthn_credential`; UPDATE `enrollment.consumed_at`. The atomic consume guarantees the URL cannot be used twice. Issues session.
 
 ### Reset (admin re-issues enrollment for an existing account)
 
@@ -292,8 +293,8 @@ Startup logs `auth: RP ID = <id>, origins = [<a>, <b>]` so misconfigurations are
 | Flow | Inside one TX |
 |---|---|
 | Bootstrap consume | INSERT account; INSERT credential; UPDATE enrollment.consumed_at |
-| Invite create | INSERT account; INSERT enrollment |
-| Invite consume | INSERT credential; UPDATE enrollment.consumed_at |
+| Invite create | INSERT enrollment (no account yet) |
+| Invite consume | INSERT account (from stash.Invite username/displayName + template); INSERT credential; UPDATE enrollment.consumed_at |
 | Reset consume | DELETE credentials WHERE account_id; INSERT credential; UPDATE enrollment.consumed_at |
 | Account delete | DELETE account (CASCADE handles webauthn_credential + enrollment; SET NULL on api_key.account_id) |
 | Role/disable update with last-admin check | `SELECT FOR UPDATE` count of active admins inside the TX before applying |
@@ -465,17 +466,24 @@ Typed error codes returned in `ApiRequestError.code`. Listed in `api.md` per end
 `pkg/logx` info-level events:
 
 ```
-auth.login_success         account_id, credential_id_suffix
-auth.login_failure         reason
-auth.logout                account_id
-auth.enrollment_issued     intent, target_account_id, expires_at
-auth.enrollment_consumed   intent, account_id
-auth.credential_added      account_id, credential_id_suffix, backup_state
-auth.credential_revoked    account_id, credential_id_suffix, by_admin
-auth.sessions_revoked      account_id, count, reason
-auth.account_disabled      account_id, by_admin_id
-auth.account_role_changed  account_id, from, to, by_admin_id
+auth.login_success            account_id, credential_id_suffix
+auth.login_failure            reason
+auth.logout                   account_id
+auth.enrollment_consumed      intent, account_id
+auth.account_invited          role, permissions
+auth.account_updated          account_id, changes (map of field→{from,to})
+auth.account_deleted          account_id
+auth.sessions_revoked         account_id, count, reason
+auth.credential_revoked_admin account_id, credential_id, actor_id
+auth.enrollment_issued        intent, target_account_id, expires_at
+auth.credential_added         account_id, credential_id_suffix, backup_state
+auth.credential_revoked_self  account_id, credential_id
+auth.credential_renamed_self  account_id, credential_id
+auth.invitation_revoked       token, actor_id
+auth.webauthn_error           details
 ```
+
+Note: `auth.account_disabled` and `auth.account_role_changed` are NOT emitted as separate events; both are covered by `auth.account_updated` with a `changes` field listing the fields that changed.
 
 Never log: full credential IDs, full session tokens, full enrollment tokens. The last four characters of `credential_id` are sufficient for forensic correlation.
 

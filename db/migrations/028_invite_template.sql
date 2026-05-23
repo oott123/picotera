@@ -6,6 +6,11 @@ ALTER TABLE enrollment
   ADD COLUMN template_can_manage_own_api_keys  BOOLEAN,
   ADD COLUMN template_can_view_models          BOOLEAN,
   ADD COLUMN template_can_view_own_traces      BOOLEAN,
+  -- template_username and template_display_name are RESERVED but unused as of
+  -- P5.03. The invite flow stopped pre-populating username/displayName
+  -- suggestions; the invitee always picks their own credentials at consume
+  -- time. Kept in schema to avoid the migration churn of dropping nullable
+  -- columns that hold no data.
   ADD COLUMN template_username                 TEXT,
   ADD COLUMN template_display_name             TEXT;
 

@@ -112,7 +112,7 @@ These are NOT rows in the `endpoint` table — operators only configure the unde
 
 ### Database Schema
 
-Ten tables: `provider`, `endpoint`, `provider_endpoint`, `model`, `model_provider_endpoint`, `api_key`, `request` (hypertable), `script`, `traces`, `project`. Uses JSONB for flexible fields (provider models, annotations, project paths). Upsert pattern via `ON CONFLICT DO UPDATE`. The `request` hypertable also carries a nullable `project_id` foreign reference (no FK constraint) populated by the project extractor on insert.
+Thirteen tables: `provider`, `endpoint`, `provider_endpoint`, `model`, `model_provider_endpoint`, `api_key`, `request` (hypertable), `script`, `traces`, `project`, `account`, `webauthn_credential`, `enrollment`. Uses JSONB for flexible fields (provider models, annotations, project paths). Upsert pattern via `ON CONFLICT DO UPDATE`. The `request` hypertable also carries a nullable `project_id` foreign reference (no FK constraint) populated by the project extractor on insert.
 
 ## Dashboard
 
@@ -154,7 +154,7 @@ When building new screens, compose these primitives — don't reach for a third-
 
 ### Views & router page metadata
 
-When you add a new route, register the route name in `src/App.vue`'s `pageMeta` map (`title` + `hint`). The shell reads it to render header chrome — without an entry the page renders untitled. The map key must match the route's `name` exactly (defined in `src/router/index.ts`). See `dashboard/src/views/CLAUDE.md`.
+When you add a new route, register the route name in `dashboard/src/layouts/AppLayout.vue`'s `pageMeta` map (`title` + `hint`). The shell reads it to render header chrome — without an entry the page renders untitled. The map key must match the route's `name` exactly (defined in `src/router/index.ts`). See `dashboard/src/views/CLAUDE.md`.
 
 ## Design Context
 

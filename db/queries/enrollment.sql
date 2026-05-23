@@ -2,6 +2,8 @@
 SELECT * FROM enrollment WHERE token = $1;
 
 -- name: InsertEnrollment :one
+-- template_username ($10) and template_display_name ($11) are always NULL
+-- as of P5.03 — the invite flow no longer pre-populates username/displayName.
 INSERT INTO enrollment (
   token, intent, target_account_id, expires_at,
   template_role,
