@@ -63,6 +63,42 @@ func TestCheck_Permission(t *testing.T) {
 	}
 }
 
+func TestCheck_DisabledAccount_Public(t *testing.T) {
+	// A disabled-session sentinel must NOT block public routes — the request
+	// continues unauthenticated and the route's logic runs as normal.
+	s := &Session{Account: &db.Account{Role: "user", Disabled: true}}
+	if err := Check(s, contract.AuthRequirement{Kind: contract.AuthPublic}); err != nil {
+		t.Errorf("disabled session on public route should pass, got %v", err)
+	}
+}
+
+func TestCheck_DisabledAccount_Session(t *testing.T) {
+	s := &Session{Account: &db.Account{Role: "user", Disabled: true}}
+	err := Check(s, contract.AuthRequirement{Kind: contract.AuthSession})
+	if AsAuthError(err) == nil || AsAuthError(err).Code != "account_disabled" {
+		t.Errorf("want account_disabled, got %v", err)
+	}
+}
+
+func TestCheck_DisabledAccount_Admin(t *testing.T) {
+	// Even an admin role gets rejected when disabled — the disabled check fires
+	// before role checks.
+	s := &Session{Account: &db.Account{Role: "admin", Disabled: true}}
+	err := Check(s, contract.AuthRequirement{Kind: contract.AuthAdmin})
+	if AsAuthError(err) == nil || AsAuthError(err).Code != "account_disabled" {
+		t.Errorf("want account_disabled (not not_admin), got %v", err)
+	}
+}
+
+func TestCheck_DisabledAccount_Permission(t *testing.T) {
+	// Permission check on a disabled account: account_disabled, not permission_denied.
+	s := &Session{Account: &db.Account{Role: "user", Disabled: true, CanViewOwnUsage: true}}
+	err := Check(s, contract.RequirePermission(contract.PermViewOwnUsage))
+	if AsAuthError(err) == nil || AsAuthError(err).Code != "account_disabled" {
+		t.Errorf("want account_disabled (not permission_denied), got %v", err)
+	}
+}
+
 func TestSessionContext_Roundtrip(t *testing.T) {
 	want := &Session{Account: &db.Account{ID: 7}}
 	ctx := WithSession(context.Background(), want)

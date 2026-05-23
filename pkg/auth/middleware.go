@@ -85,10 +85,18 @@ func LoadSession(cfg *configx.Config, q db.Querier, store *SessionStore) func(ht
 				return
 			}
 			if account.Disabled {
-				// Disabled mid-session — kick out immediately.
+				// Disabled mid-session — kill the persistent session in KV and clear the
+				// cookie so the user is forcibly logged out. We still attach a "disabled
+				// sentinel" session to the context so per-route Check can return
+				// account_disabled (machine-readable JSON) instead of no_session.
+				//
+				// Public routes (auth/logout, enrollment consume, etc.) read the sentinel
+				// via SessionFromContext but ignore it — their AuthRequirement is AuthPublic,
+				// which Check returns nil for before inspecting the session.
 				_ = store.Revoke(r.Context(), accountID, token)
 				http.SetCookie(w, ClearedSessionCookie(cfg, r))
-				http.Error(w, "account disabled", http.StatusForbidden)
+				ctx := WithSession(r.Context(), &Session{Account: &account, Token: "", Data: nil})
+				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
 			if refreshed {
@@ -108,6 +116,12 @@ func Check(s *Session, req contract.AuthRequirement) error {
 	}
 	if s == nil {
 		return ErrNoSession()
+	}
+	// Disabled-session sentinel from LoadSession — reject every non-public
+	// route with the JSON-envelope account_disabled code so the dashboard's
+	// ApiRequestError carries a machine-readable code.
+	if s.Account.Disabled {
+		return ErrAccountDisabled()
 	}
 	switch req.Kind {
 	case contract.AuthSession:
