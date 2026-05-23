@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"picotera/pkg/artifacts"
+	"picotera/pkg/auth"
 	"picotera/pkg/contract"
 	"picotera/pkg/db"
 	"picotera/pkg/errorx"
@@ -38,12 +39,73 @@ func (s *Server) attachArtifactUrls(ctx context.Context, v *contract.RequestView
 	}
 }
 
+// toRequestViewFromByAccountRow converts a ListRequestsByAccountRow to a RequestView.
+// The row projects the same column set as ListRequestsRow so the mapping is identical.
+func toRequestViewFromByAccountRow(r *db.ListRequestsByAccountRow) *contract.RequestView {
+	return contract.ToListRequestRowView(&db.ListRequestsRow{
+		ID:                 r.ID,
+		SpanID:             r.SpanID,
+		ParentSpanID:       r.ParentSpanID,
+		Type:               r.Type,
+		Status:             r.Status,
+		ProviderID:         r.ProviderID,
+		EndpointPath:       r.EndpointPath,
+		ApiKeyID:           r.ApiKeyID,
+		Model:              r.Model,
+		UpstreamModel:      r.UpstreamModel,
+		InputTokens:        r.InputTokens,
+		CacheReadTokens:    r.CacheReadTokens,
+		OutputTokens:       r.OutputTokens,
+		CacheWriteTokens:   r.CacheWriteTokens,
+		CacheWrite1hTokens: r.CacheWrite1hTokens,
+		StatusCode:         r.StatusCode,
+		ErrorMessage:       r.ErrorMessage,
+		TtftMs:             r.TtftMs,
+		TimeSpentMs:        r.TimeSpentMs,
+		CreatedAt:          r.CreatedAt,
+		ModelCost:          r.ModelCost,
+		ModelCostCurrency:  r.ModelCostCurrency,
+		UserMessagePreview: r.UserMessagePreview,
+		ProjectID:          r.ProjectID,
+	})
+}
+
 func (s *Server) handleListRequests(ctx context.Context, input *contract.ListRequestsRequest) (*contract.ListRequestsResponse, error) {
 	limit := input.Limit
 	if limit <= 0 {
 		limit = 20
 	}
 	fetchLimit := limit + 1
+
+	sess := auth.SessionFromContext(ctx)
+	if sess.Account.Role != "admin" {
+		// Non-admin: scoped to requests made with api keys owned by this account.
+		// The simpler scoped query does not support filters or cursor pagination,
+		// so we ignore them. The dashboard permission gates ensure non-admin views
+		// do not render filter controls, keeping the UX consistent.
+		rows, err := s.queries.ListRequestsByAccount(ctx, db.ListRequestsByAccountParams{
+			AccountID: pgtype.Int4{Int32: sess.Account.ID, Valid: true},
+			Limit:     fetchLimit,
+		})
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to list requests", err)
+		}
+		hasMore := int32(len(rows)) > limit
+		if hasMore {
+			rows = rows[:limit]
+		}
+		items := make([]contract.RequestView, len(rows))
+		for i := range rows {
+			items[i] = *toRequestViewFromByAccountRow(&rows[i])
+			s.attachArtifactUrls(ctx, &items[i], rows[i].CreatedAt)
+		}
+		return &contract.ListRequestsResponse{
+			Body: contract.PaginatedBody[contract.RequestView]{
+				Items:      items,
+				Pagination: contract.PaginationInfo{HasMore: hasMore},
+			},
+		}, nil
+	}
 
 	var cursorCreatedAt pgtype.Timestamp
 	var cursorID pgtype.Text

@@ -6,12 +6,14 @@ import (
 	"errors"
 	"strings"
 
+	"picotera/pkg/auth"
 	"picotera/pkg/contract"
 	"picotera/pkg/db"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func marshalAnnotations(a map[string]string) ([]byte, error) {
@@ -31,7 +33,14 @@ func isUniqueViolation(err error) bool {
 }
 
 func (s *Server) handleListApiKeys(ctx context.Context, _ *struct{}) (*contract.ListApiKeysResponse, error) {
-	rows, err := s.queries.ListApiKeys(ctx)
+	sess := auth.SessionFromContext(ctx)
+	var rows []db.ApiKey
+	var err error
+	if sess.Account.Role == "admin" {
+		rows, err = s.queries.ListApiKeys(ctx)
+	} else {
+		rows, err = s.queries.ListApiKeysByAccount(ctx, pgtype.Int4{Int32: sess.Account.ID, Valid: true})
+	}
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to list api keys", err)
 	}
@@ -47,6 +56,20 @@ func (s *Server) handleListApiKeys(ctx context.Context, _ *struct{}) (*contract.
 }
 
 func (s *Server) handleGetApiKey(ctx context.Context, in *contract.GetApiKeyRequest) (*contract.GetApiKeyResponse, error) {
+	sess := auth.SessionFromContext(ctx)
+	if sess.Account.Role != "admin" {
+		// Non-admin may only see their own keys; treat not-owned as not-found to avoid leaking existence.
+		_, err := s.queries.GetApiKeyOwnedBy(ctx, db.GetApiKeyOwnedByParams{
+			ID:        in.ID,
+			AccountID: pgtype.Int4{Int32: sess.Account.ID, Valid: true},
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, huma.Error404NotFound("api key not found")
+			}
+			return nil, huma.Error500InternalServerError("failed to verify ownership", err)
+		}
+	}
 	r, err := s.queries.GetApiKey(ctx, in.ID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -69,11 +92,19 @@ func (s *Server) handleCreateApiKey(ctx context.Context, in *contract.CreateApiK
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to encode annotations", err)
 	}
+	sess := auth.SessionFromContext(ctx)
+	// Non-admin keys are always owned by the caller; admin keys are unowned (NULL) so
+	// they are not bound to any account and can be used for system-level automation.
+	var accountID pgtype.Int4
+	if sess.Account.Role != "admin" {
+		accountID = pgtype.Int4{Int32: sess.Account.ID, Valid: true}
+	}
 	r, err := s.queries.InsertApiKey(ctx, db.InsertApiKeyParams{
 		Name:        in.Body.Name,
 		Key:         in.Body.Key,
 		Disabled:    in.Body.Disabled,
 		Annotations: annotations,
+		AccountID:   accountID,
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -91,6 +122,20 @@ func (s *Server) handleCreateApiKey(ctx context.Context, in *contract.CreateApiK
 func (s *Server) handleUpdateApiKey(ctx context.Context, in *contract.UpdateApiKeyRequest) (*contract.UpdateApiKeyResponse, error) {
 	if in.Body.Key == "" {
 		return nil, huma.Error400BadRequest("key is required")
+	}
+	sess := auth.SessionFromContext(ctx)
+	if sess.Account.Role != "admin" {
+		// Non-admin: verify ownership before mutating; 404 to avoid leaking existence.
+		_, err := s.queries.GetApiKeyOwnedBy(ctx, db.GetApiKeyOwnedByParams{
+			ID:        in.ID,
+			AccountID: pgtype.Int4{Int32: sess.Account.ID, Valid: true},
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, huma.Error404NotFound("api key not found")
+			}
+			return nil, huma.Error500InternalServerError("failed to verify ownership", err)
+		}
 	}
 	annotations, err := marshalAnnotations(in.Body.Annotations)
 	if err != nil {
@@ -120,6 +165,20 @@ func (s *Server) handleUpdateApiKey(ctx context.Context, in *contract.UpdateApiK
 }
 
 func (s *Server) handleDeleteApiKey(ctx context.Context, in *contract.DeleteApiKeyRequest) (*struct{}, error) {
+	sess := auth.SessionFromContext(ctx)
+	if sess.Account.Role != "admin" {
+		// Non-admin: verify ownership before deleting; 404 to avoid leaking existence.
+		_, err := s.queries.GetApiKeyOwnedBy(ctx, db.GetApiKeyOwnedByParams{
+			ID:        in.Body.ID,
+			AccountID: pgtype.Int4{Int32: sess.Account.ID, Valid: true},
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, huma.Error404NotFound("api key not found")
+			}
+			return nil, huma.Error500InternalServerError("failed to verify ownership", err)
+		}
+	}
 	if err := s.queries.DeleteApiKey(ctx, in.Body.ID); err != nil {
 		return nil, huma.Error500InternalServerError("failed to delete api key", err)
 	}

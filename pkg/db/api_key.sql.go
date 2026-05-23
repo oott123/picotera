@@ -86,16 +86,17 @@ func (q *Queries) GetApiKeyOwnedBy(ctx context.Context, arg GetApiKeyOwnedByPara
 }
 
 const insertApiKey = `-- name: InsertApiKey :one
-INSERT INTO api_key (name, key, disabled, annotations)
-VALUES ($1, $2, $3, $4)
+INSERT INTO api_key (name, key, disabled, annotations, account_id)
+VALUES ($1, $2, $3, $4, $5)
 RETURNING id, name, annotations, key, disabled, created_at, updated_at, account_id
 `
 
 type InsertApiKeyParams struct {
-	Name        string `json:"name"`
-	Key         string `json:"key"`
-	Disabled    bool   `json:"disabled"`
-	Annotations []byte `json:"annotations"`
+	Name        string      `json:"name"`
+	Key         string      `json:"key"`
+	Disabled    bool        `json:"disabled"`
+	Annotations []byte      `json:"annotations"`
+	AccountID   pgtype.Int4 `json:"accountId"`
 }
 
 func (q *Queries) InsertApiKey(ctx context.Context, arg InsertApiKeyParams) (ApiKey, error) {
@@ -104,6 +105,7 @@ func (q *Queries) InsertApiKey(ctx context.Context, arg InsertApiKeyParams) (Api
 		arg.Key,
 		arg.Disabled,
 		arg.Annotations,
+		arg.AccountID,
 	)
 	var i ApiKey
 	err := row.Scan(
