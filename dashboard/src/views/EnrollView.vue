@@ -9,13 +9,13 @@ import {
   renameMyCredential,
 } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
-import { usePasskeyCeremony } from '@/composables/usePasskeyCeremony'
-import { Button, Input, Field, Icon } from '@/ui'
+import { Button, Input, Field } from '@/ui'
 import { fallbackFor } from '@/router/fallback'
+import PasskeyCeremonyFlow from '@/components/PasskeyCeremonyFlow.vue'
 import type { components } from '@/openapi-types'
 
 type SessionView = components['schemas']['SessionView']
-type CeremonyResult = { session: SessionView; newCredentialId: number }
+type EnrollResult = { session: SessionView; newCredentialId: number }
 
 const route = useRoute()
 const router = useRouter()
@@ -34,55 +34,50 @@ const bootstrapForm = reactive({ username: '', displayName: '' })
 const inviteForm = reactive({ username: '', displayName: '' })
 const resetConfirmed = ref(false)
 
-const ceremony = usePasskeyCeremony<CeremonyResult>({
-  begin: async () => {
-    const intent = preview.data.value!.intent
-    const body =
-      intent === 'bootstrap'
-        ? { username: bootstrapForm.username, displayName: bootstrapForm.displayName }
-        : intent === 'invite'
-          ? { username: inviteForm.username, displayName: inviteForm.displayName }
-          : {}
-    return beginEnrollmentRegistration(token.value, body)
-  },
-  complete: (attestation) => completeEnrollmentRegistration(token.value, attestation),
-})
+// Captures the begin call for the current ceremony attempt — set when the
+// user submits a form, used by PasskeyCeremonyFlow on mount.
+const ceremonyBegin = ref<(() => Promise<unknown>) | null>(null)
 
-const nickname = ref('')
-const renaming = ref(false)
-
-function onSubmit(e: Event) {
+function startBootstrap(e: Event) {
   e.preventDefault()
-  void ceremony.run()
+  ceremonyBegin.value = () =>
+    beginEnrollmentRegistration(token.value, {
+      username: bootstrapForm.username,
+      displayName: bootstrapForm.displayName,
+    })
 }
 
-async function onNamingDone() {
-  const r = ceremony.result.value
-  if (!r) return
-  qc.setQueryData(queryKeys.session.current, r.session)
-  const trimmed = nickname.value.trim()
-  if (trimmed) {
-    renaming.value = true
-    try {
-      await renameMyCredential(r.newCredentialId, trimmed)
-    } catch {
-      // Rename failure is non-fatal; user can rename later from /me. Don't block navigation.
-    } finally {
-      renaming.value = false
-    }
-  }
-  router.replace(fallbackFor(r.session))
+function startInvite(e: Event) {
+  e.preventDefault()
+  ceremonyBegin.value = () =>
+    beginEnrollmentRegistration(token.value, {
+      username: inviteForm.username,
+      displayName: inviteForm.displayName,
+    })
 }
 
-function onRetry() {
-  ceremony.reset()
+function startReset(e: Event) {
+  e.preventDefault()
+  ceremonyBegin.value = () => beginEnrollmentRegistration(token.value, {})
 }
 
-const submitDisabled = computed(() => {
-  if (ceremony.phase.value === 'waiting') return true
-  if (preview.data.value?.intent === 'reset' && !resetConfirmed.value) return true
-  return false
-})
+function completeFn(attestation: unknown): Promise<EnrollResult> {
+  return completeEnrollmentRegistration(token.value, attestation)
+}
+
+function extractCredentialId(r: EnrollResult): number {
+  return r.newCredentialId
+}
+
+function onDone(result: EnrollResult) {
+  qc.setQueryData(queryKeys.session.current, result.session)
+  router.replace(fallbackFor(result.session))
+}
+
+function onClose() {
+  // Reset back to the form view so the user can change inputs and retry.
+  ceremonyBegin.value = null
+}
 </script>
 
 <template>
@@ -94,13 +89,13 @@ const submitDisabled = computed(() => {
       <RouterLink to="/login" class="text-sm text-accent hover:underline">返回登录</RouterLink>
     </div>
 
-    <!-- Form phase (idle): show the appropriate intent form -->
-    <template v-else-if="ceremony.phase.value === 'idle'">
+    <!-- Form view: not yet started -->
+    <template v-else-if="!ceremonyBegin">
       <!-- bootstrap: operator creates the first admin account -->
       <form
         v-if="preview.data.value?.intent === 'bootstrap'"
         class="flex flex-col gap-4"
-        @submit="onSubmit"
+        @submit="startBootstrap"
       >
         <h1 class="text-xl font-semibold text-ink">创建管理员用户</h1>
         <Field label="用户名">
@@ -122,14 +117,14 @@ const submitDisabled = computed(() => {
             placeholder="Alice"
           />
         </Field>
-        <Button type="submit" :disabled="submitDisabled">注册 Passkey</Button>
+        <Button type="submit">注册 Passkey</Button>
       </form>
 
       <!-- invite: invitee picks their own username/displayName -->
       <form
         v-else-if="preview.data.value?.intent === 'invite'"
         class="flex flex-col gap-4"
-        @submit="onSubmit"
+        @submit="startInvite"
       >
         <h1 class="text-xl font-semibold text-ink">接受邀请</h1>
         <Field label="用户名">
@@ -149,14 +144,14 @@ const submitDisabled = computed(() => {
             autocomplete="name"
           />
         </Field>
-        <Button type="submit" :disabled="submitDisabled">注册 Passkey</Button>
+        <Button type="submit">注册 Passkey</Button>
       </form>
 
       <!-- reset: replaces all existing passkeys; warn and require confirmation -->
       <form
         v-else-if="preview.data.value?.intent === 'reset'"
         class="flex flex-col gap-4"
-        @submit="onSubmit"
+        @submit="startReset"
       >
         <h1 class="text-xl font-semibold text-ink">重置 Passkey</h1>
         <Field label="用户">
@@ -169,40 +164,19 @@ const submitDisabled = computed(() => {
           <input v-model="resetConfirmed" type="checkbox" class="mt-0.5 accent-accent" />
           <span>我已了解此操作将删除现有所有密钥。</span>
         </label>
-        <Button type="submit" :disabled="submitDisabled">注册 Passkey</Button>
+        <Button type="submit" :disabled="!resetConfirmed">注册 Passkey</Button>
       </form>
     </template>
 
-    <!-- Waiting phase -->
-    <div v-else-if="ceremony.phase.value === 'waiting'" class="flex flex-col items-center gap-4 py-8">
-      <div class="w-12 h-12 rounded-full border-2 border-line border-t-accent animate-spin"></div>
-      <p class="text-sm text-ink-muted text-center">
-        请使用您的 Passkey 设备完成验证…<br />
-        <span class="text-xs text-ink-faint">浏览器或 Passkey 管理器将弹出确认窗口</span>
-      </p>
-    </div>
-
-    <!-- Success phase: name the new passkey -->
-    <div v-else-if="ceremony.phase.value === 'success'" class="flex flex-col gap-4">
-      <div class="flex items-center gap-2 text-success">
-        <Icon name="check" :size="16" />
-        <span class="text-sm font-medium">Passkey 创建成功</span>
-      </div>
-      <p class="text-sm text-ink-muted">为这把 Passkey 起个名字（可选）：</p>
-      <Field label="昵称（可选）">
-        <Input v-model="nickname" maxlength="60" placeholder="例如 我的 MacBook" autofocus />
-      </Field>
-      <Button :disabled="renaming" @click="onNamingDone">完成</Button>
-    </div>
-
-    <!-- Error phase -->
-    <div v-else-if="ceremony.phase.value === 'error'" class="flex flex-col gap-4">
-      <div class="bg-err-faint text-err-ink rounded-md px-3 py-2 text-sm">
-        {{ ceremony.errorMessage.value }}
-      </div>
-      <div class="flex justify-end gap-2">
-        <Button @click="onRetry">重试</Button>
-      </div>
-    </div>
+    <!-- Ceremony flow: form has been submitted; the shared component drives waiting/success/error. -->
+    <PasskeyCeremonyFlow
+      v-else
+      :begin="ceremonyBegin"
+      :complete="completeFn"
+      :rename="renameMyCredential"
+      :extract-credential-id="extractCredentialId"
+      @done="onDone"
+      @close="onClose"
+    />
   </div>
 </template>
