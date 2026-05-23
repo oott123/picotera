@@ -18,6 +18,9 @@ const props = defineProps<{
 const queryClient = useQueryClient()
 
 const isEdit = !!props.account
+
+const usernameLabel = computed(() => isEdit ? '用户名' : '建议用户名（受邀者可修改）')
+const displayNameLabel = computed(() => isEdit ? '显示名称' : '建议显示名（受邀者可修改）')
 const revealData = ref<{ url: string; expiresAt: string } | null>(
   props.revealUrl && props.revealExpiresAt
     ? { url: props.revealUrl, expiresAt: props.revealExpiresAt }
@@ -146,6 +149,9 @@ function fmtTime(iso?: string | null): string {
       <p class="text-sm text-ink-muted">
         把下面的链接发给被邀请人。链接仅展示一次，关闭后无法再次获取。
       </p>
+      <p class="text-xs text-ink-faint">
+        受邀者注册成功后将出现在用户列表中。
+      </p>
       <div class="flex items-stretch gap-2">
         <Input :model-value="revealData.url" readonly class="flex-1 font-mono text-xs" />
         <Button @click="copyUrl">
@@ -158,7 +164,7 @@ function fmtTime(iso?: string | null): string {
 
     <!-- Normal form view -->
     <form v-else id="account-form" class="flex flex-col gap-4" @submit.prevent="submit">
-      <Field label="用户名">
+      <Field :label="usernameLabel">
         <!-- Username is read-only in edit mode -->
         <Input
           v-model="form.username"
@@ -169,7 +175,7 @@ function fmtTime(iso?: string | null): string {
           title="2-32 个小写字母、数字、_ 或 -"
         />
       </Field>
-      <Field label="显示名称">
+      <Field :label="displayNameLabel">
         <Input v-model="form.displayName" required placeholder="例如 Alice Smith" />
       </Field>
       <Field label="角色" as="div">

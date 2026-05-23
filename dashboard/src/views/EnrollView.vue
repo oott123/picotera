@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import {
@@ -26,8 +26,24 @@ const preview = useQuery({
 })
 
 const bootstrapForm = reactive({ username: '', displayName: '' })
+const inviteForm = reactive({ username: '', displayName: '' })
 const resetConfirmed = ref(false)
 const errorMessage = ref<string | null>(null)
+
+// Prefill inviteForm from admin's template hints when preview resolves.
+// Guard keeps existing user edits intact if preview somehow refetches.
+watchEffect(() => {
+  const t = preview.data.value?.target
+  if (t) {
+    if (!inviteForm.username && t.username) inviteForm.username = t.username
+    if (!inviteForm.displayName && t.displayName) inviteForm.displayName = t.displayName
+  }
+})
+
+const hasTemplate = computed(() => {
+  const t = preview.data.value?.target
+  return !!(t && (t.username || t.displayName))
+})
 
 const enroll = useMutation({
   mutationFn: async () => {
@@ -35,7 +51,9 @@ const enroll = useMutation({
     const body =
       intent === 'bootstrap'
         ? { username: bootstrapForm.username, displayName: bootstrapForm.displayName }
-        : {}
+        : intent === 'invite'
+          ? { username: inviteForm.username, displayName: inviteForm.displayName }
+          : {}
     const options = await beginEnrollmentRegistration(token.value, body)
     const attestation = await webauthnCreate(options as Parameters<typeof webauthnCreate>[0])
     return completeEnrollmentRegistration(token.value, attestation)
@@ -45,12 +63,21 @@ const enroll = useMutation({
     router.replace('/overview')
   },
   onError(err: unknown) {
+    console.error('[enroll] registration failed', err)
     if (err instanceof WebAuthnUserCancelled) {
       errorMessage.value = '取消或超时，请重试。'
       return
     }
     if (err instanceof ApiRequestError) {
       errorMessage.value = err.message
+      return
+    }
+    if (err instanceof DOMException) {
+      errorMessage.value = `注册失败：${err.name}: ${err.message}`
+      return
+    }
+    if (err instanceof Error) {
+      errorMessage.value = `注册失败：${err.message}`
       return
     }
     errorMessage.value = '注册失败，请重试。'
@@ -109,15 +136,32 @@ const submitDisabled = computed(() => {
       <p v-if="errorMessage" class="text-sm text-err">{{ errorMessage }}</p>
     </form>
 
-    <!-- invite: account already exists; user just registers a passkey -->
+    <!-- invite: invitee picks their own username/displayName (optionally prefilled from admin's template) -->
     <form
       v-else-if="preview.data.value?.intent === 'invite'"
       class="flex flex-col gap-4"
       @submit="onSubmit"
     >
       <h1 class="text-xl font-semibold text-ink">接受邀请</h1>
-      <Field label="账户">
-        <Input :model-value="preview.data.value.target?.username" mono disabled />
+      <p v-if="hasTemplate" class="text-sm text-ink-muted">
+        管理员建议了用户名和显示名，你可以直接使用或修改。
+      </p>
+      <Field label="用户名">
+        <Input
+          v-model.trim="inviteForm.username"
+          mono
+          required
+          pattern="[a-z0-9_\-]{2,32}"
+          autocomplete="username"
+        />
+      </Field>
+      <Field label="显示名">
+        <Input
+          v-model.trim="inviteForm.displayName"
+          required
+          maxlength="80"
+          autocomplete="name"
+        />
       </Field>
       <Button type="submit" :disabled="submitDisabled">注册 Passkey</Button>
       <p v-if="errorMessage" class="text-sm text-err">{{ errorMessage }}</p>
