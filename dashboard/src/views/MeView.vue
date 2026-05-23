@@ -136,7 +136,7 @@ function roleLabel(role: string): string {
                 type="checkbox"
                 :checked="!!session.user.value.permissions[perm as keyof typeof session.user.value.permissions]"
                 disabled
-                class="rounded border-line disabled:opacity-70 accent-blue-500"
+                class="rounded border-line disabled:opacity-70 accent-accent"
               />
               <span class="text-sm text-ink-muted">{{ label }}</span>
             </li>
