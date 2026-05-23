@@ -30,7 +30,7 @@ const nav: NavItem[] = [
   { name: 'traces',     label: '追踪', icon: 'route',            requires: { perm: 'view_own_traces' } },
   { name: 'apiKeys',    label: '密钥', icon: 'key',              requires: { perm: 'manage_own_api_keys' } },
   { name: 'accounts',   label: '用户', icon: 'users',            requires: 'admin' },
-  { name: 'projects',   label: '项目', icon: 'folder',           requires: 'admin' },
+  { name: 'projects',   label: '项目', icon: 'folder',           requires: { perm: 'view_own_usage' } },
   { name: 'scripts',    label: '脚本', icon: 'braces',           requires: 'admin' },
   { name: 'simulate',   label: '模拟', icon: 'geometry',         requires: 'admin' },
   { name: 'kv',         label: '缓存', icon: 'db',               requires: 'admin' },

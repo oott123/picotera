@@ -7,11 +7,15 @@ import { useSession } from '@/composables/useSession'
 
 export function useProjectsMap() {
   const session = useSession()
-  // admin-only data; non-admin sees empty map and ID fallback labels
+  // Projects are user-bound: every caller with view_own_usage sees their own
+  // rows (admin auto-passes can()). The fetcher returns only the caller's
+  // projects; cross-account labels (e.g. someone else's request showing on
+  // an admin dashboard view) fall back to ID via projectLabel().
+  const canView = computed(() => session.can('view_own_usage'))
   const query = useQuery({
     queryKey: queryKeys.projects.all,
     queryFn: listProjects,
-    enabled: session.isAdmin,
+    enabled: canView,
   })
   const projects = computed(() => query.data.value ?? [])
   const projectsMap = computed(() => {

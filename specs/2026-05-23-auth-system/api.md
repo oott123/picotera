@@ -300,7 +300,8 @@ Every existing `huma.Register(...)` call moves to `registerOp(...)` with an expl
 | `requests` list/detail/spans | `perm:view_own_usage` | Scoped via `api_key.account_id`. Spans is part of the same page tree. |
 | `traces` | `perm:view_own_traces` | Standalone page; separate concept (cross-request span grouping). |
 | `overview` metrics | `perm:view_own_usage` | Per-account scoping for overview/distribution/series is not yet implemented because `request_overview_hourly` (Timescale continuous aggregate) lacks an `account_id` column. The handler explicitly returns 403 to non-admin callers despite their `view_own_usage` permission — those permissions remain for forward-compat with future scoped overview support. |
-| `scripts`, `kv`, `rates`, `projects`, `mappings`, `simulate`, `fetch-models`, `match-pricing` | `admin` | Operator-only surfaces. |
+| `projects` (all operations) | `perm:view_own_usage` | Projects are user-bound: each row has `account_id NOT NULL` and the handlers always scope to `sess.Account.ID`. Admin auto-passes the gate but still sees only their own projects through this surface (cross-account access goes through direct DB queries). Per-account uniqueness on `(account_id, name)` lets two users have projects with the same name without collision. |
+| `scripts`, `kv`, `rates`, `mappings`, `simulate`, `fetch-models`, `match-pricing` | `admin` | Operator-only surfaces. |
 
 ### Repository-layer scoping queries (added in `db/queries/`)
 
@@ -349,14 +350,14 @@ securitySchemes:
 
 This table documents which user-facing pages each permission unlocks and which backend endpoints those pages call. New endpoints should pick a permission per the page they belong to; new pages should reuse an existing permission rather than introducing a new one without updating this table.
 
-| Permission              | Visible pages                       | API endpoints                                                       |
-|-------------------------|-------------------------------------|---------------------------------------------------------------------|
-| (admin)                 | All                                 | All                                                                 |
-| `view_own_usage`        | `/requests`, `/requests/{id}`       | `GET /requests`, `GET /requests/{id}`, `GET /requests/{id}/spans`   |
-| `view_own_traces`       | `/traces`                           | `GET /request-traces`                                               |
-| `manage_own_api_keys`   | `/api-keys`                         | All `/api-keys/*`                                                   |
-| `view_models`           | `/models` (read), `/endpoints` (r)  | `GET /models`, `GET /endpoints`                                     |
-| (session — always)      | `/me`, `/me/credentials`            | All `/me/*` + `/me/credentials/*`                                   |
+| Permission              | Visible pages                              | API endpoints                                                       |
+|-------------------------|--------------------------------------------|---------------------------------------------------------------------|
+| (admin)                 | All                                        | All                                                                 |
+| `view_own_usage`        | `/requests`, `/requests/{id}`, `/projects` | `GET /requests`, `GET /requests/{id}`, `GET /requests/{id}/spans`, all `/projects/*` |
+| `view_own_traces`       | `/traces`                                  | `GET /request-traces`                                               |
+| `manage_own_api_keys`   | `/api-keys`                                | All `/api-keys/*`                                                   |
+| `view_models`           | `/models` (read), `/endpoints` (r)         | `GET /models`, `GET /endpoints`                                     |
+| (session — always)      | `/me`, `/me/credentials`                   | All `/me/*` + `/me/credentials/*`                                   |
 
 Admin auto-passes every permission gate AND every admin-only endpoint. Non-admin behavior is defined per-permission.
 
