@@ -69,6 +69,9 @@ func (h *gatewayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// resolveProjectForAccount completes.
 	projectCandidates := h.extractProjectCandidates(r.Context(), body)
 	var projectIDPg pgtype.Int4
+	// account_id is also deferred until after auth (mirror of project_id) and
+	// backfilled via updateRequestAccountID once authenticateClient returns.
+	var accountIDPg pgtype.Int4
 	metaCreatedAt := h.insertRequest(bgCtx, db.InsertRequestParams{
 		ID:                 metaID,
 		SpanID:             pgtype.Text{String: metaID, Valid: true},
@@ -85,6 +88,7 @@ func (h *gatewayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		TimeSpentMs:        pgtype.Int4{Valid: false},
 		UserMessagePreview: userMessagePreview,
 		ProjectID:          projectIDPg,
+		AccountID:          accountIDPg,
 		CreatedAt:          pgtype.Timestamp{Time: metaIDCreatedAt, Valid: true},
 	})
 
@@ -169,6 +173,14 @@ func (h *gatewayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// every subsequent upstream row's ProjectID and onto the meta row via
 	// the backfill below.
 	apiKeyAccountID := accountIDForAPIKey(apiKey)
+	accountIDPg = pgtype.Int4{Int32: apiKeyAccountID, Valid: apiKeyAccountID != 0}
+	if accountIDPg.Valid {
+		h.updateRequestAccountID(bgCtx, db.UpdateRequestAccountIDParams{
+			ID:        metaID,
+			AccountID: accountIDPg,
+			CreatedAt: pgtype.Timestamp{Time: metaCreatedAt, Valid: true},
+		})
+	}
 	projectIDPg = h.resolveProjectForAccount(r.Context(), apiKeyAccountID, projectCandidates)
 	if projectIDPg.Valid {
 		h.updateRequestProjectID(bgCtx, db.UpdateRequestProjectIDParams{
@@ -451,6 +463,7 @@ func (h *gatewayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			TimeSpentMs:        pgtype.Int4{Valid: false},
 			UserMessagePreview: pgtype.Text{Valid: false},
 			ProjectID:          projectIDPg,
+			AccountID:          accountIDPg,
 			CreatedAt:          pgtype.Timestamp{Time: upstreamIDCreatedAt, Valid: true},
 		})
 

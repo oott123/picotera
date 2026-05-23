@@ -125,6 +125,11 @@ type Querier interface {
 	UpdateMyCredentialNickname(ctx context.Context, arg UpdateMyCredentialNicknameParams) (int64, error)
 	UpdateProject(ctx context.Context, arg UpdateProjectParams) (Project, error)
 	UpdateProvider(ctx context.Context, arg UpdateProviderParams) (Provider, error)
+	// Backfills the meta request row's account_id after authentication completes,
+	// mirroring UpdateRequestProjectID. Same lifecycle: meta InsertRequest fires
+	// pre-auth so audit rows always land; this updates with the authenticated
+	// owner once known.
+	UpdateRequestAccountID(ctx context.Context, arg UpdateRequestAccountIDParams) error
 	UpdateRequestMetrics(ctx context.Context, arg UpdateRequestMetricsParams) error
 	UpdateRequestModel(ctx context.Context, arg UpdateRequestModelParams) error
 	UpdateRequestOnComplete(ctx context.Context, arg UpdateRequestOnCompleteParams) error

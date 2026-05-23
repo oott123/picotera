@@ -783,6 +783,17 @@ func (s *Server) updateRequestProjectID(ctx context.Context, arg db.UpdateReques
 	}
 }
 
+// updateRequestAccountID backfills the meta request row's account_id once
+// authentication succeeds. Mirrors updateRequestProjectID — same lifecycle,
+// same logging policy.
+func (s *Server) updateRequestAccountID(ctx context.Context, arg db.UpdateRequestAccountIDParams) {
+	tctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.queries.UpdateRequestAccountID(tctx, arg); err != nil {
+		logx.WithContext(ctx).WithError(err).Error("failed to update request account id")
+	}
+}
+
 // updateRequestOnComplete backfills result fields. Errors are logged but do not affect the response.
 func (s *Server) updateRequestOnComplete(ctx context.Context, arg db.UpdateRequestOnCompleteParams) {
 	if err := s.queries.UpdateRequestOnComplete(ctx, arg); err != nil {

@@ -73,6 +73,7 @@ func (s *Server) handleUnifiedGenerate(srcFormat llmbridge.Format) http.HandlerF
 		// per-account project namespace can be consulted.
 		projectCandidates := h.extractProjectCandidates(r.Context(), body)
 		var projectIDPg pgtype.Int4
+		var accountIDPg pgtype.Int4
 		metaCreatedAt := h.insertRequest(bgCtx, db.InsertRequestParams{
 			ID:                 metaID,
 			SpanID:             pgtype.Text{String: metaID, Valid: true},
@@ -89,6 +90,7 @@ func (s *Server) handleUnifiedGenerate(srcFormat llmbridge.Format) http.HandlerF
 			TimeSpentMs:        pgtype.Int4{Valid: false},
 			UserMessagePreview: userMessagePreview,
 			ProjectID:          projectIDPg,
+			AccountID:          accountIDPg,
 			CreatedAt:          pgtype.Timestamp{Time: metaIDCreatedAt, Valid: true},
 		})
 		h.uploadRequestArtifact(bgCtx, metaID, metaCreatedAt, r.Method, r.URL.String(), metaReqHeader, body)
@@ -164,6 +166,14 @@ func (s *Server) handleUnifiedGenerate(srcFormat llmbridge.Format) http.HandlerF
 		// Resolve project_id within the api_key's account namespace (mirrors
 		// handle_gateway.go). System keys skip both lookup and auto-create.
 		apiKeyAccountID := accountIDForAPIKey(apiKey)
+		accountIDPg = pgtype.Int4{Int32: apiKeyAccountID, Valid: apiKeyAccountID != 0}
+		if accountIDPg.Valid {
+			h.updateRequestAccountID(bgCtx, db.UpdateRequestAccountIDParams{
+				ID:        metaID,
+				AccountID: accountIDPg,
+				CreatedAt: pgtype.Timestamp{Time: metaCreatedAt, Valid: true},
+			})
+		}
 		projectIDPg = h.resolveProjectForAccount(r.Context(), apiKeyAccountID, projectCandidates)
 		if projectIDPg.Valid {
 			h.updateRequestProjectID(bgCtx, db.UpdateRequestProjectIDParams{
@@ -440,6 +450,7 @@ func (s *Server) handleUnifiedGenerate(srcFormat llmbridge.Format) http.HandlerF
 				TimeSpentMs:        pgtype.Int4{Valid: false},
 				UserMessagePreview: pgtype.Text{Valid: false},
 				ProjectID:          projectIDPg,
+				AccountID:          accountIDPg,
 				CreatedAt:          pgtype.Timestamp{Time: upstreamIDCreatedAt, Valid: true},
 			})
 

@@ -307,13 +307,13 @@ INSERT INTO request (
   provider_id, endpoint_path, api_key_id, model, upstream_model,
   input_tokens, cache_read_tokens, output_tokens, cache_write_tokens, cache_write_1h_tokens,
   status_code, error_message, ttft_ms, time_spent_ms,
-  user_message_preview, project_id, created_at
+  user_message_preview, project_id, account_id, created_at
 ) VALUES (
   $1, $2, $3, $4, $5,
   $6, $7, $8, $9, $10,
   $11, $12, $13, $14, $15,
   $16, $17, $18, $19,
-  $20, $21, $22
+  $20, $21, $22, $23
 )
 RETURNING created_at
 `
@@ -340,6 +340,7 @@ type InsertRequestParams struct {
 	TimeSpentMs        pgtype.Int4      `json:"timeSpentMs"`
 	UserMessagePreview pgtype.Text      `json:"userMessagePreview"`
 	ProjectID          pgtype.Int4      `json:"projectId"`
+	AccountID          pgtype.Int4      `json:"accountId"`
 	CreatedAt          pgtype.Timestamp `json:"createdAt"`
 }
 
@@ -366,9 +367,30 @@ func (q *Queries) InsertRequest(ctx context.Context, arg InsertRequestParams) (p
 		arg.TimeSpentMs,
 		arg.UserMessagePreview,
 		arg.ProjectID,
+		arg.AccountID,
 		arg.CreatedAt,
 	)
 	var created_at pgtype.Timestamp
 	err := row.Scan(&created_at)
 	return created_at, err
+}
+
+const updateRequestAccountID = `-- name: UpdateRequestAccountID :exec
+UPDATE request SET account_id = $2
+WHERE id = $1 AND created_at = $3::timestamp
+`
+
+type UpdateRequestAccountIDParams struct {
+	ID        string           `json:"id"`
+	AccountID pgtype.Int4      `json:"accountId"`
+	CreatedAt pgtype.Timestamp `json:"createdAt"`
+}
+
+// Backfills the meta request row's account_id after authentication completes,
+// mirroring UpdateRequestProjectID. Same lifecycle: meta InsertRequest fires
+// pre-auth so audit rows always land; this updates with the authenticated
+// owner once known.
+func (q *Queries) UpdateRequestAccountID(ctx context.Context, arg UpdateRequestAccountIDParams) error {
+	_, err := q.db.Exec(ctx, updateRequestAccountID, arg.ID, arg.AccountID, arg.CreatedAt)
+	return err
 }
