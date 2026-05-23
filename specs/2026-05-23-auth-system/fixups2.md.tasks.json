@@ -1,0 +1,43 @@
+{
+  "planPath": "specs/2026-05-23-auth-system/fixups2.md",
+  "lastUpdated": "2026-05-23T11:14:10.139495+00:00",
+  "tasks": [
+    {
+      "id": "p5-01",
+      "planTask": 1,
+      "subject": "P5.01 Permission uniformity \u2014 spans under view_own_usage",
+      "status": "completed"
+    },
+    {
+      "id": "p5-02",
+      "planTask": 2,
+      "subject": "P5.02 Admin role implies all permissions (server + UI)",
+      "status": "completed"
+    },
+    {
+      "id": "p5-03",
+      "planTask": 3,
+      "subject": "P5.03 Drop username/displayName suggestions at invite time",
+      "status": "completed",
+      "blockedBy": [
+        "p5-02"
+      ]
+    },
+    {
+      "id": "p5-04",
+      "planTask": 4,
+      "subject": "P5.04 Pending invitations \u2014 list + revoke",
+      "status": "completed",
+      "blockedBy": [
+        "p5-03"
+      ]
+    },
+    {
+      "id": "p5-05",
+      "planTask": 5,
+      "subject": "P5.05 Models/Endpoints pages read-only for non-admin",
+      "status": "completed"
+    }
+  ],
+  "notes": "Phase 5 fix-ups addressing human-review round 2. P5.01, P5.02, P5.05 are independent. P5.03 should run after P5.02 (both touch AccountForm). P5.04 depends on P5.03 (the template_username/display_name columns become officially-unused-but-present after P5.03)."
+}
