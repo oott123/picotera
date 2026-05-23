@@ -16,13 +16,13 @@ const pageMeta = computed(() => {
     requestDetail: { title: '请求', hint: '今天都怎么蹬的' },
     traces: { title: '追踪', hint: '今天都蹬了哪些事' },
     apiKeys: { title: '密钥', hint: '今天用什么蹬' },
-    accounts: { title: '账户', hint: '今天蹬的都是谁' },
+    accounts: { title: '用户', hint: '今天蹬的都是谁' },
     projects: { title: '项目', hint: '今天蹬到哪里去了' },
     scripts: { title: '脚本', hint: '今天蹬点什么科技' },
     simulate: { title: '模拟', hint: '不蹬也知道蹬到哪' },
     kv: { title: 'KV 存储', hint: '今天存了些什么' },
     rates: { title: '汇率', hint: '今天都蹬什么钱' },
-    me: { title: '我的账户', hint: '今天蹬的是自己' },
+    me: { title: '我的账号', hint: '今天蹬的是自己' },
   }
   return map[route.name as string] ?? { title: '', hint: '' }
 })

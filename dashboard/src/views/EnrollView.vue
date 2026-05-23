@@ -112,7 +112,7 @@ const submitDisabled = computed(() => {
       class="flex flex-col gap-4"
       @submit="onSubmit"
     >
-      <h1 class="text-xl font-semibold text-ink">创建管理员账户</h1>
+      <h1 class="text-xl font-semibold text-ink">创建管理员用户</h1>
       <Field label="用户名">
         <Input
           v-model="bootstrapForm.username"
@@ -174,11 +174,11 @@ const submitDisabled = computed(() => {
       @submit="onSubmit"
     >
       <h1 class="text-xl font-semibold text-ink">重置 Passkey</h1>
-      <Field label="账户">
+      <Field label="用户">
         <Input :model-value="preview.data.value.target?.username" mono disabled />
       </Field>
       <div class="bg-err-faint text-err-ink text-sm rounded-md px-3 py-2">
-        此操作将删除该账户的所有现有 Passkey。
+        此操作将删除该用户的所有现有 Passkey。
       </div>
       <label class="flex items-start gap-2 text-sm text-ink-muted cursor-pointer select-none">
         <input v-model="resetConfirmed" type="checkbox" class="mt-0.5 accent-accent" />

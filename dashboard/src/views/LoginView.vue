@@ -74,7 +74,7 @@ function signIn() {
         class="bg-surface-100 text-ink text-sm font-mono px-3 py-2 rounded-md overflow-x-auto"
       ><code>picotera enroll-admin</code></pre>
       <p class="text-xs text-ink-faint mt-3">
-        命令会输出一次性注册链接，粘贴到此设备的浏览器即可创建管理员账户。
+        命令会输出一次性注册链接，粘贴到此设备的浏览器即可创建管理员用户。
       </p>
     </template>
 

@@ -607,7 +607,7 @@ type EnrollmentURLResponse = components['schemas']['EnrollmentURLResponse']
 
 export async function listAccounts(): Promise<AccountView[]> {
   const { data, error } = await api.GET('/api/picotera/accounts')
-  if (error) fail(error, '加载账户失败')
+  if (error) fail(error, '加载用户失败')
   return data ?? []
 }
 
@@ -615,7 +615,7 @@ export async function getAccount(id: number): Promise<AccountView> {
   const { data, error } = await api.GET('/api/picotera/accounts/{id}', {
     params: { path: { id } },
   })
-  if (error) fail(error, '加载账户失败')
+  if (error) fail(error, '加载用户失败')
   return data
 }
 
@@ -627,13 +627,13 @@ export async function updateAccount(
     params: { path: { id } },
     body,
   })
-  if (error) fail(error, '保存账户失败')
+  if (error) fail(error, '保存用户失败')
   return data
 }
 
 export async function deleteAccount(id: number): Promise<void> {
   const { error } = await api.POST('/api/picotera/accounts/delete', { body: { id } })
-  if (error) fail(error, '删除账户失败')
+  if (error) fail(error, '删除用户失败')
 }
 
 export async function deleteAccountCredential(

@@ -29,7 +29,7 @@ const nav: NavItem[] = [
   { name: 'requests',   label: '请求', icon: 'activity',         requires: { perm: 'view_own_usage' } },
   { name: 'traces',     label: '追踪', icon: 'route',            requires: { perm: 'view_own_traces' } },
   { name: 'apiKeys',    label: '密钥', icon: 'key',              requires: { perm: 'manage_own_api_keys' } },
-  { name: 'accounts',   label: '账户', icon: 'users',            requires: 'admin' },
+  { name: 'accounts',   label: '用户', icon: 'users',            requires: 'admin' },
   { name: 'projects',   label: '项目', icon: 'folder',           requires: 'admin' },
   { name: 'scripts',    label: '脚本', icon: 'braces',           requires: 'admin' },
   { name: 'simulate',   label: '模拟', icon: 'geometry',         requires: 'admin' },
@@ -96,7 +96,7 @@ onBeforeUnmount(() => {
 const roleLabel = computed(() => {
   const role = session.user.value?.role
   if (role === 'admin') return '管理员'
-  if (role === 'user') return '普通用户'
+  if (role === 'user') return '标准用户'
   return role ?? ''
 })
 
@@ -175,8 +175,8 @@ async function onSignOut() {
       <button
         ref="profileTriggerRef"
         type="button"
-        aria-label="账户"
-        title="账户"
+        aria-label="用户"
+        title="用户"
         :aria-expanded="profileOpen"
         aria-haspopup="menu"
         class="inline-flex items-center justify-center w-7 h-7 p-0 bg-transparent text-ink-muted border border-transparent rounded-md cursor-pointer transition-colors hover:bg-sidebar-hover hover:text-ink aria-expanded:bg-sidebar-active-bg aria-expanded:text-sidebar-active-text aria-expanded:border-line"
@@ -211,7 +211,7 @@ async function onSignOut() {
         class="flex items-center px-2 py-1.5 mt-1 rounded-md hover:bg-surface-50 text-sm text-ink no-underline w-full"
         @click="closeProfile"
       >
-        我的账户
+        我的账号
       </RouterLink>
 
       <button

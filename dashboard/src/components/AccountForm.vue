@@ -59,7 +59,7 @@ let copyTimer: ReturnType<typeof setTimeout> | null = null
 
 const roleOptions = [
   { value: 'admin', label: '管理员' },
-  { value: 'user', label: '标准' },
+  { value: 'user', label: '标准用户' },
 ]
 
 // Permission labels matching MeView.vue vocabulary
@@ -72,14 +72,14 @@ const permLabels: Record<keyof Permissions, string> = {
 
 const panelTitle = computed(() => {
   if (revealData.value) return '邀请已创建'
-  if (isEdit) return props.account?.displayName || props.account?.username || '账户'
+  if (isEdit) return props.account?.displayName || props.account?.username || '用户'
   return '邀请用户'
 })
 
 const panelKicker = computed(() => {
   if (revealData.value) return '邀请链接'
-  if (isEdit) return '编辑账户'
-  return '账户'
+  if (isEdit) return '编辑用户'
+  return '用户'
 })
 
 const updateMutation = useMutation({
@@ -206,7 +206,7 @@ function fmtTime(iso?: string | null): string {
             class="accent-accent"
           />
           <span :class="form.role === 'admin' ? 'text-ink-faint' : ''">
-            禁用账户
+            禁用用户
             <span v-if="form.role === 'admin'" class="text-2xs">（管理员不可禁用）</span>
           </span>
         </label>

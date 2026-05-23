@@ -82,8 +82,8 @@ function confirmToggleDisabled(a: AccountView) {
   const willDisable = !a.disabled
   confirm.require({
     message: willDisable
-      ? `确定要禁用账户「${a.displayName || a.username}」吗？该用户将无法登录。`
-      : `确定要启用账户「${a.displayName || a.username}」吗？`,
+      ? `确定要禁用用户「${a.displayName || a.username}」吗？该用户将无法登录。`
+      : `确定要启用用户「${a.displayName || a.username}」吗？`,
     accept: async () => {
       await toggleMutation.mutateAsync(a)
     },
@@ -106,7 +106,7 @@ async function revokeSessionsFor(a: AccountView) {
 
 function confirmDelete(a: AccountView) {
   confirm.require({
-    message: `确定要删除账户「${a.displayName || a.username}」吗？此操作不可撤销。`,
+    message: `确定要删除用户「${a.displayName || a.username}」吗？此操作不可撤销。`,
     accept: async () => {
       await deleteAccountMutation.mutateAsync(a.id)
     },
@@ -131,7 +131,7 @@ function fmtTime(iso?: string | null): string {
 <template>
   <div class="flex flex-col gap-3.5">
     <div class="flex items-center justify-between gap-3">
-      <span class="text-xs text-ink-faint tabular-nums">{{ count }} 个账户</span>
+      <span class="text-xs text-ink-faint tabular-nums">{{ count }} 个用户</span>
       <div class="flex items-center gap-2">
         <Button @click="openInvite">
           <Icon name="plus" :size="14" :stroke-width="2.2" />
@@ -168,7 +168,7 @@ function fmtTime(iso?: string | null): string {
             </Td>
             <Td>
               <Tag :variant="a.role === 'admin' ? 'accent' : 'default'">
-                {{ a.role === 'admin' ? '管理员' : '标准' }}
+                {{ a.role === 'admin' ? '管理员' : '标准用户' }}
               </Tag>
             </Td>
             <Td>
@@ -239,6 +239,6 @@ function fmtTime(iso?: string | null): string {
         </tbody>
       </DataTable>
     </DataCard>
-    <StateText v-else>暂无账户，点击右上角按钮邀请用户</StateText>
+    <StateText v-else>暂无用户，点击右上角按钮邀请用户</StateText>
   </div>
 </template>
