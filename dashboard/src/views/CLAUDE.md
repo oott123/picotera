@@ -1,6 +1,6 @@
 # Views
 
-创建新页面时，必须在 `src/App.vue` 的 `pageMeta` map 中添加对应的路由名称条目，否则页面不会显示标题和副标题。
+创建新页面时，必须在 `src/layouts/AppLayout.vue` 的 `pageMeta` map 中添加对应的路由名称条目，否则页面不会显示标题和副标题。
 
 ```ts
 const map: Record<string, { title: string; hint: string }> = {

@@ -16,7 +16,7 @@ provideCurrencyContext(computed(() => prefs.displayCurrency ?? null))
 
 const session = useSession()
 const layouts = { app: AppLayout, minimal: MinimalLayout }
-const currentLayout = computed(() => layouts[route.meta.layout ?? 'app'])
+const currentLayout = computed(() => layouts[route.meta.layout])
 </script>
 
 <template>

@@ -17,7 +17,7 @@ export async function authGuard(
   to: RouteLocationNormalized,
 ): Promise<NavigationGuardReturn> {
   const auth = to.meta.auth
-  if (!auth || auth.kind === 'public') return true
+  if (auth.kind === 'public') return true
 
   // Populate cache (swallow 401 — getQueryData below will be undefined).
   await queryClient

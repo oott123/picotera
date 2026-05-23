@@ -5,7 +5,7 @@ import { authGuard } from './guard'
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
-    { path: '/', redirect: '/overview' },
+    { path: '/', redirect: '/overview', meta: { auth: { kind: 'public' }, layout: 'app' } },
     {
       path: '/overview',
       name: 'overview',
