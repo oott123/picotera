@@ -124,9 +124,8 @@ type EnrollmentURLResponse struct {
 // Reveal-once: the URL is never retrievable from any other endpoint after this
 // response.
 type InvitationResponse struct {
-	URL              string    `json:"url"`
-	ExpiresAt        time.Time `json:"expiresAt"`
-	TemplateUsername string    `json:"templateUsername,omitempty"`
+	URL       string    `json:"url"`
+	ExpiresAt time.Time `json:"expiresAt"`
 }
 
 // Operations --------------------------------------------------------------------

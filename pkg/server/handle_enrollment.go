@@ -58,16 +58,8 @@ func (s *Server) handlePreviewEnrollment(ctx context.Context, in *previewIn) (*p
 	case auth.IntentBootstrap:
 		// no target — bootstrap creates a brand-new admin
 	case auth.IntentInvite:
-		// Target is the admin's template suggestion if provided. The invitee
-		// can override at register/begin time. We only set target when BOTH
-		// template fields are present so the UI can do a simple "prefilled or
-		// not" check.
-		if e.TemplateUsername.Valid && e.TemplateDisplayName.Valid {
-			out.Target = &contract.EnrollmentTarget{
-				Username:    e.TemplateUsername.String,
-				DisplayName: e.TemplateDisplayName.String,
-			}
-		}
+		// No target hint — invitee picks their own username/displayName from
+		// scratch. The template only carries role + permissions.
 	case auth.IntentReset:
 		if e.TargetAccountID.Valid {
 			if a, gerr := s.queries.GetAccountByID(ctx, e.TargetAccountID.Int32); gerr == nil {

@@ -663,8 +663,6 @@ export async function reissueEnrollment(id: number): Promise<EnrollmentURLRespon
 }
 
 export async function createInvitation(body: {
-  username: string
-  displayName: string
   role: string
   permissions: Permissions
 }): Promise<InvitationResponse> {

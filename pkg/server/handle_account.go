@@ -446,8 +446,6 @@ func (s *Server) handleReissueEnrollment(ctx context.Context, in *reissueEnrollm
 
 type createInvitationIn struct {
 	Body struct {
-		Username    string               `json:"username"`
-		DisplayName string               `json:"displayName"`
 		Role        string               `json:"role"`
 		Permissions contract.Permissions `json:"permissions"`
 	}
@@ -458,22 +456,6 @@ type invitationOut struct {
 }
 
 func (s *Server) handleCreateInvitation(ctx context.Context, in *createInvitationIn) (*invitationOut, error) {
-	if err := auth.ValidateUsername(in.Body.Username); err != nil {
-		return nil, authErrToHuma(err)
-	}
-	if err := auth.ValidateDisplayName(in.Body.DisplayName); err != nil {
-		return nil, authErrToHuma(err)
-	}
-
-	// Soft uniqueness check on the template username. The actual UNIQUE
-	// constraint fires at consume time inside the TX; this just gives admin a
-	// friendly 409 if the username is already taken at invite time.
-	if _, err := s.queries.GetAccountByUsername(ctx, in.Body.Username); err == nil {
-		return nil, authErrToHuma(auth.ErrUsernameTaken())
-	} else if !errors.Is(err, pgx.ErrNoRows) {
-		return nil, fmt.Errorf("handleCreateInvitation: check username: %w", err)
-	}
-
 	// Admin role implies all permissions are true regardless of input — keeps the
 	// DB in a consistent state and matches Permits() which reads admin as full.
 	perms := in.Body.Permissions
@@ -487,10 +469,8 @@ func (s *Server) handleCreateInvitation(ctx context.Context, in *createInvitatio
 	}
 
 	tpl := &auth.EnrollmentTemplate{
-		Role:        in.Body.Role,
-		Perms:       perms,
-		Username:    in.Body.Username,
-		DisplayName: in.Body.DisplayName,
+		Role:  in.Body.Role,
+		Perms: perms,
 	}
 	token, expiresAt, err := auth.IssueEnrollment(ctx, s.queries, auth.IntentInvite, nil, 0, tpl)
 	if err != nil {
@@ -503,18 +483,16 @@ func (s *Server) handleCreateInvitation(ctx context.Context, in *createInvitatio
 		actorID = sess.Account.ID
 	}
 	logx.WithContext(ctx).WithFields(logrus.Fields{
-		"event":             "auth.account_invited",
-		"actor_id":          actorID,
-		"template_username": in.Body.Username,
-		"template_role":     in.Body.Role,
+		"event":         "auth.account_invited",
+		"actor_id":      actorID,
+		"template_role": in.Body.Role,
 	}).Info("auth")
 
 	url := s.config.PublicOrigins[0] + "/enroll/" + token
 	return &invitationOut{
 		Body: contract.InvitationResponse{
-			URL:              url,
-			ExpiresAt:        expiresAt,
-			TemplateUsername: in.Body.Username,
+			URL:       url,
+			ExpiresAt: expiresAt,
 		},
 	}, nil
 }

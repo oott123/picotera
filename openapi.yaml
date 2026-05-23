@@ -121,17 +121,11 @@ components:
           format: uri
           readOnly: true
           type: string
-        displayName:
-          type: string
         permissions:
           $ref: "#/components/schemas/Permissions"
         role:
           type: string
-        username:
-          type: string
       required:
-        - username
-        - displayName
         - role
         - permissions
       type: object
@@ -570,8 +564,6 @@ components:
           type: string
         expiresAt:
           format: date-time
-          type: string
-        templateUsername:
           type: string
         url:
           type: string

@@ -34,15 +34,13 @@ func newEnrollmentToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// EnrollmentTemplate carries the role + permissions + optional username /
-// displayName suggestion that an invite ceremony bakes into the account when
-// the invitee consumes the URL. Only meaningful for IntentInvite; pass nil
-// for bootstrap and reset.
+// EnrollmentTemplate carries the role + permissions for an invite-intent
+// enrollment. The account is created at consume time using the invitee's
+// chosen username + displayName plus this template's role + perms.
+// Only meaningful for IntentInvite; pass nil for bootstrap and reset.
 type EnrollmentTemplate struct {
-	Role        string               // "admin" or "user"
-	Perms       contract.Permissions // four booleans projected per-account
-	Username    string               // optional suggested username
-	DisplayName string               // optional suggested displayName
+	Role  string               // "admin" or "user"
+	Perms contract.Permissions // four booleans projected per-account
 }
 
 // IssueEnrollment inserts a new enrollment row and returns the token + expiry.
@@ -88,8 +86,8 @@ func IssueEnrollment(
 		params.TemplateCanManageOwnApiKeys = pgtype.Bool{Bool: tpl.Perms.ManageOwnAPIKeys, Valid: true}
 		params.TemplateCanViewModels = pgtype.Bool{Bool: tpl.Perms.ViewModels, Valid: true}
 		params.TemplateCanViewOwnTraces = pgtype.Bool{Bool: tpl.Perms.ViewOwnTraces, Valid: true}
-		params.TemplateUsername = pgtype.Text{String: tpl.Username, Valid: tpl.Username != ""}
-		params.TemplateDisplayName = pgtype.Text{String: tpl.DisplayName, Valid: tpl.DisplayName != ""}
+		// template_username and template_display_name remain NULL — dead columns
+		// per P5.03 (kept in schema to avoid a drop migration).
 	}
 	if _, err := q.InsertEnrollment(ctx, params); err != nil {
 		return "", time.Time{}, fmt.Errorf("enrollment: insert: %w", err)

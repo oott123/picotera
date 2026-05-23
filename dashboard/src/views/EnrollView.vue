@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watchEffect } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import {
@@ -30,21 +30,6 @@ const bootstrapForm = reactive({ username: '', displayName: '' })
 const inviteForm = reactive({ username: '', displayName: '' })
 const resetConfirmed = ref(false)
 const errorMessage = ref<string | null>(null)
-
-// Prefill inviteForm from admin's template hints when preview resolves.
-// Guard keeps existing user edits intact if preview somehow refetches.
-watchEffect(() => {
-  const t = preview.data.value?.target
-  if (t) {
-    if (!inviteForm.username && t.username) inviteForm.username = t.username
-    if (!inviteForm.displayName && t.displayName) inviteForm.displayName = t.displayName
-  }
-})
-
-const hasTemplate = computed(() => {
-  const t = preview.data.value?.target
-  return !!(t && (t.username || t.displayName))
-})
 
 const enroll = useMutation({
   mutationFn: async () => {
@@ -145,9 +130,6 @@ const submitDisabled = computed(() => {
       @submit="onSubmit"
     >
       <h1 class="text-xl font-semibold text-ink">接受邀请</h1>
-      <p v-if="hasTemplate" class="text-sm text-ink-muted">
-        管理员建议了用户名和显示名，你可以直接使用或修改。
-      </p>
       <Field label="用户名">
         <Input
           v-model.trim="inviteForm.username"

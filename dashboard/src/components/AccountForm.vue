@@ -21,8 +21,6 @@ const confirm = useConfirm()
 
 const isEdit = !!props.account
 
-const usernameLabel = computed(() => isEdit ? '用户名' : '建议用户名（受邀者可修改）')
-const displayNameLabel = computed(() => isEdit ? '显示名称' : '建议显示名（受邀者可修改）')
 const revealData = ref<{ url: string; expiresAt: string } | null>(
   props.revealUrl && props.revealExpiresAt
     ? { url: props.revealUrl, expiresAt: props.revealExpiresAt }
@@ -110,7 +108,7 @@ const updateMutation = useMutation({
 })
 
 const inviteMutation = useMutation({
-  mutationFn: (body: { username: string; displayName: string; role: string; permissions: Permissions }) =>
+  mutationFn: (body: { role: string; permissions: Permissions }) =>
     createInvitation(body),
   onSuccess: () => invalidateAccounts(queryClient),
 })
@@ -129,8 +127,6 @@ async function submit() {
       emit('close')
     } else {
       const result = await inviteMutation.mutateAsync({
-        username: form.value.username,
-        displayName: form.value.displayName,
         role: form.value.role,
         permissions: form.value.permissions,
       })
@@ -194,20 +190,21 @@ function confirmCloseReveal() {
 
     <!-- Normal form view -->
     <form v-else id="account-form" class="flex flex-col gap-4" @submit.prevent="submit">
-      <Field :label="usernameLabel">
-        <!-- Username is read-only in edit mode -->
-        <Input
-          v-model="form.username"
-          :disabled="isEdit"
-          required
-          placeholder="例如 alice"
-          pattern="[a-z0-9_\-]{2,32}"
-          title="2-32 个小写字母、数字、_ 或 -"
-        />
-      </Field>
-      <Field :label="displayNameLabel">
-        <Input v-model="form.displayName" required placeholder="例如 Alice Smith" />
-      </Field>
+      <template v-if="isEdit">
+        <Field label="用户名">
+          <Input
+            v-model="form.username"
+            :disabled="isEdit"
+            required
+            placeholder="例如 alice"
+            pattern="[a-z0-9_\-]{2,32}"
+            title="2-32 个小写字母、数字、_ 或 -"
+          />
+        </Field>
+        <Field label="显示名称">
+          <Input v-model="form.displayName" required placeholder="例如 Alice Smith" />
+        </Field>
+      </template>
       <Field label="角色" as="div">
         <SegmentedControl v-model="form.role" :options="roleOptions" :columns="2" />
       </Field>

@@ -906,10 +906,8 @@ export interface components {
              * @example https://example.com/schemas/CreateInvitationInBody.json
              */
             readonly $schema?: string;
-            displayName: string;
             permissions: components["schemas"]["Permissions"];
             role: string;
-            username: string;
         };
         CreateProviderRequestBody: {
             /**
@@ -1150,7 +1148,6 @@ export interface components {
             readonly $schema?: string;
             /** Format: date-time */
             expiresAt: string;
-            templateUsername?: string;
             url: string;
         };
         KvEntryView: {
