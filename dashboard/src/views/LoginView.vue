@@ -9,11 +9,9 @@ import {
   ApiRequestError,
 } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
+import { OPERATIONAL_STALE_TIME } from '@/api/queryClient'
 import { webauthnGet, WebAuthnUserCancelled } from '@/api/webauthn'
 import { Button } from '@/ui'
-import type { components } from '@/openapi-types'
-
-type SessionView = components['schemas']['SessionView']
 
 const route = useRoute()
 const router = useRouter()
@@ -23,7 +21,7 @@ const errorMessage = ref<string | null>(null)
 const statusQuery = useQuery({
   queryKey: queryKeys.authStatus.all,
   queryFn: fetchAuthStatus,
-  staleTime: 5_000,
+  staleTime: OPERATIONAL_STALE_TIME,
 })
 
 // Reject anything that could be an open-redirect vector.
@@ -39,7 +37,7 @@ const loginMutation = useMutation({
   mutationFn: async () => {
     const options = await beginLogin()
     const assertion = await webauthnGet(options as Parameters<typeof webauthnGet>[0])
-    return completeLogin(assertion) as Promise<SessionView>
+    return completeLogin(assertion)
   },
   onSuccess(session) {
     qc.setQueryData(queryKeys.session.current, session)
