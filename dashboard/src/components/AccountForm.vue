@@ -4,7 +4,6 @@ import { useMutation, useQueryClient } from '@tanstack/vue-query'
 import { SidePanel, Button, Input, Field, Icon, SegmentedControl } from '@/ui'
 import type { components } from '@/openapi-types'
 import { createInvitation, updateAccount, invalidateAccounts, invalidateInvitations } from '@/api/client'
-import { useConfirm } from '@/composables/useConfirm'
 
 type AccountView = components['schemas']['AccountView']
 type Permissions = components['schemas']['Permissions']
@@ -17,7 +16,6 @@ const props = defineProps<{
   revealExpiresAt?: string
 }>()
 const queryClient = useQueryClient()
-const confirm = useConfirm()
 
 const isEdit = !!props.account
 
@@ -161,14 +159,6 @@ function fmtTime(iso?: string | null): string {
   return new Date(iso).toLocaleString('zh-CN')
 }
 
-function confirmCloseReveal() {
-  // Reveal-once URL is gone after close — confirm so admin doesn't accidentally
-  // lose the only copy by misclicking.
-  confirm.require({
-    message: '关闭后将无法再次获取此链接。确定关闭？',
-    accept: () => emit('close'),
-  })
-}
 </script>
 
 <template>
@@ -251,7 +241,7 @@ function confirmCloseReveal() {
     <template v-if="error" #error>{{ error }}</template>
 
     <template #footer>
-      <Button v-if="revealData" variant="ghost" @click="confirmCloseReveal">完成</Button>
+      <Button v-if="revealData" variant="ghost" @click="emit('close')">完成</Button>
       <template v-else>
         <Button variant="ghost" @click="emit('close')">取消</Button>
         <Button type="submit" form="account-form" :disabled="saving">
