@@ -226,6 +226,36 @@ func (s *Server) authenticateClient(ctx context.Context, r *http.Request, resolv
 			code:    errorx.Forbidden.Error(),
 		}
 	}
+	// Owner check: reject if the owning account is disabled. Post-030
+	// api_key.account_id is NOT NULL and the FK CASCADES on account delete,
+	// so a missing owner means a write-skew race we should fail closed on.
+	acct, err := s.queries.GetAccountByID(ctx, row.AccountID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			logx.WithContext(ctx).WithFields(map[string]any{
+				"api_key_id": row.ID,
+				"account_id": row.AccountID,
+			}).Warn("gateway auth: api_key owner missing")
+			return nil, &gatewayError{
+				status:  http.StatusForbidden,
+				message: "api key owner unavailable",
+				code:    errorx.Forbidden.Error(),
+			}
+		}
+		logx.WithContext(ctx).WithError(err).Error("gateway auth: load owner failed")
+		return nil, &gatewayError{
+			status:  http.StatusInternalServerError,
+			message: "failed to query account",
+			code:    errorx.InternalError.Error(),
+		}
+	}
+	if acct.Disabled {
+		return nil, &gatewayError{
+			status:  http.StatusForbidden,
+			message: "account disabled",
+			code:    errorx.Forbidden.Error(),
+		}
+	}
 	return &row, nil
 }
 
