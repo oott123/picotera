@@ -29,6 +29,14 @@ const panel = useSidePanel()
 const route = useRoute()
 const router = useRouter()
 const session = useSession()
+// scoped: non-admin sees only own requests (API does row-level scoping)
+const mode = computed<'admin' | 'scoped'>(() =>
+  session.isAdmin.value ? 'admin' : 'scoped'
+)
+// filter dropdowns need view_models even in scoped mode — orthogonal to mode
+const canFilterByModel = computed(
+  () => mode.value === 'admin' || session.can('view_models')
+)
 const { providers, providerLabel } = useProvidersMap()
 const { projects, projectLabel } = useProjectsMap()
 
@@ -65,12 +73,12 @@ const hasPaginationHistory = ref(!initialCursor)
 const endpointsQuery = useQuery({
   queryKey: queryKeys.endpoints.all,
   queryFn: listEndpoints,
-  enabled: computed(() => session.can('view_models')),
+  enabled: canFilterByModel,
 })
 const modelsQuery = useQuery({
   queryKey: queryKeys.models.all,
   queryFn: listModels,
-  enabled: computed(() => session.can('view_models')),
+  enabled: canFilterByModel,
 })
 const endpoints = computed<EndpointView[]>(() => endpointsQuery.data.value ?? [])
 const models = computed<ModelView[]>(() => modelsQuery.data.value ?? [])
@@ -548,7 +556,7 @@ function resetCursorAndReload() {
         <template #header-endpointPath>
           <!-- requires view_models; skip dropdown when permission is absent -->
           <ColumnFilter
-            v-if="session.can('view_models')"
+            v-if="canFilterByModel"
             v-model="filters.endpointPath"
             label="端点"
             :options="endpointOptions"
@@ -558,7 +566,7 @@ function resetCursorAndReload() {
         </template>
         <template #header-model>
           <!-- requires view_models; skip dropdowns when permission is absent -->
-          <template v-if="session.can('view_models')">
+          <template v-if="canFilterByModel">
             <ColumnFilter
               v-model="filters.model"
               label="模型"

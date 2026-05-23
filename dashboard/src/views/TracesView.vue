@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
 import { useCurrencyContext } from '@/composables/useCurrencyContext'
 import { useProjectsMap } from '@/composables/useProjectsMap'
+import { useSession } from '@/composables/useSession'
 import { listRequestTraces } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
 import type { RequestTraceView, TraceCostView } from '@/api'
@@ -11,6 +12,12 @@ import { AutoDataTable, Button, DataCard, Icon, IconButton, type AutoDataTableCo
 
 const router = useRouter()
 const route = useRoute()
+const session = useSession()
+// scoped: non-admin sees only own traces (API does row-level scoping)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const mode = computed<'admin' | 'scoped'>(() =>
+  session.isAdmin.value ? 'admin' : 'scoped'
+)
 const currency = useCurrencyContext()
 const { projectLabel } = useProjectsMap()
 const pageSize = 30

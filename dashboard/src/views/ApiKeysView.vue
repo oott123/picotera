@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { useConfirm } from '@/composables/useConfirm'
 import { useSidePanel } from '@/composables/useSidePanel'
+import { useSession } from '@/composables/useSession'
 import type { ApiKeyView } from '@/api'
 import { deleteApiKey, invalidateApiKeys, listApiKeys, updateApiKey } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
@@ -10,6 +11,12 @@ import ApiKeyForm from '@/components/ApiKeyForm.vue'
 import { Button, IconButton, DataCard, DataTable, Th, Td, Tr, StateText, Tag, Icon } from '@/ui'
 
 const panel = useSidePanel()
+const session = useSession()
+// scoped: non-admin sees only own keys (API does row-level scoping); UI is identical
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const mode = computed<'admin' | 'scoped'>(() =>
+  session.isAdmin.value ? 'admin' : 'scoped'
+)
 const confirm = useConfirm()
 const queryClient = useQueryClient()
 
