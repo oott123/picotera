@@ -1,6 +1,6 @@
 {
   "planPath": "specs/2026-05-23-auth-system/plan.md",
-  "lastUpdated": "2026-05-23T05:21:17.479000+00:00",
+  "lastUpdated": "2026-05-23T07:07:53.418982+00:00",
   "tasks": [
     {
       "id": "17",
@@ -228,7 +228,7 @@
       "id": "38",
       "planTask": 25,
       "subject": "P3.25 Handler scoping + api_key auto-stamp",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         "42"
       ]
@@ -237,7 +237,16 @@
       "id": "40",
       "planTask": 26,
       "subject": "P3.26 Dashboard scoped views",
-      "status": "pending",
+      "status": "completed",
+      "blockedBy": [
+        "38"
+      ]
+    },
+    {
+      "id": "43",
+      "planTask": "25b",
+      "subject": "P3.25b Scope sibling request/overview handlers",
+      "status": "completed",
       "blockedBy": [
         "38"
       ]
