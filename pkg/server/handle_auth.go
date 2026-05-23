@@ -13,10 +13,12 @@ import (
 
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/jackc/pgx/v5"
+	"github.com/sirupsen/logrus"
 
 	"picotera/pkg/auth"
 	"picotera/pkg/contract"
 	"picotera/pkg/db"
+	"picotera/pkg/logx"
 )
 
 // ceremonyTTL is how long a /begin's KV stash survives before /complete must claim it.
@@ -136,11 +138,21 @@ func (s *Server) handleLoginCompleteHTTP(w http.ResponseWriter, r *http.Request)
 	raw, err := s.kvStore.Get(r.Context(), "webauthn_ceremony:login:"+cer.Value)
 	if err != nil {
 		// kv.ErrKeyNotFound or wrapped — both surface as expired ceremony.
+		logx.WithContext(r.Context()).WithFields(logrus.Fields{
+			"event":     "auth.login_failure",
+			"reason":    "ceremony_state_missing",
+			"client_ip": auth.ClientIP(r, s.config.TrustProxy),
+		}).Warn("auth")
 		writeAuthErr(w, auth.ErrWebAuthnCeremony("ceremony expired"))
 		return
 	}
 	var sessionData webauthn.SessionData
 	if err := json.Unmarshal([]byte(raw), &sessionData); err != nil {
+		logx.WithContext(r.Context()).WithFields(logrus.Fields{
+			"event":     "auth.login_failure",
+			"reason":    "ceremony_state_corrupt",
+			"client_ip": auth.ClientIP(r, s.config.TrustProxy),
+		}).Warn("auth")
 		writeAuthErr(w, auth.ErrWebAuthnCeremony("ceremony corrupt"))
 		return
 	}
@@ -169,10 +181,30 @@ func (s *Server) handleLoginCompleteHTTP(w http.ResponseWriter, r *http.Request)
 
 	_, credential, err := s.webauthn.FinishPasskeyLogin(handler, sessionData, r)
 	if err != nil {
+		logx.WithContext(r.Context()).WithFields(logrus.Fields{
+			"event":     "auth.login_failure",
+			"reason":    "webauthn_ceremony",
+			"client_ip": auth.ClientIP(r, s.config.TrustProxy),
+		}).Warn("auth")
 		writeAuthErr(w, auth.ErrWebAuthnCeremony(err.Error()))
 		return
 	}
+	if resolvedAccount.ID == 0 {
+		logx.WithContext(r.Context()).WithFields(logrus.Fields{
+			"event":     "auth.login_failure",
+			"reason":    "no_account",
+			"client_ip": auth.ClientIP(r, s.config.TrustProxy),
+		}).Warn("auth")
+		writeAuthErr(w, auth.ErrWebAuthnCeremony("no account"))
+		return
+	}
 	if resolvedAccount.Disabled {
+		logx.WithContext(r.Context()).WithFields(logrus.Fields{
+			"event":      "auth.login_failure",
+			"reason":     "account_disabled",
+			"account_id": resolvedAccount.ID,
+			"client_ip":  auth.ClientIP(r, s.config.TrustProxy),
+		}).Warn("auth")
 		writeAuthErr(w, auth.ErrAccountDisabled())
 		return
 	}
@@ -197,6 +229,13 @@ func (s *Server) handleLoginCompleteHTTP(w http.ResponseWriter, r *http.Request)
 	}
 	http.SetCookie(w, auth.FreshSessionCookie(s.config, r, resolvedAccount.ID, token, s.config.SessionTTL))
 
+	logx.WithContext(r.Context()).WithFields(logrus.Fields{
+		"event":      "auth.login_success",
+		"account_id": resolvedAccount.ID,
+		"username":   resolvedAccount.Username,
+		"client_ip":  auth.ClientIP(r, s.config.TrustProxy),
+	}).Info("auth")
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(sessionView(&resolvedAccount))
 }
@@ -207,6 +246,11 @@ func (s *Server) handleLogoutHTTP(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(auth.SessionCookieName); err == nil && c.Value != "" {
 		if id, tok, ok := auth.ParseCookieValue(c.Value); ok {
 			_ = s.sessionStore.Revoke(r.Context(), id, tok)
+			logx.WithContext(r.Context()).WithFields(logrus.Fields{
+				"event":      "auth.logout",
+				"account_id": id,
+				"client_ip":  auth.ClientIP(r, s.config.TrustProxy),
+			}).Info("auth")
 		}
 	}
 	http.SetCookie(w, auth.ClearedSessionCookie(s.config, r))

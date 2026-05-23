@@ -7,10 +7,12 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/sirupsen/logrus"
 
 	"picotera/pkg/auth"
 	"picotera/pkg/contract"
 	"picotera/pkg/db"
+	"picotera/pkg/logx"
 )
 
 // accountViewFromRow projects a ListAccountsRow into AccountView. The row
@@ -166,6 +168,39 @@ func (s *Server) handleUpdateAccount(ctx context.Context, in *updateAccountIn) (
 		return nil, fmt.Errorf("handleUpdateAccount: commit: %w", err)
 	}
 
+	sess := auth.SessionFromContext(ctx)
+	changes := logrus.Fields{}
+	if current.Role != updated.Role {
+		changes["role"] = []string{current.Role, updated.Role}
+	}
+	if current.Disabled != updated.Disabled {
+		changes["disabled"] = []bool{current.Disabled, updated.Disabled}
+	}
+	if current.CanViewOwnUsage != updated.CanViewOwnUsage {
+		changes["view_own_usage"] = []bool{current.CanViewOwnUsage, updated.CanViewOwnUsage}
+	}
+	if current.CanManageOwnApiKeys != updated.CanManageOwnApiKeys {
+		changes["manage_own_api_keys"] = []bool{current.CanManageOwnApiKeys, updated.CanManageOwnApiKeys}
+	}
+	if current.CanViewModels != updated.CanViewModels {
+		changes["view_models"] = []bool{current.CanViewModels, updated.CanViewModels}
+	}
+	if current.CanViewOwnTraces != updated.CanViewOwnTraces {
+		changes["view_own_traces"] = []bool{current.CanViewOwnTraces, updated.CanViewOwnTraces}
+	}
+	if len(changes) > 0 {
+		actorID := int32(0)
+		if sess != nil {
+			actorID = sess.Account.ID
+		}
+		logx.WithContext(ctx).WithFields(logrus.Fields{
+			"event":     "auth.account_updated",
+			"actor_id":  actorID,
+			"target_id": updated.ID,
+			"changes":   changes,
+		}).Info("auth")
+	}
+
 	// Best-effort: kick sessions when an account is freshly disabled so active
 	// browsers are signed out before their next session refresh window.
 	if disabling {
@@ -220,6 +255,17 @@ func (s *Server) handleDeleteAccount(ctx context.Context, in *deleteAccountIn) (
 		return nil, fmt.Errorf("handleDeleteAccount: commit: %w", err)
 	}
 
+	sess := auth.SessionFromContext(ctx)
+	actorID := int32(0)
+	if sess != nil {
+		actorID = sess.Account.ID
+	}
+	logx.WithContext(ctx).WithFields(logrus.Fields{
+		"event":     "auth.account_deleted",
+		"actor_id":  actorID,
+		"target_id": in.Body.ID,
+	}).Info("auth")
+
 	// Best-effort: active sessions for this account are now dangling; revoke
 	// them so browsers are signed out immediately.
 	_, _ = s.sessionStore.RevokeAllForAccount(ctx, in.Body.ID)
@@ -271,6 +317,18 @@ func (s *Server) handleDeleteAccountCredential(ctx context.Context, in *deleteAc
 		return nil, fmt.Errorf("handleDeleteAccountCredential: delete: %w", err)
 	}
 
+	sess := auth.SessionFromContext(ctx)
+	actorID := int32(0)
+	if sess != nil {
+		actorID = sess.Account.ID
+	}
+	logx.WithContext(ctx).WithFields(logrus.Fields{
+		"event":         "auth.credential_revoked_admin",
+		"actor_id":      actorID,
+		"target_id":     in.Body.AccountID,
+		"credential_id": in.Body.CredentialID,
+	}).Info("auth")
+
 	return &struct{}{}, nil
 }
 
@@ -302,6 +360,18 @@ func (s *Server) handleRevokeAccountSessions(ctx context.Context, in *revokeAcco
 	if err != nil {
 		return nil, fmt.Errorf("handleRevokeAccountSessions: revoke: %w", err)
 	}
+
+	sess := auth.SessionFromContext(ctx)
+	actorID := int32(0)
+	if sess != nil {
+		actorID = sess.Account.ID
+	}
+	logx.WithContext(ctx).WithFields(logrus.Fields{
+		"event":     "auth.sessions_revoked",
+		"actor_id":  actorID,
+		"target_id": in.Body.ID,
+		"revoked":   revoked,
+	}).Info("auth")
 
 	out := &revokeAccountSessionsOut{}
 	out.Body.Revoked = revoked
@@ -335,6 +405,18 @@ func (s *Server) handleReissueEnrollment(ctx context.Context, in *reissueEnrollm
 	if err != nil {
 		return nil, fmt.Errorf("handleReissueEnrollment: issue: %w", err)
 	}
+
+	sess := auth.SessionFromContext(ctx)
+	actorID := int32(0)
+	if sess != nil {
+		actorID = sess.Account.ID
+	}
+	logx.WithContext(ctx).WithFields(logrus.Fields{
+		"event":     "auth.enrollment_issued",
+		"actor_id":  actorID,
+		"target_id": in.Body.ID,
+		"intent":    "reset",
+	}).Info("auth")
 
 	url := s.config.PublicOrigins[0] + "/enroll/" + token
 	return &enrollmentURLOut{Body: contract.EnrollmentURLResponse{
@@ -385,6 +467,18 @@ func (s *Server) handleCreateInvitation(ctx context.Context, in *createInvitatio
 	if err != nil {
 		return nil, fmt.Errorf("handleCreateInvitation: issue enrollment: %w", err)
 	}
+
+	sess := auth.SessionFromContext(ctx)
+	actorID := int32(0)
+	if sess != nil {
+		actorID = sess.Account.ID
+	}
+	logx.WithContext(ctx).WithFields(logrus.Fields{
+		"event":             "auth.account_invited",
+		"actor_id":          actorID,
+		"template_username": in.Body.Username,
+		"template_role":     in.Body.Role,
+	}).Info("auth")
 
 	url := s.config.PublicOrigins[0] + "/enroll/" + token
 	return &invitationOut{

@@ -13,10 +13,12 @@ import (
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/sirupsen/logrus"
 
 	"picotera/pkg/auth"
 	"picotera/pkg/contract"
 	"picotera/pkg/db"
+	"picotera/pkg/logx"
 )
 
 // ----- GET /me ------------------------------------------------------------
@@ -193,6 +195,11 @@ func (s *Server) handleAddCredentialCompleteHTTP(w http.ResponseWriter, r *http.
 	// Best-effort cleanup of the ceremony stash.
 	_ = s.kvStore.Del(r.Context(), "webauthn_ceremony:add:"+sess.Token)
 
+	logx.WithContext(r.Context()).WithFields(logrus.Fields{
+		"event":      "auth.credential_added",
+		"account_id": sess.Account.ID,
+	}).Info("auth")
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(credentialView(&row))
 }
@@ -237,5 +244,12 @@ func (s *Server) handleDeleteMyCredential(ctx context.Context, in *deleteMyCrede
 		}
 		return nil, fmt.Errorf("delete credential: %w", err)
 	}
+
+	logx.WithContext(ctx).WithFields(logrus.Fields{
+		"event":         "auth.credential_revoked_self",
+		"account_id":    sess.Account.ID,
+		"credential_id": in.Body.ID,
+	}).Info("auth")
+
 	return &emptyOut{}, nil
 }

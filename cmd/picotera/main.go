@@ -10,12 +10,14 @@ import (
 	"picotera/pkg/configx"
 	"picotera/pkg/db"
 	"picotera/pkg/llmbridge"
+	"picotera/pkg/logx"
 	"picotera/pkg/server"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2/humacli"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -132,6 +134,11 @@ admin or --reset --username NAME to recover a specific existing admin.`,
 				if err != nil {
 					log.Fatalf("issue enrollment: %v", err)
 				}
+				logx.WithContext(ctx).WithFields(logrus.Fields{
+					"event":  "auth.enrollment_issued",
+					"intent": auth.IntentReset,
+					"source": "cli",
+				}).Info("auth")
 				label = fmt.Sprintf("Reset enrollment for %q", a.Username)
 
 			case enrollNew:
@@ -139,6 +146,11 @@ admin or --reset --username NAME to recover a specific existing admin.`,
 				if err != nil {
 					log.Fatalf("issue enrollment: %v", err)
 				}
+				logx.WithContext(ctx).WithFields(logrus.Fields{
+					"event":  "auth.enrollment_issued",
+					"intent": auth.IntentBootstrap,
+					"source": "cli",
+				}).Info("auth")
 				label = "Additional admin enrollment"
 
 			default:
@@ -153,6 +165,11 @@ admin or --reset --username NAME to recover a specific existing admin.`,
 				if err != nil {
 					log.Fatalf("issue enrollment: %v", err)
 				}
+				logx.WithContext(ctx).WithFields(logrus.Fields{
+					"event":  "auth.enrollment_issued",
+					"intent": auth.IntentBootstrap,
+					"source": "cli",
+				}).Info("auth")
 				label = "Bootstrap admin enrollment"
 			}
 

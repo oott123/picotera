@@ -14,11 +14,13 @@ import (
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/sirupsen/logrus"
 
 	"picotera/pkg/auth"
 	"picotera/pkg/contract"
 	"picotera/pkg/db"
 	"picotera/pkg/errorx"
+	"picotera/pkg/logx"
 )
 
 // authErrToHuma converts an *auth.AuthError into a huma.StatusError so typed
@@ -439,6 +441,13 @@ func (s *Server) handleEnrollmentCompleteHTTP(w http.ResponseWriter, r *http.Req
 		writeAuthErr(w, fmt.Errorf("enrollment/complete: commit: %w", err))
 		return
 	}
+
+	logx.WithContext(r.Context()).WithFields(logrus.Fields{
+		"event":      "auth.enrollment_consumed",
+		"intent":     consumed.Intent,
+		"account_id": account.ID,
+		"client_ip":  auth.ClientIP(r, s.config.TrustProxy),
+	}).Info("auth")
 
 	// Post-commit cleanup (best-effort).
 	_ = s.kvStore.Del(r.Context(), "webauthn_ceremony:enroll:"+token)
