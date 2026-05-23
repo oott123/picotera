@@ -44,6 +44,8 @@ const form = ref({
   disabled: props.account?.disabled ?? false,
 })
 
+const isAdmin = computed(() => form.value.role === 'admin')
+
 // Clear disabled flag when promoting to admin — admins can't be disabled.
 watch(
   () => form.value.role,
@@ -52,6 +54,23 @@ watch(
       form.value.disabled = false
     }
   },
+)
+
+// Admin role implies all permissions — lock the checkboxes to all-true so
+// the visible state matches what the server will persist (P5.02).
+watch(
+  () => form.value.role,
+  (role) => {
+    if (role === 'admin') {
+      form.value.permissions = {
+        view_own_usage: true,
+        manage_own_api_keys: true,
+        view_models: true,
+        view_own_traces: true,
+      }
+    }
+  },
+  { immediate: true },
 )
 
 const saving = ref(false)
@@ -197,15 +216,20 @@ function confirmCloseReveal() {
           <label
             v-for="(label, perm) in permLabels"
             :key="perm"
-            class="flex items-center gap-2 text-sm text-ink-muted cursor-pointer"
+            class="flex items-center gap-2 text-sm cursor-pointer"
+            :class="isAdmin ? 'text-ink-faint' : 'text-ink-muted'"
           >
             <input
               v-model="form.permissions[perm as keyof Permissions]"
+              :disabled="isAdmin"
               type="checkbox"
               class="accent-accent"
             />
             <span>{{ label }}</span>
           </label>
+          <p v-if="isAdmin" class="text-2xs text-ink-faint mt-1">
+            管理员拥有全部权限
+          </p>
         </div>
       </Field>
       <Field v-if="isEdit" label="状态" as="div">

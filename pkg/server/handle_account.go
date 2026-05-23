@@ -150,14 +150,26 @@ func (s *Server) handleUpdateAccount(ctx context.Context, in *updateAccountIn) (
 		}
 	}
 
+	// Admin role implies all permissions are true regardless of input — keeps the
+	// DB in a consistent state and matches Permits() which reads admin as full.
+	perms := in.Body.Permissions
+	if in.Body.Role == "admin" {
+		perms = contract.Permissions{
+			ViewOwnUsage:     true,
+			ManageOwnAPIKeys: true,
+			ViewModels:       true,
+			ViewOwnTraces:    true,
+		}
+	}
+
 	updated, err := q.UpdateAccount(ctx, db.UpdateAccountParams{
 		ID:                  in.ID,
 		DisplayName:         in.Body.DisplayName,
 		Role:                in.Body.Role,
-		CanViewOwnUsage:     in.Body.Permissions.ViewOwnUsage,
-		CanManageOwnApiKeys: in.Body.Permissions.ManageOwnAPIKeys,
-		CanViewModels:       in.Body.Permissions.ViewModels,
-		CanViewOwnTraces:    in.Body.Permissions.ViewOwnTraces,
+		CanViewOwnUsage:     perms.ViewOwnUsage,
+		CanManageOwnApiKeys: perms.ManageOwnAPIKeys,
+		CanViewModels:       perms.ViewModels,
+		CanViewOwnTraces:    perms.ViewOwnTraces,
 		Disabled:            in.Body.Disabled,
 	})
 	if err != nil {
@@ -462,9 +474,21 @@ func (s *Server) handleCreateInvitation(ctx context.Context, in *createInvitatio
 		return nil, fmt.Errorf("handleCreateInvitation: check username: %w", err)
 	}
 
+	// Admin role implies all permissions are true regardless of input — keeps the
+	// DB in a consistent state and matches Permits() which reads admin as full.
+	perms := in.Body.Permissions
+	if in.Body.Role == "admin" {
+		perms = contract.Permissions{
+			ViewOwnUsage:     true,
+			ManageOwnAPIKeys: true,
+			ViewModels:       true,
+			ViewOwnTraces:    true,
+		}
+	}
+
 	tpl := &auth.EnrollmentTemplate{
 		Role:        in.Body.Role,
-		Perms:       in.Body.Permissions,
+		Perms:       perms,
 		Username:    in.Body.Username,
 		DisplayName: in.Body.DisplayName,
 	}
