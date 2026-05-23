@@ -91,7 +91,7 @@ const submitDisabled = computed(() => {
           v-model="bootstrapForm.username"
           mono
           required
-          pattern="[-a-z0-9_]{2,32}"
+          pattern="[a-z0-9_\-]{2,32}"
           autocomplete="username"
           placeholder="alice"
         />
