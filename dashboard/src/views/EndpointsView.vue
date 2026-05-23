@@ -9,9 +9,11 @@ import { deleteEndpoint, invalidateEndpoints, listEndpoints } from '@/api/client
 import { queryKeys } from '@/api/queryKeys'
 import EndpointForm from '@/components/EndpointForm.vue'
 import { useSidePanel } from '@/composables/useSidePanel'
+import { useSession } from '@/composables/useSession'
 import { Button, IconButton, DataCard, DataTable, Th, Td, Tr, StateText, Tag, Icon } from '@/ui'
 
 const panel = useSidePanel()
+const session = useSession()
 const confirm = useConfirm()
 const queryClient = useQueryClient()
 
@@ -57,7 +59,7 @@ function confirmDeleteEndpoint(_event: Event, path: string) {
     <div class="flex items-center justify-between gap-3">
       <span class="text-xs text-ink-faint tabular-nums">{{ count }} 个端点</span>
       <div class="flex items-center gap-2">
-        <Button @click="openCreate">
+        <Button v-if="session.isAdmin.value" @click="openCreate">
           <Icon name="plus" :size="14" :stroke-width="2.2" />
           <span>新增端点</span>
         </Button>
@@ -96,7 +98,10 @@ function confirmDeleteEndpoint(_event: Event, path: string) {
               </Tag>
             </Td>
             <Td actions>
-              <div class="inline-flex gap-1 opacity-55 group-hover:opacity-100 transition-opacity">
+              <div
+                v-if="session.isAdmin.value"
+                class="inline-flex gap-1 opacity-55 group-hover:opacity-100 transition-opacity"
+              >
                 <IconButton
                   :active="panel.isActive(`endpoint:${e.path}`)"
                   title="编辑"

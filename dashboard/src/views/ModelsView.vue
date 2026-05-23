@@ -23,6 +23,7 @@ import ModelForm from '@/components/ModelForm.vue'
 import ModelPricingMatchPanel from '@/components/ModelPricingMatchPanel.vue'
 import ModelUpstreamsPanel, { type Upstream } from '@/components/ModelUpstreamsPanel.vue'
 import { useSidePanel } from '@/composables/useSidePanel'
+import { useSession } from '@/composables/useSession'
 import {
   Button,
   IconButton,
@@ -39,6 +40,7 @@ import {
 } from '@/ui'
 
 const panel = useSidePanel()
+const session = useSession()
 const confirm = useConfirm()
 const queryClient = useQueryClient()
 
@@ -189,7 +191,7 @@ function confirmDelete(_event: Event, m: ModelView) {
     <div class="flex items-center justify-between gap-3">
       <span class="text-xs text-ink-faint tabular-nums">{{ count }} 个模型</span>
       <div class="flex items-center gap-2">
-        <Button @click="openCreate">
+        <Button v-if="session.isAdmin.value" @click="openCreate">
           <Icon name="plus" :size="14" :stroke-width="2.2" />
           <span>新增模型</span>
         </Button>
@@ -220,7 +222,7 @@ function confirmDelete(_event: Event, m: ModelView) {
               </Td>
               <Td>
                 <template v-if="!m.pricing || !m.pricing.tiers || m.pricing.tiers.length === 0">
-                  <div class="inline-flex items-center gap-2">
+                  <div v-if="session.isAdmin.value" class="inline-flex items-center gap-2">
                     <Button type="button" variant="ghost" size="sm" @click="openPricingMatch(m)">
                       <Icon name="cloud-dollar" :size="13" />
                       <span>匹配价格</span>
@@ -258,13 +260,15 @@ function confirmDelete(_event: Event, m: ModelView) {
                 <div
                   class="inline-flex gap-1 opacity-55 group-hover:opacity-100 transition-opacity"
                 >
-                  <IconButton
-                    :title="m.disabled ? '启用模型' : '禁用模型'"
-                    :aria-label="m.disabled ? '启用模型' : '禁用模型'"
-                    @click="toggleDisabled(m)"
-                  >
-                    <Icon :name="m.disabled ? 'puzzle-off' : 'puzzle'" :size="13" />
-                  </IconButton>
+                  <template v-if="session.isAdmin.value">
+                    <IconButton
+                      :title="m.disabled ? '启用模型' : '禁用模型'"
+                      :aria-label="m.disabled ? '启用模型' : '禁用模型'"
+                      @click="toggleDisabled(m)"
+                    >
+                      <Icon :name="m.disabled ? 'puzzle-off' : 'puzzle'" :size="13" />
+                    </IconButton>
+                  </template>
                   <IconButton
                     :active="panel.isActive(`model-upstreams:${m.name}`)"
                     :disabled="(upstreamIndex[m.name]?.length ?? 0) === 0"
@@ -275,6 +279,7 @@ function confirmDelete(_event: Event, m: ModelView) {
                     <Icon name="cloud-upload" :size="13" />
                   </IconButton>
                   <IconButton
+                    v-if="session.isAdmin.value"
                     :active="panel.isActive(`model-pricing-match:${m.name}`)"
                     title="匹配价格"
                     aria-label="匹配价格"
@@ -282,22 +287,24 @@ function confirmDelete(_event: Event, m: ModelView) {
                   >
                     <Icon name="cloud-dollar" :size="13" />
                   </IconButton>
-                  <IconButton
-                    :active="panel.isActive(`model:${m.name}`)"
-                    title="编辑"
-                    aria-label="编辑"
-                    @click="openEdit(m)"
-                  >
-                    <Icon name="edit" :size="13" />
-                  </IconButton>
-                  <IconButton
-                    variant="danger"
-                    title="删除"
-                    aria-label="删除"
-                    @click="(e: Event) => confirmDelete(e, m)"
-                  >
-                    <Icon name="trash" :size="13" />
-                  </IconButton>
+                  <template v-if="session.isAdmin.value">
+                    <IconButton
+                      :active="panel.isActive(`model:${m.name}`)"
+                      title="编辑"
+                      aria-label="编辑"
+                      @click="openEdit(m)"
+                    >
+                      <Icon name="edit" :size="13" />
+                    </IconButton>
+                    <IconButton
+                      variant="danger"
+                      title="删除"
+                      aria-label="删除"
+                      @click="(e: Event) => confirmDelete(e, m)"
+                    >
+                      <Icon name="trash" :size="13" />
+                    </IconButton>
+                  </template>
                 </div>
               </Td>
             </Tr>
@@ -327,6 +334,7 @@ function confirmDelete(_event: Event, m: ModelView) {
                 <Tag v-for="p in row.providerNames" :key="p">{{ p }}</Tag>
               </TagList>
               <IconButton
+                v-if="session.isAdmin.value"
                 :active="panel.isActive(`model:new:${row.name}`)"
                 title="添加为模型"
                 :aria-label="`添加 ${row.name} 为模型`"
