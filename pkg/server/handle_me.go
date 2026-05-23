@@ -116,7 +116,7 @@ func (s *Server) handleAddCredentialBeginHTTP(w http.ResponseWriter, r *http.Req
 
 	creation, sessionData, err := s.webauthn.BeginRegistration(wu, auth.RegistrationOptions(exclude)...)
 	if err != nil {
-		writeAuthErr(w, auth.ErrWebAuthnCeremony(err.Error()))
+		writeAuthErr(w, auth.MapRegisterCeremonyError(r.Context(), err))
 		return
 	}
 	payload, err := json.Marshal(sessionData)
@@ -144,12 +144,12 @@ func (s *Server) handleAddCredentialCompleteHTTP(w http.ResponseWriter, r *http.
 
 	rawStash, err := s.kvStore.Get(r.Context(), "webauthn_ceremony:add:"+sess.Token)
 	if err != nil {
-		writeAuthErr(w, auth.ErrWebAuthnCeremony("ceremony expired"))
+		writeAuthErr(w, auth.ErrCeremonyExpired())
 		return
 	}
 	var sessionData webauthn.SessionData
 	if err := json.Unmarshal([]byte(rawStash), &sessionData); err != nil {
-		writeAuthErr(w, auth.ErrWebAuthnCeremony("ceremony corrupt"))
+		writeAuthErr(w, auth.ErrCeremonyState())
 		return
 	}
 
@@ -157,7 +157,7 @@ func (s *Server) handleAddCredentialCompleteHTTP(w http.ResponseWriter, r *http.
 
 	parsed, err := protocol.ParseCredentialCreationResponseBody(r.Body)
 	if err != nil {
-		writeAuthErr(w, auth.ErrWebAuthnCeremony(err.Error()))
+		writeAuthErr(w, auth.MapRegisterCeremonyError(r.Context(), err))
 		return
 	}
 
@@ -167,7 +167,7 @@ func (s *Server) handleAddCredentialCompleteHTTP(w http.ResponseWriter, r *http.
 	wu := &auth.WebAuthnAccount{Account: sess.Account, Credentials: existing}
 	cred, err := s.webauthn.CreateCredential(wu, sessionData, parsed)
 	if err != nil {
-		writeAuthErr(w, auth.ErrWebAuthnCeremony(err.Error()))
+		writeAuthErr(w, auth.MapRegisterCeremonyError(r.Context(), err))
 		return
 	}
 

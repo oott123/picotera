@@ -26,23 +26,23 @@ func newErr(status int, code, message string) *AuthError {
 // specs/2026-05-23-auth-system/design.md §8.
 
 func ErrNoSession() *AuthError {
-	return newErr(http.StatusUnauthorized, "no_session", "no session")
+	return newErr(http.StatusUnauthorized, "no_session", "请先登录")
 }
 
 func ErrNotAdmin() *AuthError {
-	return newErr(http.StatusForbidden, "not_admin", "admin required")
+	return newErr(http.StatusForbidden, "not_admin", "需要管理员权限")
 }
 
 func ErrPermissionDenied() *AuthError {
-	return newErr(http.StatusForbidden, "permission_denied", "permission denied")
+	return newErr(http.StatusForbidden, "permission_denied", "权限不足")
 }
 
 func ErrAccountDisabled() *AuthError {
-	return newErr(http.StatusForbidden, "account_disabled", "account disabled")
+	return newErr(http.StatusForbidden, "account_disabled", "账户已禁用")
 }
 
 func ErrLastAdmin() *AuthError {
-	return newErr(http.StatusConflict, "last_admin", "cannot demote, disable, or delete the only admin")
+	return newErr(http.StatusConflict, "last_admin", "无法降级、禁用或删除唯一的管理员")
 }
 
 // ErrAdminCannotBeDisabled rejects an update that would leave an account in
@@ -50,50 +50,105 @@ func ErrLastAdmin() *AuthError {
 // before they can be disabled. Keeps the active-admin set cleanly defined.
 func ErrAdminCannotBeDisabled() *AuthError {
 	return &AuthError{Code: "admin_cannot_be_disabled", Status: 409,
-		Message: "admin accounts cannot be disabled; demote to user first"}
+		Message: "无法禁用管理员账户，请先降级为标准用户"}
 }
 
 // ErrCannotDeleteSelf rejects an admin's attempt to delete their own account.
 // Recoverable but surprising — ask another admin instead.
 func ErrCannotDeleteSelf() *AuthError {
 	return &AuthError{Code: "cannot_delete_self", Status: 409,
-		Message: "you cannot delete your own account; ask another admin"}
+		Message: "无法删除自己的账户，请联系其他管理员"}
 }
 
 func ErrUsernameTaken() *AuthError {
-	return newErr(http.StatusConflict, "username_taken", "username already exists")
+	return newErr(http.StatusConflict, "username_taken", "用户名已存在")
 }
 
 func ErrEnrollmentExpired() *AuthError {
-	return newErr(http.StatusGone, "enrollment_expired", "enrollment link expired")
+	return newErr(http.StatusGone, "enrollment_expired", "邀请链接已过期")
 }
 
 func ErrEnrollmentConsumed() *AuthError {
-	return newErr(http.StatusGone, "enrollment_consumed", "enrollment link already used")
+	return newErr(http.StatusGone, "enrollment_consumed", "邀请链接已使用")
 }
 
 func ErrInvalidUsername() *AuthError {
-	return newErr(http.StatusBadRequest, "invalid_username", "username must match ^[a-z0-9_-]{2,32}$")
+	return newErr(http.StatusBadRequest, "invalid_username", "用户名必须为 2-32 个小写字母、数字、下划线或连字符")
 }
 
 func ErrInvalidDisplayName() *AuthError {
-	return newErr(http.StatusBadRequest, "invalid_display_name", "display name must be 1-128 chars with no control characters")
+	return newErr(http.StatusBadRequest, "invalid_display_name", "显示名长度必须为 1-128 字符且不含控制字符")
 }
 
 func ErrUsernameImmutable() *AuthError {
-	return newErr(http.StatusBadRequest, "username_immutable", "username cannot be changed")
+	return newErr(http.StatusBadRequest, "username_immutable", "用户名不可修改")
 }
 
 func ErrLastPasskey() *AuthError {
-	return newErr(http.StatusBadRequest, "last_passkey", "cannot delete the only passkey on an account")
+	return newErr(http.StatusBadRequest, "last_passkey", "无法删除最后一把密钥")
 }
 
+// ErrWebAuthnCeremony is the catch-all for cases where the more specific
+// errors below don't fit. Prefer the specific constructors when possible.
+// detail goes into the message verbatim — only call this with operator-
+// authored messages, NEVER with raw go-webauthn error strings.
 func ErrWebAuthnCeremony(detail string) *AuthError {
-	return newErr(http.StatusBadRequest, "webauthn_ceremony_failed", "webauthn ceremony failed: "+detail)
+	return newErr(http.StatusBadRequest, "webauthn_ceremony_failed", detail)
+}
+
+// ErrLoginAccountNotFound is returned when the WebAuthn library can't resolve
+// the credential's user handle to an account row — typically because the
+// account was deleted or the credential was force-revoked. Distinct from
+// account_disabled (account exists but is locked out).
+func ErrLoginAccountNotFound() *AuthError {
+	return newErr(http.StatusUnauthorized, "login_account_not_found", "未找到对应账户或凭证")
+}
+
+// ErrLoginVerificationFailed is returned when the credential's assertion
+// signature, attestation, or other cryptographic verification fails.
+func ErrLoginVerificationFailed() *AuthError {
+	return newErr(http.StatusUnauthorized, "login_verification_failed", "凭证验证失败，请重试")
+}
+
+// ErrCeremonyExpired is returned when the challenge has expired (typically
+// the 60s registration / 5min KV stash timeout).
+func ErrCeremonyExpired() *AuthError {
+	return newErr(http.StatusBadRequest, "ceremony_expired", "操作已超时，请重试")
+}
+
+// ErrCeremonyMissing is returned when the ceremony KV stash is gone (user
+// hit /complete without a matching /begin, or the server restarted).
+func ErrCeremonyMissing() *AuthError {
+	return newErr(http.StatusBadRequest, "ceremony_missing", "Passkey 流程已失效，请重新开始")
+}
+
+// ErrCeremonyState is returned for unexpected ceremony-state problems
+// (KV JSON unmarshal failure, missing bootstrap/invite ceremony struct).
+// This is a 500-class — clients can't fix it by retrying.
+func ErrCeremonyState() *AuthError {
+	return newErr(http.StatusInternalServerError, "ceremony_state_invalid", "Passkey 流程状态异常，请重试")
+}
+
+// ErrRegistrationCredentialExists is returned when the user tries to register
+// the same authenticator twice — go-webauthn's excludeCredentials check.
+func ErrRegistrationCredentialExists() *AuthError {
+	return newErr(http.StatusConflict, "credential_already_registered", "此设备的 Passkey 已注册")
+}
+
+// ErrRegistrationFailed is the generic friendly-fallback for registration
+// ceremony errors not classified above. Server logs the raw detail at WARN.
+func ErrRegistrationFailed() *AuthError {
+	return newErr(http.StatusBadRequest, "registration_failed", "注册失败，请重试")
+}
+
+// ErrLoginFailed is the generic friendly-fallback for login ceremony errors
+// not classified above. Server logs the raw detail at WARN.
+func ErrLoginFailed() *AuthError {
+	return newErr(http.StatusUnauthorized, "login_failed", "登录失败，请重试")
 }
 
 func ErrAccountNotFound() *AuthError {
-	return newErr(http.StatusNotFound, "account_not_found", "account not found")
+	return newErr(http.StatusNotFound, "account_not_found", "账户不存在")
 }
 
 func ErrCredentialNotFound() *AuthError {
@@ -106,7 +161,7 @@ func ErrCredentialNotFound() *AuthError {
 // (mirrors the LoadEnrollment design — don't leak token-existence to clients).
 func ErrInvitationNotFound() *AuthError {
 	return &AuthError{Code: "invitation_not_found", Status: 404,
-		Message: "invitation not found"}
+		Message: "邀请不存在"}
 }
 
 func ErrNotBootstrapped() *AuthError {

@@ -239,7 +239,7 @@ func (s *Server) handleEnrollmentBeginHTTP(w http.ResponseWriter, r *http.Reques
 
 	creation, sessionData, err := s.webauthn.BeginRegistration(wu, auth.RegistrationOptions(exclude)...)
 	if err != nil {
-		writeAuthErr(w, auth.ErrWebAuthnCeremony(err.Error()))
+		writeAuthErr(w, auth.MapRegisterCeremonyError(r.Context(), err))
 		return
 	}
 	stash.Data = *sessionData
@@ -269,18 +269,18 @@ func (s *Server) handleEnrollmentCompleteHTTP(w http.ResponseWriter, r *http.Req
 
 	raw, err := s.kvStore.Get(r.Context(), "webauthn_ceremony:enroll:"+token)
 	if err != nil {
-		writeAuthErr(w, auth.ErrWebAuthnCeremony("ceremony expired"))
+		writeAuthErr(w, auth.ErrCeremonyExpired())
 		return
 	}
 	var stash enrollCeremonyStash
 	if err := json.Unmarshal([]byte(raw), &stash); err != nil {
-		writeAuthErr(w, auth.ErrWebAuthnCeremony("ceremony corrupt"))
+		writeAuthErr(w, auth.ErrCeremonyState())
 		return
 	}
 
 	parsed, err := protocol.ParseCredentialCreationResponseBody(r.Body)
 	if err != nil {
-		writeAuthErr(w, auth.ErrWebAuthnCeremony(err.Error()))
+		writeAuthErr(w, auth.MapRegisterCeremonyError(r.Context(), err))
 		return
 	}
 
@@ -307,7 +307,7 @@ func (s *Server) handleEnrollmentCompleteHTTP(w http.ResponseWriter, r *http.Req
 	switch consumed.Intent {
 	case auth.IntentBootstrap:
 		if stash.Bootstrap == nil {
-			writeAuthErr(w, auth.ErrWebAuthnCeremony("missing bootstrap ceremony state"))
+			writeAuthErr(w, auth.ErrCeremonyState())
 			return
 		}
 		wu := &auth.WebAuthnAccount{Account: &db.Account{
@@ -317,7 +317,7 @@ func (s *Server) handleEnrollmentCompleteHTTP(w http.ResponseWriter, r *http.Req
 		}}
 		cred, err := s.webauthn.CreateCredential(wu, stash.Data, parsed)
 		if err != nil {
-			writeAuthErr(w, auth.ErrWebAuthnCeremony(err.Error()))
+			writeAuthErr(w, auth.MapRegisterCeremonyError(r.Context(), err))
 			return
 		}
 		a, err := qtx.InsertAccount(r.Context(), db.InsertAccountParams{
@@ -347,7 +347,7 @@ func (s *Server) handleEnrollmentCompleteHTTP(w http.ResponseWriter, r *http.Req
 
 	case auth.IntentInvite:
 		if stash.Invite == nil {
-			writeAuthErr(w, auth.ErrWebAuthnCeremony("missing invite ceremony state"))
+			writeAuthErr(w, auth.ErrCeremonyState())
 			return
 		}
 		// Build the WebAuthn user adapter — same identity the /begin step used,
@@ -359,7 +359,7 @@ func (s *Server) handleEnrollmentCompleteHTTP(w http.ResponseWriter, r *http.Req
 		}}
 		cred, err := s.webauthn.CreateCredential(wu, stash.Data, parsed)
 		if err != nil {
-			writeAuthErr(w, auth.ErrWebAuthnCeremony(err.Error()))
+			writeAuthErr(w, auth.MapRegisterCeremonyError(r.Context(), err))
 			return
 		}
 		// Role from template; fall back to "user" if somehow not set (defensive).
@@ -415,7 +415,7 @@ func (s *Server) handleEnrollmentCompleteHTTP(w http.ResponseWriter, r *http.Req
 		wu := &auth.WebAuthnAccount{Account: &a, Credentials: nil}
 		cred, err := s.webauthn.CreateCredential(wu, stash.Data, parsed)
 		if err != nil {
-			writeAuthErr(w, auth.ErrWebAuthnCeremony(err.Error()))
+			writeAuthErr(w, auth.MapRegisterCeremonyError(r.Context(), err))
 			return
 		}
 		account = a

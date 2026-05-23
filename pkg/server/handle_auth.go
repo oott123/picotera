@@ -103,7 +103,7 @@ func (s *Server) handleLoginBeginHTTP(w http.ResponseWriter, r *http.Request) {
 
 	assertion, sessionData, err := s.webauthn.BeginDiscoverableLogin(auth.LoginOptions()...)
 	if err != nil {
-		writeAuthErr(w, auth.ErrWebAuthnCeremony(err.Error()))
+		writeAuthErr(w, auth.MapLoginCeremonyError(r.Context(), err))
 		return
 	}
 
@@ -132,7 +132,7 @@ func (s *Server) handleLoginBeginHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleLoginCompleteHTTP(w http.ResponseWriter, r *http.Request) {
 	cer, err := r.Cookie(auth.CeremonyCookieName)
 	if err != nil || cer.Value == "" {
-		writeAuthErr(w, auth.ErrWebAuthnCeremony("no ceremony cookie"))
+		writeAuthErr(w, auth.ErrCeremonyMissing())
 		return
 	}
 	raw, err := s.kvStore.Get(r.Context(), "webauthn_ceremony:login:"+cer.Value)
@@ -143,7 +143,7 @@ func (s *Server) handleLoginCompleteHTTP(w http.ResponseWriter, r *http.Request)
 			"reason":    "ceremony_state_missing",
 			"client_ip": auth.ClientIP(r, s.config.TrustProxy),
 		}).Warn("auth")
-		writeAuthErr(w, auth.ErrWebAuthnCeremony("ceremony expired"))
+		writeAuthErr(w, auth.ErrCeremonyExpired())
 		return
 	}
 	var sessionData webauthn.SessionData
@@ -153,7 +153,7 @@ func (s *Server) handleLoginCompleteHTTP(w http.ResponseWriter, r *http.Request)
 			"reason":    "ceremony_state_corrupt",
 			"client_ip": auth.ClientIP(r, s.config.TrustProxy),
 		}).Warn("auth")
-		writeAuthErr(w, auth.ErrWebAuthnCeremony("ceremony corrupt"))
+		writeAuthErr(w, auth.ErrCeremonyState())
 		return
 	}
 
@@ -181,12 +181,7 @@ func (s *Server) handleLoginCompleteHTTP(w http.ResponseWriter, r *http.Request)
 
 	_, credential, err := s.webauthn.FinishPasskeyLogin(handler, sessionData, r)
 	if err != nil {
-		logx.WithContext(r.Context()).WithFields(logrus.Fields{
-			"event":     "auth.login_failure",
-			"reason":    "webauthn_ceremony",
-			"client_ip": auth.ClientIP(r, s.config.TrustProxy),
-		}).Warn("auth")
-		writeAuthErr(w, auth.ErrWebAuthnCeremony(err.Error()))
+		writeAuthErr(w, auth.MapLoginCeremonyError(r.Context(), err))
 		return
 	}
 	if resolvedAccount.ID == 0 {
@@ -195,7 +190,7 @@ func (s *Server) handleLoginCompleteHTTP(w http.ResponseWriter, r *http.Request)
 			"reason":    "no_account",
 			"client_ip": auth.ClientIP(r, s.config.TrustProxy),
 		}).Warn("auth")
-		writeAuthErr(w, auth.ErrWebAuthnCeremony("no account"))
+		writeAuthErr(w, auth.ErrLoginAccountNotFound())
 		return
 	}
 	if resolvedAccount.Disabled {
