@@ -68,7 +68,11 @@ func (s *Server) handleUnifiedGenerate(srcFormat llmbridge.Format) http.HandlerF
 		parentSpanID := extractParentSpanID(metaReqHeader)
 		parentSpanIDPg := pgtype.Text{String: parentSpanID, Valid: parentSpanID != ""}
 		userMessagePreview := extractUserMessagePreview(body, virtualEndpoint.EndpointType)
-		projectIDPg := h.extractProjectID(r.Context(), body)
+		// See handle_gateway.go for the late-binding rationale. Candidate
+		// extraction is pure; resolution waits for authentication so the
+		// per-account project namespace can be consulted.
+		projectCandidates := h.extractProjectCandidates(r.Context(), body)
+		var projectIDPg pgtype.Int4
 		metaCreatedAt := h.insertRequest(bgCtx, db.InsertRequestParams{
 			ID:                 metaID,
 			SpanID:             pgtype.Text{String: metaID, Valid: true},
@@ -87,9 +91,6 @@ func (s *Server) handleUnifiedGenerate(srcFormat llmbridge.Format) http.HandlerF
 			ProjectID:          projectIDPg,
 			CreatedAt:          pgtype.Timestamp{Time: metaIDCreatedAt, Valid: true},
 		})
-		if projectIDPg.Valid {
-			go h.upsertProjectSeen(projectIDPg.Int32, metaCreatedAt)
-		}
 		h.uploadRequestArtifact(bgCtx, metaID, metaCreatedAt, r.Method, r.URL.String(), metaReqHeader, body)
 
 		// 4. Failure-path closures. Mirrors handle_gateway.go so that meta
@@ -159,6 +160,22 @@ func (s *Server) handleUnifiedGenerate(srcFormat llmbridge.Format) http.HandlerF
 			Status:       db.RequestStatusPending,
 			CreatedAt:    pgtype.Timestamp{Time: metaCreatedAt, Valid: true},
 		})
+
+		// Resolve project_id within the api_key's account namespace (mirrors
+		// handle_gateway.go). System keys skip both lookup and auto-create.
+		var apiKeyAccountID int32
+		if apiKey.AccountID.Valid {
+			apiKeyAccountID = apiKey.AccountID.Int32
+		}
+		projectIDPg = h.resolveProjectForAccount(r.Context(), apiKeyAccountID, projectCandidates)
+		if projectIDPg.Valid {
+			h.updateRequestProjectID(bgCtx, db.UpdateRequestProjectIDParams{
+				ID:        metaID,
+				ProjectID: projectIDPg,
+				CreatedAt: pgtype.Timestamp{Time: metaCreatedAt, Valid: true},
+			})
+			go h.upsertProjectSeen(projectIDPg.Int32, metaCreatedAt)
+		}
 
 		// 6. Resolve model name and stream flag. Format-specific.
 		modelName, streaming, err := extractUnifiedModelAndStream(srcFormat, r, body)

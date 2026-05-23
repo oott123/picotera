@@ -1,9 +1,15 @@
 // Package server — project_extractor.go
 //
 // Pulls candidate workspace paths out of a gateway request body using a fixed
-// set of regexes, JSON-unescapes each capture, and asks projectRouter to match
-// them to a project id. Hooked from handle_gateway.go and
-// handle_unified_gateway.go between body read and meta-row insert.
+// set of regexes and JSON-unescapes each capture. Candidate extraction is
+// pure (no DB / no account); resolution to a project_id is account-scoped
+// and happens after authentication so the router can look up within the
+// caller's per-user project namespace.
+//
+// Hooked from handle_gateway.go and handle_unified_gateway.go: candidates
+// are extracted before authentication (so meta-row insert can still happen
+// early), then resolution + auto-create runs once the api_key (and hence
+// the account_id) is known.
 package server
 
 import (
@@ -35,19 +41,29 @@ func newProjectExtractor(router *projectRouter) *projectExtractor {
 	return &projectExtractor{router: router}
 }
 
-// Extract scans body, decodes capture groups, dedupes them, and asks the
-// router for a project id. Returns (0, false, nil) when no candidates parse
-// or no path matches.
-func (e *projectExtractor) Extract(ctx context.Context, body []byte) (int32, bool, error) {
+// ExtractCandidates scans body, decodes capture groups, dedupes them, and
+// returns the deduped path strings in encounter order. Pure — no DB calls,
+// no account context. Safe to call before authentication.
+func (e *projectExtractor) ExtractCandidates(ctx context.Context, body []byte) []string {
 	if len(body) == 0 {
-		return 0, false, nil
+		return nil
 	}
 	candidates := extractProjectCandidates(ctx, body)
 	if len(candidates) == 0 {
-		return 0, false, nil
+		return nil
 	}
 	logx.WithContext(ctx).WithField("candidates", candidates).Debug("project extractor: candidates")
-	return e.router.Match(ctx, candidates)
+	return candidates
+}
+
+// ResolveForAccount asks the per-account router for a project id matching
+// any of the candidate paths within accountID's project namespace. Returns
+// (0, false, nil) when no candidate matches or candidates is empty.
+func (e *projectExtractor) ResolveForAccount(ctx context.Context, accountID int32, candidates []string) (int32, bool, error) {
+	if len(candidates) == 0 || accountID == 0 {
+		return 0, false, nil
+	}
+	return e.router.Match(ctx, accountID, candidates)
 }
 
 func extractProjectCandidates(ctx context.Context, body []byte) []string {

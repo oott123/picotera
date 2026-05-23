@@ -61,7 +61,14 @@ func (h *gatewayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	metaReqMethod := r.Method
 	metaReqURL := r.URL.String()
 	userMessagePreview := extractUserMessagePreview(body, endpoint.EndpointType)
-	projectIDPg := h.extractProjectID(r.Context(), body)
+	// Project candidate extraction is pure (regex over body) and runs early so
+	// failures in the auth phase still get logged. Resolution to a project_id
+	// is deferred until after authentication, since projects are user-bound
+	// and the api_key.account_id is the lookup key. projectIDPg stays invalid
+	// here; we backfill it on the meta row via updateRequestProjectID once
+	// resolveProjectForAccount completes.
+	projectCandidates := h.extractProjectCandidates(r.Context(), body)
+	var projectIDPg pgtype.Int4
 	metaCreatedAt := h.insertRequest(bgCtx, db.InsertRequestParams{
 		ID:                 metaID,
 		SpanID:             pgtype.Text{String: metaID, Valid: true},
@@ -80,9 +87,6 @@ func (h *gatewayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ProjectID:          projectIDPg,
 		CreatedAt:          pgtype.Timestamp{Time: metaIDCreatedAt, Valid: true},
 	})
-	if projectIDPg.Valid {
-		go h.upsertProjectSeen(projectIDPg.Int32, metaCreatedAt)
-	}
 
 	h.uploadRequestArtifact(bgCtx, metaID, metaCreatedAt, metaReqMethod, metaReqURL, metaReqHeader, body)
 
@@ -158,6 +162,25 @@ func (h *gatewayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Status:       db.RequestStatusPending,
 		CreatedAt:    pgtype.Timestamp{Time: metaCreatedAt, Valid: true},
 	})
+
+	// Resolve project_id within the api_key's account namespace. System keys
+	// (api_key.account_id IS NULL) never tag a project; the auto-create path
+	// is also skipped because accountID == 0. The resolved id flows into
+	// every subsequent upstream row's ProjectID and onto the meta row via
+	// the backfill below.
+	var apiKeyAccountID int32
+	if apiKey.AccountID.Valid {
+		apiKeyAccountID = apiKey.AccountID.Int32
+	}
+	projectIDPg = h.resolveProjectForAccount(r.Context(), apiKeyAccountID, projectCandidates)
+	if projectIDPg.Valid {
+		h.updateRequestProjectID(bgCtx, db.UpdateRequestProjectIDParams{
+			ID:        metaID,
+			ProjectID: projectIDPg,
+			CreatedAt: pgtype.Timestamp{Time: metaCreatedAt, Valid: true},
+		})
+		go h.upsertProjectSeen(projectIDPg.Int32, metaCreatedAt)
+	}
 
 	// 5. Extract model name. When endpoint.ModelPath is empty the endpoint is
 	// a "no-model" endpoint: all providers bound to the path are candidates,
