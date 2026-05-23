@@ -295,11 +295,13 @@ func (s *Server) registerOperations() {
 	registerOp(mgmt, contract.OperationGetOverviewDistribution, s.handleGetOverviewDistribution, contract.RequirePermission(contract.PermViewOwnUsage))
 	registerOp(mgmt, contract.OperationGetOverviewSeries, s.handleGetOverviewSeries, contract.RequirePermission(contract.PermViewOwnUsage))
 
-	// Projects — admin
-	registerOp(mgmt, contract.OperationListProjects, s.handleListProjects, admin)
-	registerOp(mgmt, contract.OperationGetProject, s.handleGetProject, admin)
-	registerOp(mgmt, contract.OperationUpsertProject, s.handleUpsertProject, admin)
-	registerOp(mgmt, contract.OperationDeleteProject, s.handleDeleteProject, admin)
+	// Projects — view_own_usage (per-user ownership; admin auto-passes but
+	// still sees only their own rows because the handlers always scope to
+	// sess.Account.ID).
+	registerOp(mgmt, contract.OperationListProjects, s.handleListProjects, contract.RequirePermission(contract.PermViewOwnUsage))
+	registerOp(mgmt, contract.OperationGetProject, s.handleGetProject, contract.RequirePermission(contract.PermViewOwnUsage))
+	registerOp(mgmt, contract.OperationUpsertProject, s.handleUpsertProject, contract.RequirePermission(contract.PermViewOwnUsage))
+	registerOp(mgmt, contract.OperationDeleteProject, s.handleDeleteProject, contract.RequirePermission(contract.PermViewOwnUsage))
 
 	// Accounts — admin
 	registerOp(mgmt, contract.OperationListAccounts, s.handleListAccounts, admin)
