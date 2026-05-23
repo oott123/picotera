@@ -638,15 +638,42 @@ SELECT r.id, r.span_id, r.parent_span_id, r.type, r.status, r.provider_id, r.end
        r.model_cost, r.model_cost_currency,
        r.user_message_preview, r.project_id
 FROM request r
-JOIN api_key k ON k.id = r.api_key_id
-WHERE k.account_id = $1
+LEFT JOIN traces selected_trace ON selected_trace.id = $1::text
+WHERE r.account_id = $2::int
+  AND ($3::int IS NULL OR r.type = $3)
+  AND ($4::int IS NULL OR r.provider_id = $4)
+  AND ($5::text IS NULL OR r.endpoint_path = $5)
+  AND ($6::text IS NULL OR r.model = $6)
+  AND ($7::text IS NULL OR r.upstream_model = $7)
+  AND ($8::int IS NULL OR r.project_id = $8)
+  AND (
+    $1::text IS NULL
+    OR (
+      r.parent_span_id = selected_trace.parent_span_id
+      AND r.created_at >= selected_trace.first_request_at
+      AND r.created_at <= selected_trace.last_request_at
+    )
+  )
+  AND (
+    $9::timestamp IS NULL
+    OR (r.created_at, r.id) < ($9::timestamp, $10::text)
+  )
 ORDER BY r.created_at DESC, r.id DESC
-LIMIT $2
+LIMIT $11::int
 `
 
 type ListRequestsByAccountParams struct {
-	AccountID int32 `json:"accountId"`
-	Limit     int32 `json:"limit"`
+	TraceID         pgtype.Text      `json:"traceId"`
+	AccountID       int32            `json:"accountId"`
+	Type            pgtype.Int4      `json:"type"`
+	ProviderID      pgtype.Int4      `json:"providerId"`
+	EndpointPath    pgtype.Text      `json:"endpointPath"`
+	Model           pgtype.Text      `json:"model"`
+	UpstreamModel   pgtype.Text      `json:"upstreamModel"`
+	ProjectID       pgtype.Int4      `json:"projectId"`
+	CursorCreatedAt pgtype.Timestamp `json:"cursorCreatedAt"`
+	CursorID        pgtype.Text      `json:"cursorId"`
+	Limit           pgtype.Int4      `json:"limit"`
 }
 
 type ListRequestsByAccountRow struct {
@@ -676,8 +703,24 @@ type ListRequestsByAccountRow struct {
 	ProjectID          pgtype.Int4      `json:"projectId"`
 }
 
+// Scoped sibling of ListRequests. Same filter shape, plus a mandatory
+// account_id predicate. Uses request.account_id (denormalized in migration
+// 030) instead of joining api_key, so history survives api_key/account
+// deletion.
 func (q *Queries) ListRequestsByAccount(ctx context.Context, arg ListRequestsByAccountParams) ([]ListRequestsByAccountRow, error) {
-	rows, err := q.db.Query(ctx, listRequestsByAccount, arg.AccountID, arg.Limit)
+	rows, err := q.db.Query(ctx, listRequestsByAccount,
+		arg.TraceID,
+		arg.AccountID,
+		arg.Type,
+		arg.ProviderID,
+		arg.EndpointPath,
+		arg.Model,
+		arg.UpstreamModel,
+		arg.ProjectID,
+		arg.CursorCreatedAt,
+		arg.CursorID,
+		arg.Limit,
+	)
 	if err != nil {
 		return nil, err
 	}

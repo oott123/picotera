@@ -107,6 +107,10 @@ type Querier interface {
 	ListRequestTraces(ctx context.Context, arg ListRequestTracesParams) ([]ListRequestTracesRow, error)
 	ListRequestTracesByAccount(ctx context.Context, arg ListRequestTracesByAccountParams) ([]ListRequestTracesByAccountRow, error)
 	ListRequests(ctx context.Context, arg ListRequestsParams) ([]ListRequestsRow, error)
+	// Scoped sibling of ListRequests. Same filter shape, plus a mandatory
+	// account_id predicate. Uses request.account_id (denormalized in migration
+	// 030) instead of joining api_key, so history survives api_key/account
+	// deletion.
 	ListRequestsByAccount(ctx context.Context, arg ListRequestsByAccountParams) ([]ListRequestsByAccountRow, error)
 	ListRequestsBySpan(ctx context.Context, arg ListRequestsBySpanParams) ([]ListRequestsBySpanRow, error)
 	ListScripts(ctx context.Context) ([]Script, error)

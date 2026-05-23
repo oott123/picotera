@@ -7,11 +7,11 @@ import { useSession } from '@/composables/useSession'
 
 export function useProjectsMap() {
   const session = useSession()
-  // Projects are user-bound: every caller with view_own_usage sees their own
-  // rows (admin auto-passes can()). The fetcher returns only the caller's
-  // projects; cross-account labels (e.g. someone else's request showing on
-  // an admin dashboard view) fall back to ID via projectLabel().
-  const canView = computed(() => session.can('view_own_usage'))
+  // Projects are user-bound: every caller with manage_own_projects sees
+  // their own rows (admin auto-passes can()). The fetcher returns only the
+  // caller's projects; cross-account labels (e.g. someone else's request
+  // showing on an admin dashboard view) fall back to ID via projectLabel().
+  const canView = computed(() => session.can('manage_own_projects'))
   const query = useQuery({
     queryKey: queryKeys.projects.all,
     queryFn: listProjects,

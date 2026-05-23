@@ -29,14 +29,19 @@ const panel = useSidePanel()
 const route = useRoute()
 const router = useRouter()
 const session = useSession()
-// scoped: non-admin sees only own requests (API does row-level scoping)
-const mode = computed<'admin' | 'scoped'>(() =>
-  session.isAdmin.value ? 'admin' : 'scoped'
-)
-// filter dropdowns need view_models even in scoped mode — orthogonal to mode
-const canFilterByModel = computed(
-  () => mode.value === 'admin' || session.can('view_models')
-)
+// Filters are independently gated per permission. The backend scopes rows
+// per role (admin global / non-admin own) transparently, so the page renders
+// the same UI for both — each filter UI is shown iff the user has the
+// permission backing the data the filter needs.
+//
+// - canFilterByModel: model/upstream/endpoint dropdowns need /models +
+//   /endpoints, both gated on view_models.
+// - canFilterByProject: project dropdown needs /projects, gated on
+//   manage_own_projects.
+// - canFilterByProvider: provider dropdown needs /providers (admin-only).
+const canFilterByModel = computed(() => session.can('view_models'))
+const canFilterByProject = computed(() => session.can('manage_own_projects'))
+const canFilterByProvider = computed(() => session.isAdmin.value)
 const { providers, providerLabel } = useProvidersMap()
 const { projects, projectLabel } = useProjectsMap()
 
@@ -84,10 +89,11 @@ const endpoints = computed<EndpointView[]>(() => endpointsQuery.data.value ?? []
 const models = computed<ModelView[]>(() => modelsQuery.data.value ?? [])
 
 const requestFilters = computed<RequestsFilters>(() => {
-  // Scoped mode: the non-admin server path doesn't accept any filter and
-  // returns 400 "filters_not_supported" if we send one. Strip every filter
-  // here so the request matches what the backend allows.
-  if (mode.value === 'scoped') return {}
+  // Only include filters the user has the permission to populate. The
+  // backend accepts the same filter shape on both admin and scoped paths
+  // (scoped just adds account_id = caller), so a non-admin with view_models
+  // can filter their own requests by model exactly like an admin filters
+  // globally.
   const out: {
     type?: number
     providerId?: number
@@ -99,12 +105,12 @@ const requestFilters = computed<RequestsFilters>(() => {
   } = {}
   if (filters.type === 'meta') out.type = 0
   else if (filters.type === 'upstream') out.type = 1
-  if (filters.providerId) out.providerId = filters.providerId
-  if (filters.endpointPath) out.endpointPath = filters.endpointPath
-  if (filters.model) out.model = filters.model
-  if (filters.upstreamModel) out.upstreamModel = filters.upstreamModel
+  if (canFilterByProvider.value && filters.providerId) out.providerId = filters.providerId
+  if (canFilterByModel.value && filters.endpointPath) out.endpointPath = filters.endpointPath
+  if (canFilterByModel.value && filters.model) out.model = filters.model
+  if (canFilterByModel.value && filters.upstreamModel) out.upstreamModel = filters.upstreamModel
   if (filters.traceId) out.traceId = filters.traceId
-  if (filters.projectId) out.projectId = filters.projectId
+  if (canFilterByProject.value && filters.projectId) out.projectId = filters.projectId
   return out
 })
 
@@ -488,11 +494,9 @@ function resetCursorAndReload() {
 <template>
   <div class="flex flex-col gap-3.5">
     <div class="flex items-end justify-between gap-3 flex-wrap">
-      <!-- Filters are admin-only; the scoped backend rejects any filter param. -->
-      <Field v-if="mode === 'admin'" label="类型" as="div">
+      <Field label="类型" as="div">
         <SegmentedControl v-model="filters.type" :options="typeOptions" />
       </Field>
-      <div v-else />
       <div class="flex items-center gap-2">
         <button
           v-if="activeFilterCount() > 0"
@@ -542,9 +546,8 @@ function resetCursorAndReload() {
         :on-row-click="(r) => openDetails(r)"
       >
         <template #header-projectId>
-          <!-- All column filters are admin-only; scoped backend rejects filters. -->
           <ColumnFilter
-            v-if="mode === 'admin'"
+            v-if="canFilterByProject"
             v-model.number="filters.projectId"
             label="项目"
             :options="projectOptions"
@@ -555,7 +558,7 @@ function resetCursorAndReload() {
         </template>
         <template #header-providerId>
           <ColumnFilter
-            v-if="mode === 'admin'"
+            v-if="canFilterByProvider"
             v-model.number="filters.providerId"
             label="渠道"
             :options="providerOptions"
@@ -565,9 +568,8 @@ function resetCursorAndReload() {
           <span v-else class="text-xs text-ink-muted">渠道</span>
         </template>
         <template #header-endpointPath>
-          <!-- requires view_models AND admin; scoped backend rejects filters. -->
           <ColumnFilter
-            v-if="mode === 'admin' && canFilterByModel"
+            v-if="canFilterByModel"
             v-model="filters.endpointPath"
             label="端点"
             :options="endpointOptions"
@@ -576,7 +578,7 @@ function resetCursorAndReload() {
           <span v-else class="text-xs text-ink-muted">端点</span>
         </template>
         <template #header-model>
-          <template v-if="mode === 'admin' && canFilterByModel">
+          <template v-if="canFilterByModel">
             <ColumnFilter
               v-model="filters.model"
               label="模型"

@@ -39,77 +39,12 @@ func (s *Server) attachArtifactUrls(ctx context.Context, v *contract.RequestView
 	}
 }
 
-// toRequestViewFromByAccountRow converts a ListRequestsByAccountRow to a RequestView.
-// The row projects the same column set as ListRequestsRow so the mapping is identical.
-func toRequestViewFromByAccountRow(r *db.ListRequestsByAccountRow) *contract.RequestView {
-	return contract.ToListRequestRowView(&db.ListRequestsRow{
-		ID:                 r.ID,
-		SpanID:             r.SpanID,
-		ParentSpanID:       r.ParentSpanID,
-		Type:               r.Type,
-		Status:             r.Status,
-		ProviderID:         r.ProviderID,
-		EndpointPath:       r.EndpointPath,
-		ApiKeyID:           r.ApiKeyID,
-		Model:              r.Model,
-		UpstreamModel:      r.UpstreamModel,
-		InputTokens:        r.InputTokens,
-		CacheReadTokens:    r.CacheReadTokens,
-		OutputTokens:       r.OutputTokens,
-		CacheWriteTokens:   r.CacheWriteTokens,
-		CacheWrite1hTokens: r.CacheWrite1hTokens,
-		StatusCode:         r.StatusCode,
-		ErrorMessage:       r.ErrorMessage,
-		TtftMs:             r.TtftMs,
-		TimeSpentMs:        r.TimeSpentMs,
-		CreatedAt:          r.CreatedAt,
-		ModelCost:          r.ModelCost,
-		ModelCostCurrency:  r.ModelCostCurrency,
-		UserMessagePreview: r.UserMessagePreview,
-		ProjectID:          r.ProjectID,
-	})
-}
-
 func (s *Server) handleListRequests(ctx context.Context, input *contract.ListRequestsRequest) (*contract.ListRequestsResponse, error) {
 	limit := input.Limit
 	if limit <= 0 {
 		limit = 20
 	}
 	fetchLimit := limit + 1
-
-	sess := auth.SessionFromContext(ctx)
-	if sess.Account.Role != "admin" {
-		// Non-admin: scoped to requests made with api keys owned by this account.
-		// The scoped query doesn't support filters — reject any filter params
-		// per project convention (fail fast on unexpected input).
-		if input.Type != -1 || input.ProviderID != 0 || input.EndpointPath != "" ||
-			input.Model != "" || input.UpstreamModel != "" || input.TraceID != "" ||
-			input.ProjectID != 0 || input.Cursor != "" {
-			return nil, authErrToHuma(auth.ErrFiltersNotSupported())
-		}
-		rows, err := s.queries.ListRequestsByAccount(ctx, db.ListRequestsByAccountParams{
-			AccountID: sess.Account.ID,
-			Limit:     fetchLimit,
-		})
-		if err != nil {
-			return nil, huma.Error500InternalServerError("failed to list requests", err)
-		}
-		hasMore := int32(len(rows)) > limit
-		if hasMore {
-			rows = rows[:limit]
-		}
-		items := make([]contract.RequestView, len(rows))
-		for i := range rows {
-			items[i] = *toRequestViewFromByAccountRow(&rows[i])
-			s.attachArtifactUrls(ctx, &items[i], rows[i].CreatedAt)
-		}
-		return &contract.ListRequestsResponse{
-			Body: contract.PaginatedBody[contract.RequestView]{
-				Items:      items,
-				Pagination: contract.PaginationInfo{HasMore: hasMore},
-			},
-		}, nil
-	}
 
 	var cursorCreatedAt pgtype.Timestamp
 	var cursorID pgtype.Text
@@ -146,6 +81,10 @@ func (s *Server) handleListRequests(ctx context.Context, input *contract.ListReq
 	if input.UpstreamModel != "" {
 		filterUpstreamModel = pgtype.Text{String: input.UpstreamModel, Valid: true}
 	}
+	var filterProjectID pgtype.Int4
+	if input.ProjectID != 0 {
+		filterProjectID = pgtype.Int4{Int32: input.ProjectID, Valid: true}
+	}
 	var filterTraceID pgtype.Text
 	if input.TraceID != "" {
 		if err := validateTraceID(input.TraceID); err != nil {
@@ -154,13 +93,38 @@ func (s *Server) handleListRequests(ctx context.Context, input *contract.ListReq
 		filterTraceID = pgtype.Text{String: input.TraceID, Valid: true}
 	}
 
-	rows, err := s.queries.ListRequests(ctx, db.ListRequestsParams{
+	sess := auth.SessionFromContext(ctx)
+	if sess.Account.Role == "admin" {
+		rows, err := s.queries.ListRequests(ctx, db.ListRequestsParams{
+			TraceID:         filterTraceID,
+			Type:            filterType,
+			ProviderID:      filterProviderID,
+			EndpointPath:    filterEndpointPath,
+			Model:           filterModel,
+			UpstreamModel:   filterUpstreamModel,
+			ProjectID:       filterProjectID,
+			CursorCreatedAt: cursorCreatedAt,
+			CursorID:        cursorID,
+			Limit:           pgtype.Int4{Int32: fetchLimit, Valid: true},
+		})
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to list requests", err)
+		}
+		return s.buildListRequestsResponse(ctx, rows, limit)
+	}
+
+	// Non-admin: same filter shape, but the scoped query adds account_id =
+	// caller. Filter handling is identical so a user with view_models can
+	// filter their own requests by model exactly like admin filters globally.
+	scoped, err := s.queries.ListRequestsByAccount(ctx, db.ListRequestsByAccountParams{
+		AccountID:       sess.Account.ID,
 		TraceID:         filterTraceID,
 		Type:            filterType,
 		ProviderID:      filterProviderID,
 		EndpointPath:    filterEndpointPath,
 		Model:           filterModel,
 		UpstreamModel:   filterUpstreamModel,
+		ProjectID:       filterProjectID,
 		CursorCreatedAt: cursorCreatedAt,
 		CursorID:        cursorID,
 		Limit:           pgtype.Int4{Int32: fetchLimit, Valid: true},
@@ -168,7 +132,16 @@ func (s *Server) handleListRequests(ctx context.Context, input *contract.ListReq
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to list requests", err)
 	}
+	// The two queries select identical columns; struct shapes match so the
+	// per-row cast is a no-op the compiler verifies for us.
+	rows := make([]db.ListRequestsRow, len(scoped))
+	for i := range scoped {
+		rows[i] = db.ListRequestsRow(scoped[i])
+	}
+	return s.buildListRequestsResponse(ctx, rows, limit)
+}
 
+func (s *Server) buildListRequestsResponse(ctx context.Context, rows []db.ListRequestsRow, limit int32) (*contract.ListRequestsResponse, error) {
 	hasMore := int32(len(rows)) > limit
 	if hasMore {
 		rows = rows[:limit]

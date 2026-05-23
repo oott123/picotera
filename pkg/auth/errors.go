@@ -164,13 +164,6 @@ func ErrNotBootstrapped() *AuthError {
 	return newErr(http.StatusServiceUnavailable, "not_bootstrapped", "系统尚未初始化，请在服务器上运行 `picotera enroll-admin`")
 }
 
-// ErrFiltersNotSupported rejects filter parameters from non-admin callers on
-// list endpoints where the scoped query doesn't support filtering.
-// Per project convention: fail fast on unexpected input.
-func ErrFiltersNotSupported() *AuthError {
-	return newErr(http.StatusBadRequest, "filters_not_supported", "当前权限不支持筛选请求列表")
-}
-
 // AsAuthError unwraps an error chain and returns the embedded *AuthError if any,
 // or nil otherwise. Useful for handler error mapping.
 func AsAuthError(err error) *AuthError {

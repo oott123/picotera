@@ -283,13 +283,35 @@ SET ttft_ms = $2, input_tokens = $3, output_tokens = $4,
 WHERE id = $1 AND created_at = sqlc.arg('created_at')::timestamp;
 
 -- name: ListRequestsByAccount :many
+-- Scoped sibling of ListRequests. Same filter shape, plus a mandatory
+-- account_id predicate. Uses request.account_id (denormalized in migration
+-- 030) instead of joining api_key, so history survives api_key/account
+-- deletion.
 SELECT r.id, r.span_id, r.parent_span_id, r.type, r.status, r.provider_id, r.endpoint_path, r.api_key_id, r.model,
        r.upstream_model, r.input_tokens, r.cache_read_tokens, r.output_tokens, r.cache_write_tokens, r.cache_write_1h_tokens,
        r.status_code, r.error_message, r.ttft_ms, r.time_spent_ms, r.created_at,
        r.model_cost, r.model_cost_currency,
        r.user_message_preview, r.project_id
 FROM request r
-JOIN api_key k ON k.id = r.api_key_id
-WHERE k.account_id = $1
+LEFT JOIN traces selected_trace ON selected_trace.id = sqlc.narg('trace_id')::text
+WHERE r.account_id = sqlc.arg('account_id')::int
+  AND (sqlc.narg('type')::int IS NULL OR r.type = sqlc.narg('type'))
+  AND (sqlc.narg('provider_id')::int IS NULL OR r.provider_id = sqlc.narg('provider_id'))
+  AND (sqlc.narg('endpoint_path')::text IS NULL OR r.endpoint_path = sqlc.narg('endpoint_path'))
+  AND (sqlc.narg('model')::text IS NULL OR r.model = sqlc.narg('model'))
+  AND (sqlc.narg('upstream_model')::text IS NULL OR r.upstream_model = sqlc.narg('upstream_model'))
+  AND (sqlc.narg('project_id')::int IS NULL OR r.project_id = sqlc.narg('project_id'))
+  AND (
+    sqlc.narg('trace_id')::text IS NULL
+    OR (
+      r.parent_span_id = selected_trace.parent_span_id
+      AND r.created_at >= selected_trace.first_request_at
+      AND r.created_at <= selected_trace.last_request_at
+    )
+  )
+  AND (
+    sqlc.narg('cursor_created_at')::timestamp IS NULL
+    OR (r.created_at, r.id) < (sqlc.narg('cursor_created_at')::timestamp, sqlc.narg('cursor_id')::text)
+  )
 ORDER BY r.created_at DESC, r.id DESC
-LIMIT $2;
+LIMIT sqlc.narg('limit')::int;
