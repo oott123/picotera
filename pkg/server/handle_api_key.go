@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strings"
 
 	"picotera/pkg/auth"
 	"picotera/pkg/contract"
@@ -12,7 +11,6 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -21,15 +19,6 @@ func marshalAnnotations(a map[string]string) ([]byte, error) {
 		a = map[string]string{}
 	}
 	return json.Marshal(a)
-}
-
-func isUniqueViolation(err error) bool {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-		return true
-	}
-	// Defensive fallback for adapters that wrap the SQLSTATE differently.
-	return strings.Contains(err.Error(), "23505")
 }
 
 func (s *Server) handleListApiKeys(ctx context.Context, _ *struct{}) (*contract.ListApiKeysResponse, error) {

@@ -338,7 +338,11 @@ func (s *Server) handleEnrollmentCompleteHTTP(w http.ResponseWriter, r *http.Req
 			Disabled:            false,
 		})
 		if err != nil {
-			writeAuthErr(w, auth.ErrUsernameTaken())
+			if isUniqueViolation(err) {
+				writeAuthErr(w, auth.ErrUsernameTaken())
+				return
+			}
+			writeAuthErr(w, fmt.Errorf("enrollment/complete bootstrap: insert account: %w", err))
 			return
 		}
 		account = a
@@ -381,8 +385,11 @@ func (s *Server) handleEnrollmentCompleteHTTP(w http.ResponseWriter, r *http.Req
 			Disabled:            false,
 		})
 		if err != nil {
-			// Task P4.07 will replace this with specific PG 23505 detection.
-			writeAuthErr(w, auth.ErrUsernameTaken())
+			if isUniqueViolation(err) {
+				writeAuthErr(w, auth.ErrUsernameTaken())
+				return
+			}
+			writeAuthErr(w, fmt.Errorf("enrollment/complete invite: insert account: %w", err))
 			return
 		}
 		account = a
@@ -398,7 +405,11 @@ func (s *Server) handleEnrollmentCompleteHTTP(w http.ResponseWriter, r *http.Req
 		}
 		a, err := qtx.GetAccountByID(r.Context(), consumed.TargetAccountID.Int32)
 		if err != nil {
-			writeAuthErr(w, auth.ErrEnrollmentConsumed())
+			if errors.Is(err, pgx.ErrNoRows) {
+				writeAuthErr(w, auth.ErrAccountNotFound())
+				return
+			}
+			writeAuthErr(w, fmt.Errorf("enrollment/complete reset: get account: %w", err))
 			return
 		}
 		// Reset: delete all existing credentials, then register the new one.
