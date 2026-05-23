@@ -686,6 +686,20 @@ func autoProjectName(p string) string {
 	return base
 }
 
+// accountIDForAPIKey returns the apiKey's owning account_id, or 0 if the
+// key is a system key (account_id IS NULL). The zero return is the agreed
+// sentinel that downstream project resolution / per-account scoping treats
+// as "no owner, skip personal scoping."
+func accountIDForAPIKey(apiKey *db.ApiKey) int32 {
+	if apiKey == nil {
+		return 0
+	}
+	if !apiKey.AccountID.Valid {
+		return 0
+	}
+	return apiKey.AccountID.Int32
+}
+
 // upsertProjectSeen updates project.first_seen_at / last_seen_at for the
 // matched project id. Errors are logged at warn and swallowed — they must not
 // affect request handling.
@@ -731,9 +745,13 @@ func (s *Server) updateRequestModel(ctx context.Context, arg db.UpdateRequestMod
 
 // updateRequestProjectID backfills the meta request row's project_id once
 // the account-scoped project resolution settles (post-authentication).
-// Errors are logged but do not affect the response.
+// Uses a 5 s timeout — matching upsertProjectSeen — so a slow DB cannot
+// hold up the goroutine indefinitely. Errors are logged but do not affect
+// the response.
 func (s *Server) updateRequestProjectID(ctx context.Context, arg db.UpdateRequestProjectIDParams) {
-	if err := s.queries.UpdateRequestProjectID(ctx, arg); err != nil {
+	tctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.queries.UpdateRequestProjectID(tctx, arg); err != nil {
 		logx.WithContext(ctx).WithError(err).Error("failed to update request project id")
 	}
 }

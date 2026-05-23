@@ -79,6 +79,12 @@ func extractProjectCandidates(ctx context.Context, body []byte) []string {
 			if !ok || decoded == "" {
 				continue
 			}
+			// Trivial paths that would either match-everything via HasPrefix ("/")
+			// or be useless as project identifiers (".", ".."). Drop before the
+			// router or auto-create can latch onto them.
+			if decoded == "/" || decoded == "." || decoded == ".." {
+				continue
+			}
 			if _, dup := seen[decoded]; dup {
 				continue
 			}

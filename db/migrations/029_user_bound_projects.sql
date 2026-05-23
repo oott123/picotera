@@ -10,14 +10,28 @@ ALTER TABLE project ADD COLUMN account_id INTEGER REFERENCES account(id) ON DELE
 -- bootstrapped the instance. Documented as a one-time dev-data quirk: in
 -- production deployments where pre-029 project rows exist, an admin should
 -- review and reassign them via direct SQL after migration.
-UPDATE project
-SET account_id = (
-    SELECT id FROM account
-    WHERE role = 'admin' AND NOT disabled
-    ORDER BY id ASC
-    LIMIT 1
-)
-WHERE account_id IS NULL;
+--
+-- Guard: if pre-existing project rows exist but no active admin is available
+-- to backfill to, abort with a clear message rather than silently setting
+-- account_id = NULL and then crashing on the SET NOT NULL below.
+-- +goose StatementBegin
+DO $$
+DECLARE
+  pre_existing INTEGER;
+  admin_id INTEGER;
+BEGIN
+  SELECT COUNT(*) INTO pre_existing FROM project WHERE account_id IS NULL;
+  IF pre_existing > 0 THEN
+    SELECT id INTO admin_id FROM account
+      WHERE role = 'admin' AND NOT disabled
+      ORDER BY id ASC LIMIT 1;
+    IF admin_id IS NULL THEN
+      RAISE EXCEPTION 'migration 029: % pre-existing project rows but no active admin to backfill to. Run picotera enroll-admin first or DELETE FROM project before re-running.', pre_existing;
+    END IF;
+    UPDATE project SET account_id = admin_id WHERE account_id IS NULL;
+  END IF;
+END$$;
+-- +goose StatementEnd
 
 ALTER TABLE project ALTER COLUMN account_id SET NOT NULL;
 

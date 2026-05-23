@@ -168,10 +168,7 @@ func (h *gatewayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// is also skipped because accountID == 0. The resolved id flows into
 	// every subsequent upstream row's ProjectID and onto the meta row via
 	// the backfill below.
-	var apiKeyAccountID int32
-	if apiKey.AccountID.Valid {
-		apiKeyAccountID = apiKey.AccountID.Int32
-	}
+	apiKeyAccountID := accountIDForAPIKey(apiKey)
 	projectIDPg = h.resolveProjectForAccount(r.Context(), apiKeyAccountID, projectCandidates)
 	if projectIDPg.Valid {
 		h.updateRequestProjectID(bgCtx, db.UpdateRequestProjectIDParams{

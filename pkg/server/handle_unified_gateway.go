@@ -163,10 +163,7 @@ func (s *Server) handleUnifiedGenerate(srcFormat llmbridge.Format) http.HandlerF
 
 		// Resolve project_id within the api_key's account namespace (mirrors
 		// handle_gateway.go). System keys skip both lookup and auto-create.
-		var apiKeyAccountID int32
-		if apiKey.AccountID.Valid {
-			apiKeyAccountID = apiKey.AccountID.Int32
-		}
+		apiKeyAccountID := accountIDForAPIKey(apiKey)
 		projectIDPg = h.resolveProjectForAccount(r.Context(), apiKeyAccountID, projectCandidates)
 		if projectIDPg.Valid {
 			h.updateRequestProjectID(bgCtx, db.UpdateRequestProjectIDParams{
