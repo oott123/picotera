@@ -84,6 +84,10 @@ const endpoints = computed<EndpointView[]>(() => endpointsQuery.data.value ?? []
 const models = computed<ModelView[]>(() => modelsQuery.data.value ?? [])
 
 const requestFilters = computed<RequestsFilters>(() => {
+  // Scoped mode: the non-admin server path doesn't accept any filter and
+  // returns 400 "filters_not_supported" if we send one. Strip every filter
+  // here so the request matches what the backend allows.
+  if (mode.value === 'scoped') return {}
   const out: {
     type?: number
     providerId?: number
@@ -484,9 +488,11 @@ function resetCursorAndReload() {
 <template>
   <div class="flex flex-col gap-3.5">
     <div class="flex items-end justify-between gap-3 flex-wrap">
-      <Field label="类型" as="div">
+      <!-- Filters are admin-only; the scoped backend rejects any filter param. -->
+      <Field v-if="mode === 'admin'" label="类型" as="div">
         <SegmentedControl v-model="filters.type" :options="typeOptions" />
       </Field>
+      <div v-else />
       <div class="flex items-center gap-2">
         <button
           v-if="activeFilterCount() > 0"
@@ -536,27 +542,32 @@ function resetCursorAndReload() {
         :on-row-click="(r) => openDetails(r)"
       >
         <template #header-projectId>
+          <!-- All column filters are admin-only; scoped backend rejects filters. -->
           <ColumnFilter
+            v-if="mode === 'admin'"
             v-model.number="filters.projectId"
             label="项目"
             :options="projectOptions"
             :empty-value="0"
             placeholder="过滤项目…"
           />
+          <span v-else class="text-xs text-ink-muted">项目</span>
         </template>
         <template #header-providerId>
           <ColumnFilter
+            v-if="mode === 'admin'"
             v-model.number="filters.providerId"
             label="渠道"
             :options="providerOptions"
             :empty-value="0"
             placeholder="过滤渠道…"
           />
+          <span v-else class="text-xs text-ink-muted">渠道</span>
         </template>
         <template #header-endpointPath>
-          <!-- requires view_models; skip dropdown when permission is absent -->
+          <!-- requires view_models AND admin; scoped backend rejects filters. -->
           <ColumnFilter
-            v-if="canFilterByModel"
+            v-if="mode === 'admin' && canFilterByModel"
             v-model="filters.endpointPath"
             label="端点"
             :options="endpointOptions"
@@ -565,8 +576,7 @@ function resetCursorAndReload() {
           <span v-else class="text-xs text-ink-muted">端点</span>
         </template>
         <template #header-model>
-          <!-- requires view_models; skip dropdowns when permission is absent -->
-          <template v-if="canFilterByModel">
+          <template v-if="mode === 'admin' && canFilterByModel">
             <ColumnFilter
               v-model="filters.model"
               label="模型"
