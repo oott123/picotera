@@ -11,7 +11,7 @@ type Permissions = components['schemas']['Permissions']
 const emit = defineEmits<{ close: [] }>()
 const props = defineProps<{
   account?: AccountView
-  // If provided on open, skip straight to the reveal-once view (reissue case)
+  // If provided on open, skip straight to the URL-display view (reissue case; URL is reveal-once for resets)
   revealUrl?: string
   revealExpiresAt?: string
 }>()
@@ -131,7 +131,7 @@ async function submit() {
         role: form.value.role,
         permissions: form.value.permissions,
       })
-      // Swap form to reveal-once view on successful invite
+      // Swap form to URL-display view on successful invite
       revealData.value = { url: result.url, expiresAt: result.expiresAt }
     }
   } catch (e: unknown) {
@@ -163,10 +163,10 @@ function fmtTime(iso?: string | null): string {
 
 <template>
   <SidePanel :title="panelTitle" :kicker="panelKicker" @close="emit('close')">
-    <!-- Reveal-once view: shown after invite creation, or when revealUrl prop is provided (reissue) -->
+    <!-- URL-display view: shown after invite creation (URL queryable via listInvitations), or when revealUrl prop is provided (reissue; those are reveal-once) -->
     <div v-if="revealData" class="flex flex-col gap-4">
       <p class="text-sm text-ink-muted">
-        把下面的链接发给被邀请人。链接仅展示一次，关闭后无法再次获取。
+        把下面的链接发给被邀请人。链接也会出现在用户管理页的「待发送邀请」列表中，可以随时复制或撤销。
       </p>
       <p class="text-xs text-ink-faint">
         受邀者注册成功后将出现在用户列表中。

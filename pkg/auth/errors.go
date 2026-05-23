@@ -92,14 +92,6 @@ func ErrLastPasskey() *AuthError {
 	return newErr(http.StatusBadRequest, "last_passkey", "无法删除最后一把密钥")
 }
 
-// ErrWebAuthnCeremony is the catch-all for cases where the more specific
-// errors below don't fit. Prefer the specific constructors when possible.
-// detail goes into the message verbatim — only call this with operator-
-// authored messages, NEVER with raw go-webauthn error strings.
-func ErrWebAuthnCeremony(detail string) *AuthError {
-	return newErr(http.StatusBadRequest, "webauthn_ceremony_failed", detail)
-}
-
 // ErrLoginAccountNotFound is returned when the WebAuthn library can't resolve
 // the credential's user handle to an account row — typically because the
 // account was deleted or the credential was force-revoked. Distinct from
@@ -170,6 +162,13 @@ func ErrInvitationNotFound() *AuthError {
 
 func ErrNotBootstrapped() *AuthError {
 	return newErr(http.StatusServiceUnavailable, "not_bootstrapped", "系统尚未初始化，请在服务器上运行 `picotera enroll-admin`")
+}
+
+// ErrFiltersNotSupported rejects filter parameters from non-admin callers on
+// list endpoints where the scoped query doesn't support filtering.
+// Per project convention: fail fast on unexpected input.
+func ErrFiltersNotSupported() *AuthError {
+	return newErr(http.StatusBadRequest, "filters_not_supported", "当前权限不支持筛选请求列表")
 }
 
 // AsAuthError unwraps an error chain and returns the embedded *AuthError if any,

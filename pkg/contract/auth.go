@@ -121,8 +121,8 @@ type EnrollmentURLResponse struct {
 
 // InvitationResponse is returned by POST /invitations. The account does NOT
 // exist yet — it's created when the invitee consumes the enrollment URL.
-// Reveal-once: the URL is never retrievable from any other endpoint after this
-// response.
+// The URL also appears in GET /invitations (listInvitations) so admins can
+// retrieve it again without reissuing.
 type InvitationResponse struct {
 	URL       string    `json:"url"`
 	ExpiresAt time.Time `json:"expiresAt"`
@@ -275,7 +275,7 @@ var OperationCreateInvitation = huma.Operation{
 	OperationID: "createInvitation",
 	Method:      http.MethodPost,
 	Path:        "/invitations",
-	Summary:     "Create an account and an invite-intent enrollment URL; reveal-once.",
+	Summary:     "Create an invite-intent enrollment URL. The new account is created when the invitee consumes the URL.",
 }
 
 // InvitationView is the server-side projection of a pending enrollment row,

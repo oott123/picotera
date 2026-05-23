@@ -2429,7 +2429,7 @@ paths:
           description: Error
       security:
         - picoteraSession: []
-      summary: Create an account and an invite-intent enrollment URL; reveal-once.
+      summary: Create an invite-intent enrollment URL. The new account is created when the invitee consumes the URL.
   /api/picotera/invitations/revoke:
     post:
       operationId: revokeInvitation

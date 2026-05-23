@@ -31,7 +31,7 @@ func (q *Queries) DeleteAllCredentialsForAccount(ctx context.Context, accountID 
 	return err
 }
 
-const deleteCredentialByID = `-- name: DeleteCredentialByID :exec
+const deleteCredentialByID = `-- name: DeleteCredentialByID :execrows
 DELETE FROM webauthn_credential
 WHERE id = $1 AND account_id = $2
 `
@@ -41,9 +41,14 @@ type DeleteCredentialByIDParams struct {
 	AccountID int32 `json:"accountId"`
 }
 
-func (q *Queries) DeleteCredentialByID(ctx context.Context, arg DeleteCredentialByIDParams) error {
-	_, err := q.db.Exec(ctx, deleteCredentialByID, arg.ID, arg.AccountID)
-	return err
+// Owner-scoped delete: zero rows affected means the id doesn't match an owned
+// credential; handlers map that to credential_not_found.
+func (q *Queries) DeleteCredentialByID(ctx context.Context, arg DeleteCredentialByIDParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteCredentialByID, arg.ID, arg.AccountID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const getCredentialByCredentialID = `-- name: GetCredentialByCredentialID :one

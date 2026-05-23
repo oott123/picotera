@@ -92,6 +92,8 @@ type InsertEnrollmentParams struct {
 	TemplateDisplayName         pgtype.Text        `json:"templateDisplayName"`
 }
 
+// template_username ($10) and template_display_name ($11) are always NULL
+// as of P5.03 — the invite flow no longer pre-populates username/displayName.
 func (q *Queries) InsertEnrollment(ctx context.Context, arg InsertEnrollmentParams) (Enrollment, error) {
 	row := q.db.QueryRow(ctx, insertEnrollment,
 		arg.Token,

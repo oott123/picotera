@@ -23,7 +23,9 @@ type Querier interface {
 	DeleteAccountByID(ctx context.Context, id int32) error
 	DeleteAllCredentialsForAccount(ctx context.Context, accountID int32) error
 	DeleteApiKey(ctx context.Context, id int32) error
-	DeleteCredentialByID(ctx context.Context, arg DeleteCredentialByIDParams) error
+	// Owner-scoped delete: zero rows affected means the id doesn't match an owned
+	// credential; handlers map that to credential_not_found.
+	DeleteCredentialByID(ctx context.Context, arg DeleteCredentialByIDParams) (int64, error)
 	DeleteEndpoint(ctx context.Context, path string) error
 	DeleteExchangeRate(ctx context.Context, code string) error
 	DeleteModel(ctx context.Context, name string) error
@@ -73,6 +75,8 @@ type Querier interface {
 	InsertAccount(ctx context.Context, arg InsertAccountParams) (Account, error)
 	InsertApiKey(ctx context.Context, arg InsertApiKeyParams) (ApiKey, error)
 	InsertCredential(ctx context.Context, arg InsertCredentialParams) (WebauthnCredential, error)
+	// template_username ($10) and template_display_name ($11) are always NULL
+	// as of P5.03 — the invite flow no longer pre-populates username/displayName.
 	InsertEnrollment(ctx context.Context, arg InsertEnrollmentParams) (Enrollment, error)
 	InsertProject(ctx context.Context, arg InsertProjectParams) (Project, error)
 	InsertRequest(ctx context.Context, arg InsertRequestParams) (pgtype.Timestamp, error)

@@ -80,9 +80,13 @@ func (s *Server) handleListRequests(ctx context.Context, input *contract.ListReq
 	sess := auth.SessionFromContext(ctx)
 	if sess.Account.Role != "admin" {
 		// Non-admin: scoped to requests made with api keys owned by this account.
-		// The simpler scoped query does not support filters or cursor pagination,
-		// so we ignore them. The dashboard permission gates ensure non-admin views
-		// do not render filter controls, keeping the UX consistent.
+		// The scoped query doesn't support filters — reject any filter params
+		// per project convention (fail fast on unexpected input).
+		if input.Type != -1 || input.ProviderID != 0 || input.EndpointPath != "" ||
+			input.Model != "" || input.UpstreamModel != "" || input.TraceID != "" ||
+			input.ProjectID != 0 || input.Cursor != "" {
+			return nil, authErrToHuma(auth.ErrFiltersNotSupported())
+		}
 		rows, err := s.queries.ListRequestsByAccount(ctx, db.ListRequestsByAccountParams{
 			AccountID: pgtype.Int4{Int32: sess.Account.ID, Valid: true},
 			Limit:     fetchLimit,

@@ -4,14 +4,12 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sirupsen/logrus"
 
@@ -153,7 +151,15 @@ func (s *Server) handleAddCredentialCompleteHTTP(w http.ResponseWriter, r *http.
 		return
 	}
 
-	nickname := r.URL.Query().Get("nickname")
+	nicknameRaw := r.URL.Query().Get("nickname")
+	var validatedNickname *string
+	if nicknameRaw != "" {
+		if err := auth.ValidateNickname(&nicknameRaw); err != nil {
+			writeAuthErr(w, err)
+			return
+		}
+		validatedNickname = auth.NormalizeNickname(&nicknameRaw)
+	}
 
 	parsed, err := protocol.ParseCredentialCreationResponseBody(r.Body)
 	if err != nil {
@@ -185,7 +191,7 @@ func (s *Server) handleAddCredentialCompleteHTTP(w http.ResponseWriter, r *http.
 		AttestationType: cred.AttestationType,
 		BackupEligible:  cred.Flags.BackupEligible,
 		BackupState:     cred.Flags.BackupState,
-		Nickname:        nicknameParam(nickname),
+		Nickname:        nicknameParamPtr(validatedNickname),
 	})
 	if err != nil {
 		writeAuthErr(w, fmt.Errorf("add credential/complete: insert: %w", err))
@@ -204,13 +210,13 @@ func (s *Server) handleAddCredentialCompleteHTTP(w http.ResponseWriter, r *http.
 	_ = json.NewEncoder(w).Encode(credentialView(&row))
 }
 
-// nicknameParam converts a possibly-empty string to a pgtype.Text suitable
-// for InsertCredentialParams (NULL when empty).
-func nicknameParam(s string) pgtype.Text {
-	if s == "" {
+// nicknameParamPtr converts a *string (nil or already-normalized) to a
+// pgtype.Text for InsertCredentialParams (NULL when nil).
+func nicknameParamPtr(s *string) pgtype.Text {
+	if s == nil {
 		return pgtype.Text{}
 	}
-	return pgtype.Text{String: s, Valid: true}
+	return pgtype.Text{String: *s, Valid: true}
 }
 
 // ----- POST /me/credentials/rename ---------------------------------------
@@ -273,14 +279,15 @@ func (s *Server) handleDeleteMyCredential(ctx context.Context, in *deleteMyCrede
 	if count <= 1 {
 		return nil, authErrToHuma(auth.ErrLastPasskey())
 	}
-	if err := s.queries.DeleteCredentialByID(ctx, db.DeleteCredentialByIDParams{
+	n, err := s.queries.DeleteCredentialByID(ctx, db.DeleteCredentialByIDParams{
 		ID:        in.Body.ID,
 		AccountID: sess.Account.ID,
-	}); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, authErrToHuma(auth.ErrCredentialNotFound())
-		}
+	})
+	if err != nil {
 		return nil, fmt.Errorf("delete credential: %w", err)
+	}
+	if n == 0 {
+		return nil, authErrToHuma(auth.ErrCredentialNotFound())
 	}
 
 	logx.WithContext(ctx).WithFields(logrus.Fields{

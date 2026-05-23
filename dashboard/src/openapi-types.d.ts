@@ -291,7 +291,7 @@ export interface paths {
         /** List outstanding (unconsumed, unexpired) invitations. */
         get: operations["listInvitations"];
         put?: never;
-        /** Create an account and an invite-intent enrollment URL; reveal-once. */
+        /** Create an invite-intent enrollment URL. The new account is created when the invitee consumes the URL. */
         post: operations["createInvitation"];
         delete?: never;
         options?: never;

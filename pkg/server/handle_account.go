@@ -327,7 +327,9 @@ func (s *Server) handleDeleteAccountCredential(ctx context.Context, in *deleteAc
 		return nil, authErrToHuma(auth.ErrCredentialNotFound())
 	}
 
-	if err := s.queries.DeleteCredentialByID(ctx, db.DeleteCredentialByIDParams{
+	// The precheck above guarantees the row exists; rows-affected == 0 here
+	// means a concurrent delete — treat as success (idempotent admin op).
+	if _, err := s.queries.DeleteCredentialByID(ctx, db.DeleteCredentialByIDParams{
 		ID:        in.Body.CredentialID,
 		AccountID: in.Body.AccountID,
 	}); err != nil {
