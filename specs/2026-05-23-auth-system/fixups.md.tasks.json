@@ -1,0 +1,96 @@
+{
+  "planPath": "specs/2026-05-23-auth-system/fixups.md",
+  "lastUpdated": "2026-05-23T10:08:20.501202+00:00",
+  "tasks": [
+    {
+      "id": "16",
+      "planTask": 1,
+      "subject": "P4.01 Atomic enrollment-token consume (C1)",
+      "status": "completed"
+    },
+    {
+      "id": "22",
+      "planTask": 2,
+      "subject": "P4.02 Disabled-middleware JSON envelope + public-route bypass (C2)",
+      "status": "completed"
+    },
+    {
+      "id": "20",
+      "planTask": 3,
+      "subject": "P4.03 Admin-cannot-be-disabled rule (C3)",
+      "status": "completed"
+    },
+    {
+      "id": "21",
+      "planTask": 4,
+      "subject": "P4.04 Invite-as-template schema (I1, migration)",
+      "status": "completed"
+    },
+    {
+      "id": "23",
+      "planTask": 5,
+      "subject": "P4.05 Invite-as-template backend handlers (I1)",
+      "status": "completed",
+      "blockedBy": [
+        "21",
+        "16"
+      ]
+    },
+    {
+      "id": "26",
+      "planTask": 6,
+      "subject": "P4.06 Invite-as-template dashboard UX (I1)",
+      "status": "completed",
+      "blockedBy": [
+        "23"
+      ]
+    },
+    {
+      "id": "19",
+      "planTask": 7,
+      "subject": "P4.07 Specific 23505 / not-found error mapping (I2)",
+      "status": "completed",
+      "blockedBy": [
+        "23"
+      ]
+    },
+    {
+      "id": "24",
+      "planTask": 8,
+      "subject": "P4.08 Audit logs (I4)",
+      "status": "completed",
+      "blockedBy": [
+        "19"
+      ]
+    },
+    {
+      "id": "25",
+      "planTask": 9,
+      "subject": "P4.09 \u7528\u6237 rename + role label consistency (I6)",
+      "status": "completed",
+      "blockedBy": [
+        "20",
+        "26"
+      ]
+    },
+    {
+      "id": "17",
+      "planTask": 10,
+      "subject": "P4.10 Prevent self-delete (I8)",
+      "status": "completed",
+      "blockedBy": [
+        "25"
+      ]
+    },
+    {
+      "id": "18",
+      "planTask": 11,
+      "subject": "P4.11 Post-enroll redirect + reveal-once close confirm (M5+Q3)",
+      "status": "completed",
+      "blockedBy": [
+        "17"
+      ]
+    }
+  ],
+  "notes": "Phase 4 fixup plan addressing audit findings. Plan task numbers reflect the intended execution order (read the .md in order). Native task IDs were assigned by TaskCreate and are not sequential \u2014 sort by planTask. Dependency graph: 16/22/20/21 are independent and can run in parallel. 23 needs 21+16. 26 needs 23. 19 needs 23. 24 needs 19. 25 needs 20+26. 17 needs 25. 18 needs 17."
+}
