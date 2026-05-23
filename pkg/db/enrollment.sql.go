@@ -11,6 +11,29 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const consumeEnrollment = `-- name: ConsumeEnrollment :one
+UPDATE enrollment
+SET consumed_at = now()
+WHERE token = $1 AND consumed_at IS NULL
+RETURNING token, intent, target_account_id, created_at, expires_at, consumed_at
+`
+
+// Atomic single-use consume. Returns the row only if it was unconsumed.
+// Callers detect the "already consumed" branch via pgx.ErrNoRows.
+func (q *Queries) ConsumeEnrollment(ctx context.Context, token string) (Enrollment, error) {
+	row := q.db.QueryRow(ctx, consumeEnrollment, token)
+	var i Enrollment
+	err := row.Scan(
+		&i.Token,
+		&i.Intent,
+		&i.TargetAccountID,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.ConsumedAt,
+	)
+	return i, err
+}
+
 const getEnrollmentByToken = `-- name: GetEnrollmentByToken :one
 SELECT token, intent, target_account_id, created_at, expires_at, consumed_at FROM enrollment WHERE token = $1
 `
@@ -59,13 +82,4 @@ func (q *Queries) InsertEnrollment(ctx context.Context, arg InsertEnrollmentPara
 		&i.ConsumedAt,
 	)
 	return i, err
-}
-
-const markEnrollmentConsumed = `-- name: MarkEnrollmentConsumed :exec
-UPDATE enrollment SET consumed_at = now() WHERE token = $1
-`
-
-func (q *Queries) MarkEnrollmentConsumed(ctx context.Context, token string) error {
-	_, err := q.db.Exec(ctx, markEnrollmentConsumed, token)
-	return err
 }

@@ -42,14 +42,14 @@ func (f *fakeEnrollQ) GetEnrollmentByToken(_ context.Context, t string) (db.Enro
 	return db.Enrollment{}, pgx.ErrNoRows
 }
 
-func (f *fakeEnrollQ) MarkEnrollmentConsumed(_ context.Context, t string) error {
+func (f *fakeEnrollQ) ConsumeEnrollment(_ context.Context, t string) (db.Enrollment, error) {
 	e, ok := f.enrollments[t]
-	if !ok {
-		return pgx.ErrNoRows
+	if !ok || e.ConsumedAt.Valid {
+		return db.Enrollment{}, pgx.ErrNoRows
 	}
 	e.ConsumedAt = pgtype.Timestamptz{Time: time.Now(), Valid: true}
 	f.enrollments[t] = e
-	return nil
+	return e, nil
 }
 
 func TestEnrollment_IssueAndLoad(t *testing.T) {
@@ -95,12 +95,31 @@ func TestEnrollment_IssueWithTarget(t *testing.T) {
 func TestEnrollment_Consume(t *testing.T) {
 	q := newFakeEnrollQ()
 	tok, _, _ := IssueEnrollment(context.Background(), q, IntentBootstrap, nil, time.Hour)
-	if err := ConsumeEnrollment(context.Background(), q, tok); err != nil {
+	if _, err := ConsumeEnrollment(context.Background(), q, tok); err != nil {
 		t.Fatal(err)
 	}
 	_, err := LoadEnrollment(context.Background(), q, tok)
 	if AsAuthError(err) == nil || AsAuthError(err).Code != "enrollment_consumed" {
 		t.Errorf("want enrollment_consumed, got %v", err)
+	}
+}
+
+func TestConsumeEnrollment_OncePerToken(t *testing.T) {
+	q := newFakeEnrollQ()
+	tok, _, err := IssueEnrollment(context.Background(), q, IntentBootstrap, nil, time.Hour)
+	if err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	if _, err := ConsumeEnrollment(context.Background(), q, tok); err != nil {
+		t.Fatalf("first consume: %v", err)
+	}
+	_, err = ConsumeEnrollment(context.Background(), q, tok)
+	if err == nil {
+		t.Fatal("second consume should have failed")
+	}
+	ae := AsAuthError(err)
+	if ae == nil || ae.Code != "enrollment_consumed" {
+		t.Fatalf("second consume: want enrollment_consumed, got %v", err)
 	}
 }
 

@@ -12,6 +12,9 @@ import (
 
 type Querier interface {
 	BackfillTrace(ctx context.Context, arg BackfillTraceParams) error
+	// Atomic single-use consume. Returns the row only if it was unconsumed.
+	// Callers detect the "already consumed" branch via pgx.ErrNoRows.
+	ConsumeEnrollment(ctx context.Context, token string) (Enrollment, error)
 	CountActiveAdminsForUpdate(ctx context.Context) (int64, error)
 	CountCredentialsByAccount(ctx context.Context, accountID int32) (int64, error)
 	CountTraces(ctx context.Context, arg CountTracesParams) (int64, error)
@@ -98,7 +101,6 @@ type Querier interface {
 	ListRequestsBySpan(ctx context.Context, arg ListRequestsBySpanParams) ([]ListRequestsBySpanRow, error)
 	ListScripts(ctx context.Context) ([]Script, error)
 	ListTraceBackfillCandidates(ctx context.Context) ([]ListTraceBackfillCandidatesRow, error)
-	MarkEnrollmentConsumed(ctx context.Context, token string) error
 	UpdateAccount(ctx context.Context, arg UpdateAccountParams) (Account, error)
 	UpdateApiKey(ctx context.Context, arg UpdateApiKeyParams) (ApiKey, error)
 	UpdateCredentialUsage(ctx context.Context, arg UpdateCredentialUsageParams) error

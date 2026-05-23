@@ -198,8 +198,8 @@ func (s *Server) handleEnrollmentBeginHTTP(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) handleEnrollmentCompleteHTTP(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
-	e, err := auth.LoadEnrollment(r.Context(), s.queries, token)
-	if err != nil {
+	// Pre-flight: surface 404/expired/consumed before any heavy work.
+	if _, err := auth.LoadEnrollment(r.Context(), s.queries, token); err != nil {
 		writeAuthErr(w, err)
 		return
 	}
@@ -230,9 +230,18 @@ func (s *Server) handleEnrollmentCompleteHTTP(w http.ResponseWriter, r *http.Req
 
 	qtx := s.queries.WithTx(tx)
 
+	// Atomic consume: acquires a row-level lock via the conditional UPDATE,
+	// serializing concurrent /complete requests on the same token. One wins
+	// (gets the row), all others get pgx.ErrNoRows → enrollment_consumed.
+	consumed, err := auth.ConsumeEnrollment(r.Context(), qtx, token)
+	if err != nil {
+		writeAuthErr(w, err)
+		return
+	}
+
 	var account db.Account
 
-	switch e.Intent {
+	switch consumed.Intent {
 	case auth.IntentBootstrap:
 		if stash.Bootstrap == nil {
 			writeAuthErr(w, auth.ErrWebAuthnCeremony("missing bootstrap ceremony state"))
@@ -270,11 +279,11 @@ func (s *Server) handleEnrollmentCompleteHTTP(w http.ResponseWriter, r *http.Req
 		}
 
 	case auth.IntentInvite:
-		if !e.TargetAccountID.Valid {
+		if !consumed.TargetAccountID.Valid {
 			writeAuthErr(w, auth.ErrEnrollmentConsumed())
 			return
 		}
-		a, err := qtx.GetAccountByID(r.Context(), e.TargetAccountID.Int32)
+		a, err := qtx.GetAccountByID(r.Context(), consumed.TargetAccountID.Int32)
 		if err != nil {
 			writeAuthErr(w, auth.ErrEnrollmentConsumed())
 			return
@@ -293,11 +302,11 @@ func (s *Server) handleEnrollmentCompleteHTTP(w http.ResponseWriter, r *http.Req
 		}
 
 	case auth.IntentReset:
-		if !e.TargetAccountID.Valid {
+		if !consumed.TargetAccountID.Valid {
 			writeAuthErr(w, auth.ErrEnrollmentConsumed())
 			return
 		}
-		a, err := qtx.GetAccountByID(r.Context(), e.TargetAccountID.Int32)
+		a, err := qtx.GetAccountByID(r.Context(), consumed.TargetAccountID.Int32)
 		if err != nil {
 			writeAuthErr(w, auth.ErrEnrollmentConsumed())
 			return
@@ -325,10 +334,6 @@ func (s *Server) handleEnrollmentCompleteHTTP(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if err := auth.ConsumeEnrollment(r.Context(), qtx, token); err != nil {
-		writeAuthErr(w, fmt.Errorf("enrollment/complete: consume: %w", err))
-		return
-	}
 	if err := tx.Commit(r.Context()); err != nil {
 		writeAuthErr(w, fmt.Errorf("enrollment/complete: commit: %w", err))
 		return
@@ -336,7 +341,7 @@ func (s *Server) handleEnrollmentCompleteHTTP(w http.ResponseWriter, r *http.Req
 
 	// Post-commit cleanup (best-effort).
 	_ = s.kvStore.Del(r.Context(), "webauthn_ceremony:enroll:"+token)
-	if e.Intent == auth.IntentReset {
+	if consumed.Intent == auth.IntentReset {
 		_, _ = s.sessionStore.RevokeAllForAccount(r.Context(), account.ID)
 	}
 

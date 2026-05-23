@@ -100,9 +100,24 @@ func LoadEnrollment(ctx context.Context, q db.Querier, token string) (*db.Enroll
 	return &row, nil
 }
 
-// ConsumeEnrollment marks a token as used. Call inside the same TX as the
-// credential / account insert so a crash between operations doesn't allow the
-// same token to be reused.
-func ConsumeEnrollment(ctx context.Context, q db.Querier, token string) error {
-	return q.MarkEnrollmentConsumed(ctx, token)
+// ConsumeEnrollment atomically marks a token consumed and returns the row.
+// Returns ErrEnrollmentConsumed if the token was already consumed or missing,
+// ErrEnrollmentExpired if the row exists but is past expires_at.
+//
+// Must be called inside the same TX as the credential / account insert so a
+// crash between operations doesn't allow the same token to be reused, AND so
+// concurrent requests serialize on the row-level lock from the conditional
+// UPDATE.
+func ConsumeEnrollment(ctx context.Context, q db.Querier, token string) (*db.Enrollment, error) {
+	row, err := q.ConsumeEnrollment(ctx, token)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrEnrollmentConsumed()
+		}
+		return nil, fmt.Errorf("enrollment: consume: %w", err)
+	}
+	if !row.ExpiresAt.Valid || time.Now().After(row.ExpiresAt.Time) {
+		return nil, ErrEnrollmentExpired()
+	}
+	return &row, nil
 }
