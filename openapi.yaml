@@ -568,15 +568,14 @@ components:
           format: uri
           readOnly: true
           type: string
-        account:
-          $ref: "#/components/schemas/AccountView"
         expiresAt:
           format: date-time
+          type: string
+        templateUsername:
           type: string
         url:
           type: string
       required:
-        - account
         - url
         - expiresAt
       type: object

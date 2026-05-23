@@ -52,12 +52,27 @@ func (s *Server) handlePreviewEnrollment(ctx context.Context, in *previewIn) (*p
 		Intent:    e.Intent,
 		ExpiresAt: e.ExpiresAt.Time,
 	}
-	if e.TargetAccountID.Valid {
-		a, gerr := s.queries.GetAccountByID(ctx, e.TargetAccountID.Int32)
-		if gerr == nil {
+	switch e.Intent {
+	case auth.IntentBootstrap:
+		// no target — bootstrap creates a brand-new admin
+	case auth.IntentInvite:
+		// Target is the admin's template suggestion if provided. The invitee
+		// can override at register/begin time. We only set target when BOTH
+		// template fields are present so the UI can do a simple "prefilled or
+		// not" check.
+		if e.TemplateUsername.Valid && e.TemplateDisplayName.Valid {
 			out.Target = &contract.EnrollmentTarget{
-				Username:    a.Username,
-				DisplayName: a.DisplayName,
+				Username:    e.TemplateUsername.String,
+				DisplayName: e.TemplateDisplayName.String,
+			}
+		}
+	case auth.IntentReset:
+		if e.TargetAccountID.Valid {
+			if a, gerr := s.queries.GetAccountByID(ctx, e.TargetAccountID.Int32); gerr == nil {
+				out.Target = &contract.EnrollmentTarget{
+					Username:    a.Username,
+					DisplayName: a.DisplayName,
+				}
 			}
 		}
 	}
@@ -66,23 +81,31 @@ func (s *Server) handlePreviewEnrollment(ctx context.Context, in *previewIn) (*p
 
 // ----- begin (raw chi — sets KV ceremony stash) ----------------------------
 
-// enrollBeginBody carries the username + display_name for bootstrap. Empty for
-// invite/reset. Optional nickname for the credential being registered.
+// enrollBeginBody carries the username + display_name. Used for both bootstrap
+// and invite intents (the invitee chooses; the template's suggestion is a
+// preview hint only). Empty body for reset.
 type enrollBeginBody struct {
-	Username    string `json:"username,omitempty"`    // bootstrap only
-	DisplayName string `json:"displayName,omitempty"` // bootstrap only
+	Username    string `json:"username,omitempty"`
+	DisplayName string `json:"displayName,omitempty"`
 }
 
 // enrollCeremonyStash combines the WebAuthn session data with the pending
-// account info — for bootstrap, we don't have an account row yet and must
-// remember the proposed username/display_name + generated user handle until
-// /complete runs the TX.
+// account info. Bootstrap and invite both create new accounts at consume time
+// (so we must remember the proposed username/displayName + generated user
+// handle until then). Reset uses the existing account, no stash data needed.
 type enrollCeremonyStash struct {
 	Data      webauthn.SessionData `json:"data"`
 	Bootstrap *bootstrapCeremony   `json:"bootstrap,omitempty"`
+	Invite    *inviteCeremony      `json:"invite,omitempty"`
 }
 
 type bootstrapCeremony struct {
+	Username           string `json:"username"`
+	DisplayName        string `json:"displayName"`
+	WebauthnUserHandle []byte `json:"webauthn_user_handle"`
+}
+
+type inviteCeremony struct {
 	Username           string `json:"username"`
 	DisplayName        string `json:"displayName"`
 	WebauthnUserHandle []byte `json:"webauthn_user_handle"`
@@ -144,7 +167,53 @@ func (s *Server) handleEnrollmentBeginHTTP(w http.ResponseWriter, r *http.Reques
 			WebauthnUserHandle: handle,
 		}
 
-	case auth.IntentInvite, auth.IntentReset:
+	case auth.IntentInvite:
+		if err := auth.ValidateUsername(body.Username); err != nil {
+			writeAuthErr(w, err)
+			return
+		}
+		if err := auth.ValidateDisplayName(body.DisplayName); err != nil {
+			writeAuthErr(w, err)
+			return
+		}
+		// Soft pre-check for uniqueness. The hard check at consume time inside
+		// the TX serves as the source of truth — two invitees racing on the same
+		// chosen username yield a clean 409 on the loser.
+		if _, gerr := s.queries.GetAccountByUsername(r.Context(), body.Username); gerr == nil {
+			writeAuthErr(w, auth.ErrUsernameTaken())
+			return
+		} else if !errors.Is(gerr, pgx.ErrNoRows) {
+			writeAuthErr(w, fmt.Errorf("enrollment/begin invite: check username: %w", gerr))
+			return
+		}
+		handle, err := auth.GenerateUserHandle()
+		if err != nil {
+			writeAuthErr(w, err)
+			return
+		}
+		// Build the user adapter as if the account exists, so the WebAuthn library
+		// can produce a valid CreationOptions. Role from template (with a safe
+		// default to "user" if template_role is somehow NULL).
+		role := "user"
+		if e.TemplateRole.Valid {
+			role = e.TemplateRole.String
+		}
+		wu = &auth.WebAuthnAccount{
+			Account: &db.Account{
+				ID:                 0,
+				Username:           body.Username,
+				DisplayName:        body.DisplayName,
+				WebauthnUserHandle: handle,
+				Role:               role,
+			},
+		}
+		stash.Invite = &inviteCeremony{
+			Username:           body.Username,
+			DisplayName:        body.DisplayName,
+			WebauthnUserHandle: handle,
+		}
+
+	case auth.IntentReset:
 		if !e.TargetAccountID.Valid {
 			writeAuthErr(w, auth.ErrEnrollmentConsumed())
 			return
@@ -155,9 +224,9 @@ func (s *Server) handleEnrollmentBeginHTTP(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		creds, _ := s.queries.ListCredentialsByAccount(r.Context(), a.ID)
-		// On reset, the existing credentials are exclusions for the ceremony
-		// (you can't re-register the same authenticator); they're DELETED at
-		// /complete commit time, not here.
+		// On reset, the existing credentials are exclusions for the ceremony (you
+		// can't re-register the same authenticator); they're DELETED at /complete
+		// commit time, not here.
 		wu = &auth.WebAuthnAccount{Account: &a, Credentials: creds}
 
 	default:
@@ -279,20 +348,41 @@ func (s *Server) handleEnrollmentCompleteHTTP(w http.ResponseWriter, r *http.Req
 		}
 
 	case auth.IntentInvite:
-		if !consumed.TargetAccountID.Valid {
-			writeAuthErr(w, auth.ErrEnrollmentConsumed())
+		if stash.Invite == nil {
+			writeAuthErr(w, auth.ErrWebAuthnCeremony("missing invite ceremony state"))
 			return
 		}
-		a, err := qtx.GetAccountByID(r.Context(), consumed.TargetAccountID.Int32)
-		if err != nil {
-			writeAuthErr(w, auth.ErrEnrollmentConsumed())
-			return
-		}
-		creds, _ := qtx.ListCredentialsByAccount(r.Context(), a.ID)
-		wu := &auth.WebAuthnAccount{Account: &a, Credentials: creds}
+		// Build the WebAuthn user adapter — same identity the /begin step used,
+		// so the assertion verifies against the same rp.id + user.id.
+		wu := &auth.WebAuthnAccount{Account: &db.Account{
+			Username:           stash.Invite.Username,
+			DisplayName:        stash.Invite.DisplayName,
+			WebauthnUserHandle: stash.Invite.WebauthnUserHandle,
+		}}
 		cred, err := s.webauthn.CreateCredential(wu, stash.Data, parsed)
 		if err != nil {
 			writeAuthErr(w, auth.ErrWebAuthnCeremony(err.Error()))
+			return
+		}
+		// Role from template; fall back to "user" if somehow not set (defensive).
+		role := "user"
+		if consumed.TemplateRole.Valid {
+			role = consumed.TemplateRole.String
+		}
+		a, err := qtx.InsertAccount(r.Context(), db.InsertAccountParams{
+			Username:            stash.Invite.Username,
+			DisplayName:         stash.Invite.DisplayName,
+			WebauthnUserHandle:  stash.Invite.WebauthnUserHandle,
+			Role:                role,
+			CanViewOwnUsage:     consumed.TemplateCanViewOwnUsage.Bool,
+			CanManageOwnApiKeys: consumed.TemplateCanManageOwnApiKeys.Bool,
+			CanViewModels:       consumed.TemplateCanViewModels.Bool,
+			CanViewOwnTraces:    consumed.TemplateCanViewOwnTraces.Bool,
+			Disabled:            false,
+		})
+		if err != nil {
+			// Task P4.07 will replace this with specific PG 23505 detection.
+			writeAuthErr(w, auth.ErrUsernameTaken())
 			return
 		}
 		account = a

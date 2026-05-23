@@ -366,61 +366,34 @@ func (s *Server) handleCreateInvitation(ctx context.Context, in *createInvitatio
 		return nil, authErrToHuma(err)
 	}
 
-	// Check for username uniqueness before opening the TX so the friendly error
-	// surfaces before the DB constraint fires.
-	_, err := s.queries.GetAccountByUsername(ctx, in.Body.Username)
-	if err == nil {
+	// Soft uniqueness check on the template username. The actual UNIQUE
+	// constraint fires at consume time inside the TX; this just gives admin a
+	// friendly 409 if the username is already taken at invite time.
+	if _, err := s.queries.GetAccountByUsername(ctx, in.Body.Username); err == nil {
 		return nil, authErrToHuma(auth.ErrUsernameTaken())
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("handleCreateInvitation: check username: %w", err)
 	}
 
-	handle, err := auth.GenerateUserHandle()
-	if err != nil {
-		return nil, fmt.Errorf("handleCreateInvitation: user handle: %w", err)
+	tpl := &auth.EnrollmentTemplate{
+		Role:        in.Body.Role,
+		Perms:       in.Body.Permissions,
+		Username:    in.Body.Username,
+		DisplayName: in.Body.DisplayName,
 	}
-
-	tx, err := s.dbPool.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("handleCreateInvitation: begin tx: %w", err)
-	}
-	defer tx.Rollback(ctx) //nolint:errcheck
-
-	q := s.queries.WithTx(tx)
-
-	newAccount, err := q.InsertAccount(ctx, db.InsertAccountParams{
-		Username:            in.Body.Username,
-		DisplayName:         in.Body.DisplayName,
-		WebauthnUserHandle:  handle,
-		Role:                in.Body.Role,
-		CanViewOwnUsage:     in.Body.Permissions.ViewOwnUsage,
-		CanManageOwnApiKeys: in.Body.Permissions.ManageOwnAPIKeys,
-		CanViewModels:       in.Body.Permissions.ViewModels,
-		CanViewOwnTraces:    in.Body.Permissions.ViewOwnTraces,
-		Disabled:            false,
-	})
-	if err != nil {
-		// The UNIQUE constraint on username fires here if there was a race
-		// between the pre-check above and the insert.
-		return nil, authErrToHuma(auth.ErrUsernameTaken())
-	}
-
-	// tpl is nil here — P4.05 will replace this with the real invite template.
-	token, expiresAt, err := auth.IssueEnrollment(ctx, q, auth.IntentInvite, &newAccount.ID, 0, nil)
+	token, expiresAt, err := auth.IssueEnrollment(ctx, s.queries, auth.IntentInvite, nil, 0, tpl)
 	if err != nil {
 		return nil, fmt.Errorf("handleCreateInvitation: issue enrollment: %w", err)
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("handleCreateInvitation: commit: %w", err)
-	}
-
 	url := s.config.PublicOrigins[0] + "/enroll/" + token
-	return &invitationOut{Body: contract.InvitationResponse{
-		Account:   accountViewFromAccount(&newAccount, nil),
-		URL:       url,
-		ExpiresAt: expiresAt,
-	}}, nil
+	return &invitationOut{
+		Body: contract.InvitationResponse{
+			URL:              url,
+			ExpiresAt:        expiresAt,
+			TemplateUsername: in.Body.Username,
+		},
+	}, nil
 }
 
 // ----- shared output types ---------------------------------------------------

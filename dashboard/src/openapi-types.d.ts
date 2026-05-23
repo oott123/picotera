@@ -1148,9 +1148,9 @@ export interface components {
              * @example https://example.com/schemas/InvitationResponse.json
              */
             readonly $schema?: string;
-            account: components["schemas"]["AccountView"];
             /** Format: date-time */
             expiresAt: string;
+            templateUsername?: string;
             url: string;
         };
         KvEntryView: {

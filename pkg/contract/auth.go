@@ -119,12 +119,14 @@ type EnrollmentURLResponse struct {
 	ExpiresAt time.Time `json:"expiresAt"`
 }
 
-// InvitationResponse is returned by POST /invitations — both the newly-created
-// account and its first-and-only enrollment URL. Same reveal-once semantics.
+// InvitationResponse is returned by POST /invitations. The account does NOT
+// exist yet — it's created when the invitee consumes the enrollment URL.
+// Reveal-once: the URL is never retrievable from any other endpoint after this
+// response.
 type InvitationResponse struct {
-	Account   AccountView `json:"account"`
-	URL       string      `json:"url"`
-	ExpiresAt time.Time   `json:"expiresAt"`
+	URL              string    `json:"url"`
+	ExpiresAt        time.Time `json:"expiresAt"`
+	TemplateUsername string    `json:"templateUsername,omitempty"`
 }
 
 // Operations --------------------------------------------------------------------
