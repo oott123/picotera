@@ -152,7 +152,7 @@ func ErrAccountNotFound() *AuthError {
 }
 
 func ErrCredentialNotFound() *AuthError {
-	return newErr(http.StatusNotFound, "credential_not_found", "credential not found")
+	return newErr(http.StatusNotFound, "credential_not_found", "凭证不存在")
 }
 
 // ErrInvitationNotFound differentiates "token doesn't exist as a pending
@@ -165,7 +165,7 @@ func ErrInvitationNotFound() *AuthError {
 }
 
 func ErrNotBootstrapped() *AuthError {
-	return newErr(http.StatusServiceUnavailable, "not_bootstrapped", "no admin enrolled; run `picotera enroll-admin`")
+	return newErr(http.StatusServiceUnavailable, "not_bootstrapped", "系统尚未初始化，请在服务器上运行 `picotera enroll-admin`")
 }
 
 // AsAuthError unwraps an error chain and returns the embedded *AuthError if any,
