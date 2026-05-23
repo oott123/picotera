@@ -44,19 +44,20 @@ type Endpoint struct {
 }
 
 type Enrollment struct {
-	Token                       string             `json:"token"`
-	Intent                      string             `json:"intent"`
-	TargetAccountID             pgtype.Int4        `json:"targetAccountId"`
-	CreatedAt                   pgtype.Timestamptz `json:"createdAt"`
-	ExpiresAt                   pgtype.Timestamptz `json:"expiresAt"`
-	ConsumedAt                  pgtype.Timestamptz `json:"consumedAt"`
-	TemplateRole                pgtype.Text        `json:"templateRole"`
-	TemplateCanViewOwnUsage     pgtype.Bool        `json:"templateCanViewOwnUsage"`
-	TemplateCanManageOwnApiKeys pgtype.Bool        `json:"templateCanManageOwnApiKeys"`
-	TemplateCanViewModels       pgtype.Bool        `json:"templateCanViewModels"`
-	TemplateCanViewOwnTraces    pgtype.Bool        `json:"templateCanViewOwnTraces"`
-	TemplateUsername            pgtype.Text        `json:"templateUsername"`
-	TemplateDisplayName         pgtype.Text        `json:"templateDisplayName"`
+	Token                        string             `json:"token"`
+	Intent                       string             `json:"intent"`
+	TargetAccountID              pgtype.Int4        `json:"targetAccountId"`
+	CreatedAt                    pgtype.Timestamptz `json:"createdAt"`
+	ExpiresAt                    pgtype.Timestamptz `json:"expiresAt"`
+	ConsumedAt                   pgtype.Timestamptz `json:"consumedAt"`
+	TemplateRole                 pgtype.Text        `json:"templateRole"`
+	TemplateCanViewOwnUsage      pgtype.Bool        `json:"templateCanViewOwnUsage"`
+	TemplateCanManageOwnApiKeys  pgtype.Bool        `json:"templateCanManageOwnApiKeys"`
+	TemplateCanViewModels        pgtype.Bool        `json:"templateCanViewModels"`
+	TemplateCanViewOwnTraces     pgtype.Bool        `json:"templateCanViewOwnTraces"`
+	TemplateUsername             pgtype.Text        `json:"templateUsername"`
+	TemplateDisplayName          pgtype.Text        `json:"templateDisplayName"`
+	TemplateCanManageOwnProjects pgtype.Bool        `json:"templateCanManageOwnProjects"`
 }
 
 type ExchangeRate struct {

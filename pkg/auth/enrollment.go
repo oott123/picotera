@@ -86,6 +86,7 @@ func IssueEnrollment(
 		params.TemplateCanManageOwnApiKeys = pgtype.Bool{Bool: tpl.Perms.ManageOwnAPIKeys, Valid: true}
 		params.TemplateCanViewModels = pgtype.Bool{Bool: tpl.Perms.ViewModels, Valid: true}
 		params.TemplateCanViewOwnTraces = pgtype.Bool{Bool: tpl.Perms.ViewOwnTraces, Valid: true}
+		params.TemplateCanManageOwnProjects = pgtype.Bool{Bool: tpl.Perms.ManageOwnProjects, Valid: true}
 		// template_username and template_display_name remain NULL — dead columns
 		// per P5.03 (kept in schema to avoid a drop migration).
 	}

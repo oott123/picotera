@@ -2,16 +2,17 @@
 SELECT * FROM enrollment WHERE token = $1;
 
 -- name: InsertEnrollment :one
--- template_username ($10) and template_display_name ($11) are always NULL
+-- template_username ($11) and template_display_name ($12) are always NULL
 -- as of P5.03 — the invite flow no longer pre-populates username/displayName.
 INSERT INTO enrollment (
   token, intent, target_account_id, expires_at,
   template_role,
   template_can_view_own_usage, template_can_manage_own_api_keys,
   template_can_view_models, template_can_view_own_traces,
+  template_can_manage_own_projects,
   template_username, template_display_name
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 RETURNING *;
 
 -- name: ConsumeEnrollment :one

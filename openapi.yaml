@@ -1012,6 +1012,8 @@ components:
       properties:
         manage_own_api_keys:
           type: boolean
+        manage_own_projects:
+          type: boolean
         view_models:
           type: boolean
         view_own_traces:
@@ -1023,6 +1025,7 @@ components:
         - manage_own_api_keys
         - view_models
         - view_own_traces
+        - manage_own_projects
       type: object
     PicoTeraError:
       additionalProperties: false

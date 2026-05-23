@@ -121,21 +121,23 @@ const insertAccount = `-- name: InsertAccount :one
 INSERT INTO account (
   username, display_name, webauthn_user_handle, role,
   can_view_own_usage, can_manage_own_api_keys, can_view_models, can_view_own_traces,
+  can_manage_own_projects,
   disabled
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING id, username, display_name, webauthn_user_handle, role, can_view_own_usage, can_manage_own_api_keys, can_view_models, can_view_own_traces, disabled, created_at, updated_at, can_manage_own_projects
 `
 
 type InsertAccountParams struct {
-	Username            string `json:"username"`
-	DisplayName         string `json:"displayName"`
-	WebauthnUserHandle  []byte `json:"webauthnUserHandle"`
-	Role                string `json:"role"`
-	CanViewOwnUsage     bool   `json:"canViewOwnUsage"`
-	CanManageOwnApiKeys bool   `json:"canManageOwnApiKeys"`
-	CanViewModels       bool   `json:"canViewModels"`
-	CanViewOwnTraces    bool   `json:"canViewOwnTraces"`
-	Disabled            bool   `json:"disabled"`
+	Username             string `json:"username"`
+	DisplayName          string `json:"displayName"`
+	WebauthnUserHandle   []byte `json:"webauthnUserHandle"`
+	Role                 string `json:"role"`
+	CanViewOwnUsage      bool   `json:"canViewOwnUsage"`
+	CanManageOwnApiKeys  bool   `json:"canManageOwnApiKeys"`
+	CanViewModels        bool   `json:"canViewModels"`
+	CanViewOwnTraces     bool   `json:"canViewOwnTraces"`
+	CanManageOwnProjects bool   `json:"canManageOwnProjects"`
+	Disabled             bool   `json:"disabled"`
 }
 
 func (q *Queries) InsertAccount(ctx context.Context, arg InsertAccountParams) (Account, error) {
@@ -148,6 +150,7 @@ func (q *Queries) InsertAccount(ctx context.Context, arg InsertAccountParams) (A
 		arg.CanManageOwnApiKeys,
 		arg.CanViewModels,
 		arg.CanViewOwnTraces,
+		arg.CanManageOwnProjects,
 		arg.Disabled,
 	)
 	var i Account
@@ -234,20 +237,22 @@ UPDATE account SET
   display_name = $2, role = $3,
   can_view_own_usage = $4, can_manage_own_api_keys = $5,
   can_view_models = $6, can_view_own_traces = $7,
-  disabled = $8, updated_at = now()
+  can_manage_own_projects = $8,
+  disabled = $9, updated_at = now()
 WHERE id = $1
 RETURNING id, username, display_name, webauthn_user_handle, role, can_view_own_usage, can_manage_own_api_keys, can_view_models, can_view_own_traces, disabled, created_at, updated_at, can_manage_own_projects
 `
 
 type UpdateAccountParams struct {
-	ID                  int32  `json:"id"`
-	DisplayName         string `json:"displayName"`
-	Role                string `json:"role"`
-	CanViewOwnUsage     bool   `json:"canViewOwnUsage"`
-	CanManageOwnApiKeys bool   `json:"canManageOwnApiKeys"`
-	CanViewModels       bool   `json:"canViewModels"`
-	CanViewOwnTraces    bool   `json:"canViewOwnTraces"`
-	Disabled            bool   `json:"disabled"`
+	ID                   int32  `json:"id"`
+	DisplayName          string `json:"displayName"`
+	Role                 string `json:"role"`
+	CanViewOwnUsage      bool   `json:"canViewOwnUsage"`
+	CanManageOwnApiKeys  bool   `json:"canManageOwnApiKeys"`
+	CanViewModels        bool   `json:"canViewModels"`
+	CanViewOwnTraces     bool   `json:"canViewOwnTraces"`
+	CanManageOwnProjects bool   `json:"canManageOwnProjects"`
+	Disabled             bool   `json:"disabled"`
 }
 
 func (q *Queries) UpdateAccount(ctx context.Context, arg UpdateAccountParams) (Account, error) {
@@ -259,6 +264,7 @@ func (q *Queries) UpdateAccount(ctx context.Context, arg UpdateAccountParams) (A
 		arg.CanManageOwnApiKeys,
 		arg.CanViewModels,
 		arg.CanViewOwnTraces,
+		arg.CanManageOwnProjects,
 		arg.Disabled,
 	)
 	var i Account

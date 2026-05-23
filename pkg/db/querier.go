@@ -75,7 +75,7 @@ type Querier interface {
 	InsertAccount(ctx context.Context, arg InsertAccountParams) (Account, error)
 	InsertApiKey(ctx context.Context, arg InsertApiKeyParams) (ApiKey, error)
 	InsertCredential(ctx context.Context, arg InsertCredentialParams) (WebauthnCredential, error)
-	// template_username ($10) and template_display_name ($11) are always NULL
+	// template_username ($11) and template_display_name ($12) are always NULL
 	// as of P5.03 — the invite flow no longer pre-populates username/displayName.
 	InsertEnrollment(ctx context.Context, arg InsertEnrollmentParams) (Enrollment, error)
 	InsertProject(ctx context.Context, arg InsertProjectParams) (Project, error)

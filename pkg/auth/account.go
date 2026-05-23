@@ -104,6 +104,8 @@ func Permits(a *db.Account, p contract.Permission) bool {
 		return a.CanViewModels
 	case contract.PermViewOwnTraces:
 		return a.CanViewOwnTraces
+	case contract.PermManageOwnProjects:
+		return a.CanManageOwnProjects
 	}
 	return false
 }
@@ -116,16 +118,18 @@ func PermissionsView(a *db.Account) contract.Permissions {
 	}
 	if a.Role == "admin" {
 		return contract.Permissions{
-			ViewOwnUsage:     true,
-			ManageOwnAPIKeys: true,
-			ViewModels:       true,
-			ViewOwnTraces:    true,
+			ViewOwnUsage:      true,
+			ManageOwnAPIKeys:  true,
+			ViewModels:        true,
+			ViewOwnTraces:     true,
+			ManageOwnProjects: true,
 		}
 	}
 	return contract.Permissions{
-		ViewOwnUsage:     a.CanViewOwnUsage,
-		ManageOwnAPIKeys: a.CanManageOwnApiKeys,
-		ViewModels:       a.CanViewModels,
-		ViewOwnTraces:    a.CanViewOwnTraces,
+		ViewOwnUsage:      a.CanViewOwnUsage,
+		ManageOwnAPIKeys:  a.CanManageOwnApiKeys,
+		ViewModels:        a.CanViewModels,
+		ViewOwnTraces:     a.CanViewOwnTraces,
+		ManageOwnProjects: a.CanManageOwnProjects,
 	}
 }

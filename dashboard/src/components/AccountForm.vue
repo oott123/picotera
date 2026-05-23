@@ -30,6 +30,7 @@ const defaultPermissions: Permissions = {
   manage_own_api_keys: true,
   view_models: true,
   view_own_traces: true,
+  manage_own_projects: true,
 }
 
 const form = ref({
@@ -63,6 +64,7 @@ watch(
         manage_own_api_keys: true,
         view_models: true,
         view_own_traces: true,
+        manage_own_projects: true,
       }
     }
   },
@@ -85,6 +87,7 @@ const permLabels: Record<keyof Permissions, string> = {
   manage_own_api_keys: '管理自己的 API Key',
   view_models: '查看模型',
   view_own_traces: '查看自己的链路',
+  manage_own_projects: '管理自己的项目',
 }
 
 const panelTitle = computed(() => {

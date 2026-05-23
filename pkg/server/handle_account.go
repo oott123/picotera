@@ -19,18 +19,19 @@ import (
 // carries the same columns as db.Account plus a pre-computed LastSignInAt.
 func accountViewFromRow(r *db.ListAccountsRow) contract.AccountView {
 	a := db.Account{
-		ID:                  r.ID,
-		Username:            r.Username,
-		DisplayName:         r.DisplayName,
-		WebauthnUserHandle:  r.WebauthnUserHandle,
-		Role:                r.Role,
-		CanViewOwnUsage:     r.CanViewOwnUsage,
-		CanManageOwnApiKeys: r.CanManageOwnApiKeys,
-		CanViewModels:       r.CanViewModels,
-		CanViewOwnTraces:    r.CanViewOwnTraces,
-		Disabled:            r.Disabled,
-		CreatedAt:           r.CreatedAt,
-		UpdatedAt:           r.UpdatedAt,
+		ID:                   r.ID,
+		Username:             r.Username,
+		DisplayName:          r.DisplayName,
+		WebauthnUserHandle:   r.WebauthnUserHandle,
+		Role:                 r.Role,
+		CanViewOwnUsage:      r.CanViewOwnUsage,
+		CanManageOwnApiKeys:  r.CanManageOwnApiKeys,
+		CanViewModels:        r.CanViewModels,
+		CanViewOwnTraces:     r.CanViewOwnTraces,
+		CanManageOwnProjects: r.CanManageOwnProjects,
+		Disabled:             r.Disabled,
+		CreatedAt:            r.CreatedAt,
+		UpdatedAt:            r.UpdatedAt,
 	}
 	var lsi *time.Time
 	if r.LastSignInAt.Valid {
@@ -155,22 +156,24 @@ func (s *Server) handleUpdateAccount(ctx context.Context, in *updateAccountIn) (
 	perms := in.Body.Permissions
 	if in.Body.Role == "admin" {
 		perms = contract.Permissions{
-			ViewOwnUsage:     true,
-			ManageOwnAPIKeys: true,
-			ViewModels:       true,
-			ViewOwnTraces:    true,
+			ViewOwnUsage:      true,
+			ManageOwnAPIKeys:  true,
+			ViewModels:        true,
+			ViewOwnTraces:     true,
+			ManageOwnProjects: true,
 		}
 	}
 
 	updated, err := q.UpdateAccount(ctx, db.UpdateAccountParams{
-		ID:                  in.ID,
-		DisplayName:         in.Body.DisplayName,
-		Role:                in.Body.Role,
-		CanViewOwnUsage:     perms.ViewOwnUsage,
-		CanManageOwnApiKeys: perms.ManageOwnAPIKeys,
-		CanViewModels:       perms.ViewModels,
-		CanViewOwnTraces:    perms.ViewOwnTraces,
-		Disabled:            in.Body.Disabled,
+		ID:                   in.ID,
+		DisplayName:          in.Body.DisplayName,
+		Role:                 in.Body.Role,
+		CanViewOwnUsage:      perms.ViewOwnUsage,
+		CanManageOwnApiKeys:  perms.ManageOwnAPIKeys,
+		CanViewModels:        perms.ViewModels,
+		CanViewOwnTraces:     perms.ViewOwnTraces,
+		CanManageOwnProjects: perms.ManageOwnProjects,
+		Disabled:             in.Body.Disabled,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("handleUpdateAccount: update: %w", err)
@@ -463,10 +466,11 @@ func (s *Server) handleCreateInvitation(ctx context.Context, in *createInvitatio
 	perms := in.Body.Permissions
 	if in.Body.Role == "admin" {
 		perms = contract.Permissions{
-			ViewOwnUsage:     true,
-			ManageOwnAPIKeys: true,
-			ViewModels:       true,
-			ViewOwnTraces:    true,
+			ViewOwnUsage:      true,
+			ManageOwnAPIKeys:  true,
+			ViewModels:        true,
+			ViewOwnTraces:     true,
+			ManageOwnProjects: true,
 		}
 	}
 
@@ -515,10 +519,11 @@ func (s *Server) handleListInvitations(ctx context.Context, _ *struct{}) (*listI
 		// Permissions snapshot from template_* columns. If template_* are NULL
 		// (legacy rows from before P4.04), treat as all-false.
 		perms := contract.Permissions{
-			ViewOwnUsage:     r.TemplateCanViewOwnUsage.Bool,
-			ManageOwnAPIKeys: r.TemplateCanManageOwnApiKeys.Bool,
-			ViewModels:       r.TemplateCanViewModels.Bool,
-			ViewOwnTraces:    r.TemplateCanViewOwnTraces.Bool,
+			ViewOwnUsage:      r.TemplateCanViewOwnUsage.Bool,
+			ManageOwnAPIKeys:  r.TemplateCanManageOwnApiKeys.Bool,
+			ViewModels:        r.TemplateCanViewModels.Bool,
+			ViewOwnTraces:     r.TemplateCanViewOwnTraces.Bool,
+			ManageOwnProjects: r.TemplateCanManageOwnProjects.Bool,
 		}
 		role := "user"
 		if r.TemplateRole.Valid {

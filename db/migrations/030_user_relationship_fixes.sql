@@ -59,7 +59,40 @@ CREATE INDEX request_account_id_idx ON request (account_id, created_at DESC);
 ALTER TABLE account ADD COLUMN can_manage_own_projects BOOLEAN NOT NULL DEFAULT FALSE;
 UPDATE account SET can_manage_own_projects = TRUE WHERE role = 'admin';
 
+-- 4. Matching template column on enrollment so admins can preset the
+--    permission when issuing an invite (mirrors the other template_can_*
+--    columns added in migration 028).
+ALTER TABLE enrollment ADD COLUMN template_can_manage_own_projects BOOLEAN;
+
+-- Tighten the template_intent CHECK: NULL is still allowed for non-invite
+-- intents, so drop the old constraint and rebuild it with the new column.
+ALTER TABLE enrollment DROP CONSTRAINT enrollment_template_intent_check;
+ALTER TABLE enrollment ADD CONSTRAINT enrollment_template_intent_check CHECK (
+  intent = 'invite'
+  OR (template_role IS NULL
+      AND template_can_view_own_usage IS NULL
+      AND template_can_manage_own_api_keys IS NULL
+      AND template_can_view_models IS NULL
+      AND template_can_view_own_traces IS NULL
+      AND template_can_manage_own_projects IS NULL
+      AND template_username IS NULL
+      AND template_display_name IS NULL)
+);
+
 -- +goose Down
+
+ALTER TABLE enrollment DROP CONSTRAINT enrollment_template_intent_check;
+ALTER TABLE enrollment ADD CONSTRAINT enrollment_template_intent_check CHECK (
+  intent = 'invite'
+  OR (template_role IS NULL
+      AND template_can_view_own_usage IS NULL
+      AND template_can_manage_own_api_keys IS NULL
+      AND template_can_view_models IS NULL
+      AND template_can_view_own_traces IS NULL
+      AND template_username IS NULL
+      AND template_display_name IS NULL)
+);
+ALTER TABLE enrollment DROP COLUMN template_can_manage_own_projects;
 
 ALTER TABLE account DROP COLUMN can_manage_own_projects;
 

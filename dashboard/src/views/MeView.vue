@@ -102,6 +102,7 @@ const permLabels: Record<string, string> = {
   manage_own_api_keys: '管理自己的 API Key',
   view_models: '查看模型',
   view_own_traces: '查看自己的链路',
+  manage_own_projects: '管理自己的项目',
 }
 
 function fmtTime(iso?: string | null): string {

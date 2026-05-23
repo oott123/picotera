@@ -1388,6 +1388,7 @@ export interface components {
         };
         Permissions: {
             manage_own_api_keys: boolean;
+            manage_own_projects: boolean;
             view_models: boolean;
             view_own_traces: boolean;
             view_own_usage: boolean;

@@ -16,6 +16,7 @@ func TestPermits_AdminAlwaysPasses(t *testing.T) {
 		contract.PermManageOwnAPIKeys,
 		contract.PermViewModels,
 		contract.PermViewOwnTraces,
+		contract.PermManageOwnProjects,
 	} {
 		if !Permits(a, p) {
 			t.Errorf("admin should pass %s, did not", p)
@@ -48,7 +49,7 @@ func TestPermits_UnknownPermission(t *testing.T) {
 
 func TestPermissionsView_Admin(t *testing.T) {
 	v := PermissionsView(&db.Account{Role: "admin"})
-	if !v.ViewOwnUsage || !v.ManageOwnAPIKeys || !v.ViewModels || !v.ViewOwnTraces {
+	if !v.ViewOwnUsage || !v.ManageOwnAPIKeys || !v.ViewModels || !v.ViewOwnTraces || !v.ManageOwnProjects {
 		t.Errorf("admin should be all-true, got %+v", v)
 	}
 }

@@ -347,15 +347,16 @@ func (s *Server) handleEnrollmentCompleteHTTP(w http.ResponseWriter, r *http.Req
 			return
 		}
 		a, err := qtx.InsertAccount(r.Context(), db.InsertAccountParams{
-			Username:            stash.Bootstrap.Username,
-			DisplayName:         stash.Bootstrap.DisplayName,
-			WebauthnUserHandle:  stash.Bootstrap.WebauthnUserHandle,
-			Role:                "admin",
-			CanViewOwnUsage:     true,
-			CanManageOwnApiKeys: true,
-			CanViewModels:       true,
-			CanViewOwnTraces:    true,
-			Disabled:            false,
+			Username:             stash.Bootstrap.Username,
+			DisplayName:          stash.Bootstrap.DisplayName,
+			WebauthnUserHandle:   stash.Bootstrap.WebauthnUserHandle,
+			Role:                 "admin",
+			CanViewOwnUsage:      true,
+			CanManageOwnApiKeys:  true,
+			CanViewModels:        true,
+			CanViewOwnTraces:     true,
+			CanManageOwnProjects: true,
+			Disabled:             false,
 		})
 		if err != nil {
 			if isUniqueViolation(err) {
@@ -395,15 +396,16 @@ func (s *Server) handleEnrollmentCompleteHTTP(w http.ResponseWriter, r *http.Req
 			role = consumed.TemplateRole.String
 		}
 		a, err := qtx.InsertAccount(r.Context(), db.InsertAccountParams{
-			Username:            stash.Invite.Username,
-			DisplayName:         stash.Invite.DisplayName,
-			WebauthnUserHandle:  stash.Invite.WebauthnUserHandle,
-			Role:                role,
-			CanViewOwnUsage:     consumed.TemplateCanViewOwnUsage.Bool,
-			CanManageOwnApiKeys: consumed.TemplateCanManageOwnApiKeys.Bool,
-			CanViewModels:       consumed.TemplateCanViewModels.Bool,
-			CanViewOwnTraces:    consumed.TemplateCanViewOwnTraces.Bool,
-			Disabled:            false,
+			Username:             stash.Invite.Username,
+			DisplayName:          stash.Invite.DisplayName,
+			WebauthnUserHandle:   stash.Invite.WebauthnUserHandle,
+			Role:                 role,
+			CanViewOwnUsage:      consumed.TemplateCanViewOwnUsage.Bool,
+			CanManageOwnApiKeys:  consumed.TemplateCanManageOwnApiKeys.Bool,
+			CanViewModels:        consumed.TemplateCanViewModels.Bool,
+			CanViewOwnTraces:     consumed.TemplateCanViewOwnTraces.Bool,
+			CanManageOwnProjects: consumed.TemplateCanManageOwnProjects.Bool,
+			Disabled:             false,
 		})
 		if err != nil {
 			if isUniqueViolation(err) {

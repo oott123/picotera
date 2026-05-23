@@ -11,10 +11,11 @@ import (
 type Permission string
 
 const (
-	PermViewOwnUsage     Permission = "view_own_usage"
-	PermManageOwnAPIKeys Permission = "manage_own_api_keys"
-	PermViewModels       Permission = "view_models"
-	PermViewOwnTraces    Permission = "view_own_traces"
+	PermViewOwnUsage      Permission = "view_own_usage"
+	PermManageOwnAPIKeys  Permission = "manage_own_api_keys"
+	PermViewModels        Permission = "view_models"
+	PermViewOwnTraces     Permission = "view_own_traces"
+	PermManageOwnProjects Permission = "manage_own_projects"
 )
 
 // AuthKind discriminates the AuthRequirement variants.
@@ -48,10 +49,11 @@ func RequirePermission(p Permission) AuthRequirement {
 // db.Account boolean columns so handlers can project one to the other directly.
 // Admins are reflected as all-true by the projection helper in pkg/auth.
 type Permissions struct {
-	ViewOwnUsage     bool `json:"view_own_usage"`
-	ManageOwnAPIKeys bool `json:"manage_own_api_keys"`
-	ViewModels       bool `json:"view_models"`
-	ViewOwnTraces    bool `json:"view_own_traces"`
+	ViewOwnUsage       bool `json:"view_own_usage"`
+	ManageOwnAPIKeys   bool `json:"manage_own_api_keys"`
+	ViewModels         bool `json:"view_models"`
+	ViewOwnTraces      bool `json:"view_own_traces"`
+	ManageOwnProjects  bool `json:"manage_own_projects"`
 }
 
 // SessionView is the response body of GET /me — the public face of the current session.
