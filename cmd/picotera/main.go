@@ -128,14 +128,14 @@ admin or --reset --username NAME to recover a specific existing admin.`,
 					log.Fatalf("user %q has role %q; --reset only handles admin accounts. Non-admin recovery is done via the dashboard's reissue-enrollment flow.", a.Username, a.Role)
 				}
 				id := a.ID
-				token, exp, err = auth.IssueEnrollment(ctx, q, auth.IntentReset, &id, auth.DefaultEnrollmentTTL)
+				token, exp, err = auth.IssueEnrollment(ctx, q, auth.IntentReset, &id, auth.DefaultEnrollmentTTL, nil)
 				if err != nil {
 					log.Fatalf("issue enrollment: %v", err)
 				}
 				label = fmt.Sprintf("Reset enrollment for %q", a.Username)
 
 			case enrollNew:
-				token, exp, err = auth.IssueEnrollment(ctx, q, auth.IntentBootstrap, nil, auth.DefaultEnrollmentTTL)
+				token, exp, err = auth.IssueEnrollment(ctx, q, auth.IntentBootstrap, nil, auth.DefaultEnrollmentTTL, nil)
 				if err != nil {
 					log.Fatalf("issue enrollment: %v", err)
 				}
@@ -149,7 +149,7 @@ admin or --reset --username NAME to recover a specific existing admin.`,
 				if has {
 					log.Fatalf("an admin already exists. Pass --new to add another admin, or --reset --username NAME to recover a specific admin.")
 				}
-				token, exp, err = auth.IssueEnrollment(ctx, q, auth.IntentBootstrap, nil, auth.DefaultEnrollmentTTL)
+				token, exp, err = auth.IssueEnrollment(ctx, q, auth.IntentBootstrap, nil, auth.DefaultEnrollmentTTL, nil)
 				if err != nil {
 					log.Fatalf("issue enrollment: %v", err)
 				}

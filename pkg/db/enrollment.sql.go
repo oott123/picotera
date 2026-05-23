@@ -15,7 +15,7 @@ const consumeEnrollment = `-- name: ConsumeEnrollment :one
 UPDATE enrollment
 SET consumed_at = now()
 WHERE token = $1 AND consumed_at IS NULL
-RETURNING token, intent, target_account_id, created_at, expires_at, consumed_at
+RETURNING token, intent, target_account_id, created_at, expires_at, consumed_at, template_role, template_can_view_own_usage, template_can_manage_own_api_keys, template_can_view_models, template_can_view_own_traces, template_username, template_display_name
 `
 
 // Atomic single-use consume. Returns the row only if it was unconsumed.
@@ -30,12 +30,19 @@ func (q *Queries) ConsumeEnrollment(ctx context.Context, token string) (Enrollme
 		&i.CreatedAt,
 		&i.ExpiresAt,
 		&i.ConsumedAt,
+		&i.TemplateRole,
+		&i.TemplateCanViewOwnUsage,
+		&i.TemplateCanManageOwnApiKeys,
+		&i.TemplateCanViewModels,
+		&i.TemplateCanViewOwnTraces,
+		&i.TemplateUsername,
+		&i.TemplateDisplayName,
 	)
 	return i, err
 }
 
 const getEnrollmentByToken = `-- name: GetEnrollmentByToken :one
-SELECT token, intent, target_account_id, created_at, expires_at, consumed_at FROM enrollment WHERE token = $1
+SELECT token, intent, target_account_id, created_at, expires_at, consumed_at, template_role, template_can_view_own_usage, template_can_manage_own_api_keys, template_can_view_models, template_can_view_own_traces, template_username, template_display_name FROM enrollment WHERE token = $1
 `
 
 func (q *Queries) GetEnrollmentByToken(ctx context.Context, token string) (Enrollment, error) {
@@ -48,21 +55,41 @@ func (q *Queries) GetEnrollmentByToken(ctx context.Context, token string) (Enrol
 		&i.CreatedAt,
 		&i.ExpiresAt,
 		&i.ConsumedAt,
+		&i.TemplateRole,
+		&i.TemplateCanViewOwnUsage,
+		&i.TemplateCanManageOwnApiKeys,
+		&i.TemplateCanViewModels,
+		&i.TemplateCanViewOwnTraces,
+		&i.TemplateUsername,
+		&i.TemplateDisplayName,
 	)
 	return i, err
 }
 
 const insertEnrollment = `-- name: InsertEnrollment :one
-INSERT INTO enrollment (token, intent, target_account_id, expires_at)
-VALUES ($1, $2, $3, $4)
-RETURNING token, intent, target_account_id, created_at, expires_at, consumed_at
+INSERT INTO enrollment (
+  token, intent, target_account_id, expires_at,
+  template_role,
+  template_can_view_own_usage, template_can_manage_own_api_keys,
+  template_can_view_models, template_can_view_own_traces,
+  template_username, template_display_name
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+RETURNING token, intent, target_account_id, created_at, expires_at, consumed_at, template_role, template_can_view_own_usage, template_can_manage_own_api_keys, template_can_view_models, template_can_view_own_traces, template_username, template_display_name
 `
 
 type InsertEnrollmentParams struct {
-	Token           string             `json:"token"`
-	Intent          string             `json:"intent"`
-	TargetAccountID pgtype.Int4        `json:"targetAccountId"`
-	ExpiresAt       pgtype.Timestamptz `json:"expiresAt"`
+	Token                       string             `json:"token"`
+	Intent                      string             `json:"intent"`
+	TargetAccountID             pgtype.Int4        `json:"targetAccountId"`
+	ExpiresAt                   pgtype.Timestamptz `json:"expiresAt"`
+	TemplateRole                pgtype.Text        `json:"templateRole"`
+	TemplateCanViewOwnUsage     pgtype.Bool        `json:"templateCanViewOwnUsage"`
+	TemplateCanManageOwnApiKeys pgtype.Bool        `json:"templateCanManageOwnApiKeys"`
+	TemplateCanViewModels       pgtype.Bool        `json:"templateCanViewModels"`
+	TemplateCanViewOwnTraces    pgtype.Bool        `json:"templateCanViewOwnTraces"`
+	TemplateUsername            pgtype.Text        `json:"templateUsername"`
+	TemplateDisplayName         pgtype.Text        `json:"templateDisplayName"`
 }
 
 func (q *Queries) InsertEnrollment(ctx context.Context, arg InsertEnrollmentParams) (Enrollment, error) {
@@ -71,6 +98,13 @@ func (q *Queries) InsertEnrollment(ctx context.Context, arg InsertEnrollmentPara
 		arg.Intent,
 		arg.TargetAccountID,
 		arg.ExpiresAt,
+		arg.TemplateRole,
+		arg.TemplateCanViewOwnUsage,
+		arg.TemplateCanManageOwnApiKeys,
+		arg.TemplateCanViewModels,
+		arg.TemplateCanViewOwnTraces,
+		arg.TemplateUsername,
+		arg.TemplateDisplayName,
 	)
 	var i Enrollment
 	err := row.Scan(
@@ -80,6 +114,13 @@ func (q *Queries) InsertEnrollment(ctx context.Context, arg InsertEnrollmentPara
 		&i.CreatedAt,
 		&i.ExpiresAt,
 		&i.ConsumedAt,
+		&i.TemplateRole,
+		&i.TemplateCanViewOwnUsage,
+		&i.TemplateCanManageOwnApiKeys,
+		&i.TemplateCanViewModels,
+		&i.TemplateCanViewOwnTraces,
+		&i.TemplateUsername,
+		&i.TemplateDisplayName,
 	)
 	return i, err
 }

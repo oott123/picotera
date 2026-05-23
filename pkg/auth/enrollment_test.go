@@ -54,7 +54,7 @@ func (f *fakeEnrollQ) ConsumeEnrollment(_ context.Context, t string) (db.Enrollm
 
 func TestEnrollment_IssueAndLoad(t *testing.T) {
 	q := newFakeEnrollQ()
-	tok, exp, err := IssueEnrollment(context.Background(), q, IntentBootstrap, nil, time.Hour)
+	tok, exp, err := IssueEnrollment(context.Background(), q, IntentBootstrap, nil, time.Hour, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestEnrollment_IssueAndLoad(t *testing.T) {
 func TestEnrollment_IssueWithTarget(t *testing.T) {
 	q := newFakeEnrollQ()
 	tid := int32(42)
-	tok, _, err := IssueEnrollment(context.Background(), q, IntentInvite, &tid, time.Hour)
+	tok, _, err := IssueEnrollment(context.Background(), q, IntentInvite, &tid, time.Hour, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestEnrollment_IssueWithTarget(t *testing.T) {
 
 func TestEnrollment_Consume(t *testing.T) {
 	q := newFakeEnrollQ()
-	tok, _, _ := IssueEnrollment(context.Background(), q, IntentBootstrap, nil, time.Hour)
+	tok, _, _ := IssueEnrollment(context.Background(), q, IntentBootstrap, nil, time.Hour, nil)
 	if _, err := ConsumeEnrollment(context.Background(), q, tok); err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestEnrollment_Consume(t *testing.T) {
 
 func TestConsumeEnrollment_OncePerToken(t *testing.T) {
 	q := newFakeEnrollQ()
-	tok, _, err := IssueEnrollment(context.Background(), q, IntentBootstrap, nil, time.Hour)
+	tok, _, err := IssueEnrollment(context.Background(), q, IntentBootstrap, nil, time.Hour, nil)
 	if err != nil {
 		t.Fatalf("issue: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestConsumeEnrollment_OncePerToken(t *testing.T) {
 
 func TestEnrollment_Expired(t *testing.T) {
 	q := newFakeEnrollQ()
-	tok, _, _ := IssueEnrollment(context.Background(), q, IntentBootstrap, nil, -1*time.Hour)
+	tok, _, _ := IssueEnrollment(context.Background(), q, IntentBootstrap, nil, -1*time.Hour, nil)
 	_, err := LoadEnrollment(context.Background(), q, tok)
 	if AsAuthError(err) == nil || AsAuthError(err).Code != "enrollment_expired" {
 		t.Errorf("want enrollment_expired, got %v", err)
@@ -143,7 +143,7 @@ func TestEnrollment_MissingTreatedAsConsumed(t *testing.T) {
 func TestEnrollment_DefaultTTL(t *testing.T) {
 	q := newFakeEnrollQ()
 	before := time.Now()
-	_, exp, err := IssueEnrollment(context.Background(), q, IntentBootstrap, nil, 0)
+	_, exp, err := IssueEnrollment(context.Background(), q, IntentBootstrap, nil, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestEnrollment_DefaultTTL(t *testing.T) {
 
 func TestEnrollment_TokenIsURLSafe(t *testing.T) {
 	q := newFakeEnrollQ()
-	tok, _, _ := IssueEnrollment(context.Background(), q, IntentBootstrap, nil, time.Hour)
+	tok, _, _ := IssueEnrollment(context.Background(), q, IntentBootstrap, nil, time.Hour, nil)
 	for _, c := range tok {
 		ok := (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_'
 		if !ok {

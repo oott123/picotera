@@ -331,7 +331,7 @@ func (s *Server) handleReissueEnrollment(ctx context.Context, in *reissueEnrollm
 	}
 
 	id := in.Body.ID
-	token, expiresAt, err := auth.IssueEnrollment(ctx, s.queries, auth.IntentReset, &id, 0)
+	token, expiresAt, err := auth.IssueEnrollment(ctx, s.queries, auth.IntentReset, &id, 0, nil)
 	if err != nil {
 		return nil, fmt.Errorf("handleReissueEnrollment: issue: %w", err)
 	}
@@ -405,7 +405,8 @@ func (s *Server) handleCreateInvitation(ctx context.Context, in *createInvitatio
 		return nil, authErrToHuma(auth.ErrUsernameTaken())
 	}
 
-	token, expiresAt, err := auth.IssueEnrollment(ctx, q, auth.IntentInvite, &newAccount.ID, 0)
+	// tpl is nil here — P4.05 will replace this with the real invite template.
+	token, expiresAt, err := auth.IssueEnrollment(ctx, q, auth.IntentInvite, &newAccount.ID, 0, nil)
 	if err != nil {
 		return nil, fmt.Errorf("handleCreateInvitation: issue enrollment: %w", err)
 	}

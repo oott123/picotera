@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"picotera/pkg/contract"
 	"picotera/pkg/db"
 )
 
@@ -33,18 +34,35 @@ func newEnrollmentToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
+// EnrollmentTemplate carries the role + permissions + optional username /
+// displayName suggestion that an invite ceremony bakes into the account when
+// the invitee consumes the URL. Only meaningful for IntentInvite; pass nil
+// for bootstrap and reset.
+type EnrollmentTemplate struct {
+	Role        string               // "admin" or "user"
+	Perms       contract.Permissions // four booleans projected per-account
+	Username    string               // optional suggested username
+	DisplayName string               // optional suggested displayName
+}
+
 // IssueEnrollment inserts a new enrollment row and returns the token + expiry.
-// For intent='bootstrap', targetAccountID must be nil; for invite/reset it must
-// reference an existing account.id. The CHECK constraint on the enrollment
-// table enforces this server-side regardless.
+// For intent='bootstrap', targetAccountID must be nil; for 'reset' it must
+// reference an existing account.id; for 'invite' it MUST be nil (per the
+// CHECK constraint added in migration 028). The CHECK constraint enforces
+// this server-side regardless.
 //
 // ttl <= 0 falls back to DefaultEnrollmentTTL.
+//
+// tpl is required for IntentInvite and forbidden for the other intents (the
+// template_intent_check constraint will reject the insert otherwise). Pass
+// nil for bootstrap and reset.
 func IssueEnrollment(
 	ctx context.Context,
 	q db.Querier,
 	intent string,
 	targetAccountID *int32,
 	ttl time.Duration,
+	tpl *EnrollmentTemplate,
 ) (string, time.Time, error) {
 	if ttl == 0 {
 		ttl = DefaultEnrollmentTTL
@@ -58,12 +76,22 @@ func IssueEnrollment(
 	if targetAccountID != nil {
 		tgt = pgtype.Int4{Int32: *targetAccountID, Valid: true}
 	}
-	if _, err := q.InsertEnrollment(ctx, db.InsertEnrollmentParams{
+	params := db.InsertEnrollmentParams{
 		Token:           token,
 		Intent:          intent,
 		TargetAccountID: tgt,
 		ExpiresAt:       pgtype.Timestamptz{Time: expiresAt, Valid: true},
-	}); err != nil {
+	}
+	if tpl != nil {
+		params.TemplateRole = pgtype.Text{String: tpl.Role, Valid: tpl.Role != ""}
+		params.TemplateCanViewOwnUsage = pgtype.Bool{Bool: tpl.Perms.ViewOwnUsage, Valid: true}
+		params.TemplateCanManageOwnApiKeys = pgtype.Bool{Bool: tpl.Perms.ManageOwnAPIKeys, Valid: true}
+		params.TemplateCanViewModels = pgtype.Bool{Bool: tpl.Perms.ViewModels, Valid: true}
+		params.TemplateCanViewOwnTraces = pgtype.Bool{Bool: tpl.Perms.ViewOwnTraces, Valid: true}
+		params.TemplateUsername = pgtype.Text{String: tpl.Username, Valid: tpl.Username != ""}
+		params.TemplateDisplayName = pgtype.Text{String: tpl.DisplayName, Valid: tpl.DisplayName != ""}
+	}
+	if _, err := q.InsertEnrollment(ctx, params); err != nil {
 		return "", time.Time{}, fmt.Errorf("enrollment: insert: %w", err)
 	}
 	return token, expiresAt, nil
