@@ -15,7 +15,7 @@ import {
 } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
 import { webauthnCreate, WebAuthnUserCancelled } from '@/api/webauthn'
-import { Button, IconButton, Input, Badge, DataCard, DataTable, Th, Td, Tr, StateText, Icon } from '@/ui'
+import { Button, IconButton, Input, Field, Badge, DataCard, DataTable, Th, Td, Tr, StateText, Icon } from '@/ui'
 import type { components } from '@/openapi-types'
 
 type CredentialView = components['schemas']['CredentialView']
@@ -190,23 +190,27 @@ function roleLabel(role: string): string {
       <!-- Passkeys card -->
       <DataCard>
         <div>
-          <!-- Card header with add-passkey controls -->
-          <div class="px-6 pt-6 pb-4 flex items-center justify-between gap-4">
+          <!-- Card header -->
+          <div class="px-6 pt-6 pb-2">
             <h2 class="text-sm font-semibold text-ink">Passkey</h2>
-            <div class="flex items-center gap-2">
+          </div>
+
+          <!-- Add-passkey row: labeled nickname input + add button -->
+          <div class="px-6 pb-4 flex items-end gap-3">
+            <Field label="昵称（可选）" class="flex-1 max-w-xs">
               <Input
                 v-model="newNickname"
-                placeholder="昵称（可选）"
-                class="w-36"
+                maxlength="60"
+                placeholder="例如 我的 MacBook"
               />
-              <Button
-                :disabled="addMutation.isPending.value"
-                @click="addMutation.mutate()"
-              >
-                <Icon name="plus" :size="14" :stroke-width="2.2" />
-                <span>{{ addMutation.isPending.value ? '添加中…' : '添加' }}</span>
-              </Button>
-            </div>
+            </Field>
+            <Button
+              :disabled="addMutation.isPending.value"
+              @click="addMutation.mutate()"
+            >
+              <Icon name="plus" :size="14" :stroke-width="2.2" />
+              <span>{{ addMutation.isPending.value ? '添加中…' : '添加 Passkey' }}</span>
+            </Button>
           </div>
 
           <!-- Error message from add mutation -->
