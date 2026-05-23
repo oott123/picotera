@@ -7,6 +7,8 @@ package db
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const deleteApiKey = `-- name: DeleteApiKey :exec
@@ -44,6 +46,31 @@ SELECT id, name, annotations, key, disabled, created_at, updated_at, account_id 
 
 func (q *Queries) GetApiKeyByKey(ctx context.Context, key string) (ApiKey, error) {
 	row := q.db.QueryRow(ctx, getApiKeyByKey, key)
+	var i ApiKey
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Annotations,
+		&i.Key,
+		&i.Disabled,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.AccountID,
+	)
+	return i, err
+}
+
+const getApiKeyOwnedBy = `-- name: GetApiKeyOwnedBy :one
+SELECT id, name, annotations, key, disabled, created_at, updated_at, account_id FROM api_key WHERE id = $1 AND account_id = $2 LIMIT 1
+`
+
+type GetApiKeyOwnedByParams struct {
+	ID        int32       `json:"id"`
+	AccountID pgtype.Int4 `json:"accountId"`
+}
+
+func (q *Queries) GetApiKeyOwnedBy(ctx context.Context, arg GetApiKeyOwnedByParams) (ApiKey, error) {
+	row := q.db.QueryRow(ctx, getApiKeyOwnedBy, arg.ID, arg.AccountID)
 	var i ApiKey
 	err := row.Scan(
 		&i.ID,
@@ -98,6 +125,39 @@ SELECT id, name, annotations, key, disabled, created_at, updated_at, account_id 
 
 func (q *Queries) ListApiKeys(ctx context.Context) ([]ApiKey, error) {
 	rows, err := q.db.Query(ctx, listApiKeys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ApiKey
+	for rows.Next() {
+		var i ApiKey
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Annotations,
+			&i.Key,
+			&i.Disabled,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.AccountID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listApiKeysByAccount = `-- name: ListApiKeysByAccount :many
+SELECT id, name, annotations, key, disabled, created_at, updated_at, account_id FROM api_key WHERE account_id = $1 ORDER BY created_at DESC, id DESC
+`
+
+func (q *Queries) ListApiKeysByAccount(ctx context.Context, accountID pgtype.Int4) ([]ApiKey, error) {
+	rows, err := q.db.Query(ctx, listApiKeysByAccount, accountID)
 	if err != nil {
 		return nil, err
 	}

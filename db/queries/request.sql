@@ -157,3 +157,15 @@ UPDATE request
 SET ttft_ms = $2, input_tokens = $3, output_tokens = $4,
     cache_read_tokens = $5, cache_write_tokens = $6, cache_write_1h_tokens = $7
 WHERE id = $1 AND created_at = sqlc.arg('created_at')::timestamp;
+
+-- name: ListRequestsByAccount :many
+SELECT r.id, r.span_id, r.parent_span_id, r.type, r.status, r.provider_id, r.endpoint_path, r.api_key_id, r.model,
+       r.upstream_model, r.input_tokens, r.cache_read_tokens, r.output_tokens, r.cache_write_tokens, r.cache_write_1h_tokens,
+       r.status_code, r.error_message, r.ttft_ms, r.time_spent_ms, r.created_at,
+       r.model_cost, r.model_cost_currency,
+       r.user_message_preview, r.project_id
+FROM request r
+JOIN api_key k ON k.id = r.api_key_id
+WHERE k.account_id = $1
+ORDER BY r.created_at DESC, r.id DESC
+LIMIT $2;

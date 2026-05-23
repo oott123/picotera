@@ -327,6 +327,96 @@ func (q *Queries) ListRequests(ctx context.Context, arg ListRequestsParams) ([]L
 	return items, nil
 }
 
+const listRequestsByAccount = `-- name: ListRequestsByAccount :many
+SELECT r.id, r.span_id, r.parent_span_id, r.type, r.status, r.provider_id, r.endpoint_path, r.api_key_id, r.model,
+       r.upstream_model, r.input_tokens, r.cache_read_tokens, r.output_tokens, r.cache_write_tokens, r.cache_write_1h_tokens,
+       r.status_code, r.error_message, r.ttft_ms, r.time_spent_ms, r.created_at,
+       r.model_cost, r.model_cost_currency,
+       r.user_message_preview, r.project_id
+FROM request r
+JOIN api_key k ON k.id = r.api_key_id
+WHERE k.account_id = $1
+ORDER BY r.created_at DESC, r.id DESC
+LIMIT $2
+`
+
+type ListRequestsByAccountParams struct {
+	AccountID pgtype.Int4 `json:"accountId"`
+	Limit     int32       `json:"limit"`
+}
+
+type ListRequestsByAccountRow struct {
+	ID                 string           `json:"id"`
+	SpanID             pgtype.Text      `json:"spanId"`
+	ParentSpanID       pgtype.Text      `json:"parentSpanId"`
+	Type               int32            `json:"type"`
+	Status             int32            `json:"status"`
+	ProviderID         pgtype.Int4      `json:"providerId"`
+	EndpointPath       pgtype.Text      `json:"endpointPath"`
+	ApiKeyID           pgtype.Int4      `json:"apiKeyId"`
+	Model              pgtype.Text      `json:"model"`
+	UpstreamModel      pgtype.Text      `json:"upstreamModel"`
+	InputTokens        pgtype.Int4      `json:"inputTokens"`
+	CacheReadTokens    pgtype.Int4      `json:"cacheReadTokens"`
+	OutputTokens       pgtype.Int4      `json:"outputTokens"`
+	CacheWriteTokens   pgtype.Int4      `json:"cacheWriteTokens"`
+	CacheWrite1hTokens pgtype.Int4      `json:"cacheWrite1hTokens"`
+	StatusCode         pgtype.Int4      `json:"statusCode"`
+	ErrorMessage       pgtype.Text      `json:"errorMessage"`
+	TtftMs             pgtype.Int4      `json:"ttftMs"`
+	TimeSpentMs        pgtype.Int4      `json:"timeSpentMs"`
+	CreatedAt          pgtype.Timestamp `json:"createdAt"`
+	ModelCost          pgtype.Numeric   `json:"modelCost"`
+	ModelCostCurrency  pgtype.Text      `json:"modelCostCurrency"`
+	UserMessagePreview pgtype.Text      `json:"userMessagePreview"`
+	ProjectID          pgtype.Int4      `json:"projectId"`
+}
+
+func (q *Queries) ListRequestsByAccount(ctx context.Context, arg ListRequestsByAccountParams) ([]ListRequestsByAccountRow, error) {
+	rows, err := q.db.Query(ctx, listRequestsByAccount, arg.AccountID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRequestsByAccountRow
+	for rows.Next() {
+		var i ListRequestsByAccountRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SpanID,
+			&i.ParentSpanID,
+			&i.Type,
+			&i.Status,
+			&i.ProviderID,
+			&i.EndpointPath,
+			&i.ApiKeyID,
+			&i.Model,
+			&i.UpstreamModel,
+			&i.InputTokens,
+			&i.CacheReadTokens,
+			&i.OutputTokens,
+			&i.CacheWriteTokens,
+			&i.CacheWrite1hTokens,
+			&i.StatusCode,
+			&i.ErrorMessage,
+			&i.TtftMs,
+			&i.TimeSpentMs,
+			&i.CreatedAt,
+			&i.ModelCost,
+			&i.ModelCostCurrency,
+			&i.UserMessagePreview,
+			&i.ProjectID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRequestsBySpan = `-- name: ListRequestsBySpan :many
 WITH anchor AS (
   SELECT request.span_id

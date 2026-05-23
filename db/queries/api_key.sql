@@ -20,3 +20,9 @@ RETURNING *;
 
 -- name: DeleteApiKey :exec
 DELETE FROM api_key WHERE id = $1;
+
+-- name: ListApiKeysByAccount :many
+SELECT * FROM api_key WHERE account_id = $1 ORDER BY created_at DESC, id DESC;
+
+-- name: GetApiKeyOwnedBy :one
+SELECT * FROM api_key WHERE id = $1 AND account_id = $2 LIMIT 1;
