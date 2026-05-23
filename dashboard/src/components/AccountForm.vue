@@ -155,7 +155,7 @@ function fmtTime(iso?: string | null): string {
           :disabled="isEdit"
           required
           placeholder="例如 alice"
-          pattern="[a-z0-9_-]{2,32}"
+          pattern="[-a-z0-9_]{2,32}"
           title="2-32 个小写字母、数字、_ 或 -"
         />
       </Field>
