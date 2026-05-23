@@ -123,6 +123,7 @@ func NewServer(ctx context.Context) (*Server, error) {
 	router := chi.NewMux()
 	router.Use(auth.LoadSession(config, queries, sessionStore))
 	api := humachi.New(router, huma.DefaultConfig("PicoTera Management API", "1.0.0"))
+	registerSecurityScheme(api)
 
 	jsxEngine := jsx.NewEngine(jsx.Config{
 		HookTimeout:      config.JSHookTimeout,
@@ -181,9 +182,31 @@ func NewServer(ctx context.Context) (*Server, error) {
 
 func NewHuma() huma.API {
 	router := chi.NewMux()
-	s := &Server{api: humachi.New(router, huma.DefaultConfig("PicoTera Management API", "1.0.0"))}
+	s := &Server{
+		router: router,
+		api:    humachi.New(router, huma.DefaultConfig("PicoTera Management API", "1.0.0")),
+	}
+	registerSecurityScheme(s.api)
 	s.registerOperations()
 	return s.api
+}
+
+// registerSecurityScheme declares the cookie-based session scheme on the
+// OpenAPI document. registerOp attaches a `picoteraSession: []` requirement
+// to every non-public operation, which references this scheme by name.
+func registerSecurityScheme(api huma.API) {
+	doc := api.OpenAPI()
+	if doc.Components == nil {
+		doc.Components = &huma.Components{}
+	}
+	if doc.Components.SecuritySchemes == nil {
+		doc.Components.SecuritySchemes = map[string]*huma.SecurityScheme{}
+	}
+	doc.Components.SecuritySchemes["picoteraSession"] = &huma.SecurityScheme{
+		Type: "apiKey",
+		In:   "cookie",
+		Name: auth.SessionCookieName,
+	}
 }
 
 func (s *Server) registerOperations() {

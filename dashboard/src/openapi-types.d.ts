@@ -57,6 +57,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/picotera/auth/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether at least one non-disabled admin account exists. */
+        get: operations["getAuthStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/picotera/endpoints": {
         parameters: {
             query?: never;
@@ -86,6 +103,23 @@ export interface paths {
         put?: never;
         /** Delete an endpoint */
         post: operations["deleteEndpoint"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/enrollments/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the metadata of an enrollment token so the UI can render the right form. */
+        get: operations["previewEnrollment"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -190,6 +224,57 @@ export interface paths {
         /** Create or update a KV entry */
         put: operations["upsertKvEntry"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Return the authenticated session view. */
+        get: operations["getMe"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/me/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the caller's registered passkeys. */
+        get: operations["listMyCredentials"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/me/credentials/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Remove one of the caller's passkeys (rejected when it would leave zero). */
+        post: operations["deleteMyCredential"];
         delete?: never;
         options?: never;
         head?: never;
@@ -664,6 +749,15 @@ export interface components {
             name: string;
             updatedAt: string;
         };
+        AuthStatus: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/AuthStatus.json
+             */
+            readonly $schema?: string;
+            bootstrapped: boolean;
+        };
         CreateProviderRequestBody: {
             /**
              * Format: uri
@@ -685,6 +779,19 @@ export interface components {
             providerModels: components["schemas"]["ProviderModelEntry"][] | null;
             proxyUrl?: string;
             supportsNativeWebSearch: boolean;
+        };
+        CredentialView: {
+            attestationType: string;
+            backupState: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            credentialIdSuffix: string;
+            /** Format: int32 */
+            id: number;
+            /** Format: date-time */
+            lastUsedAt?: string;
+            nickname?: string;
+            transports: string[] | null;
         };
         DeleteApiKeyRequestBody: {
             /**
@@ -731,6 +838,16 @@ export interface components {
              */
             readonly $schema?: string;
             name: string;
+        };
+        DeleteMyCredentialInBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/DeleteMyCredentialInBody.json
+             */
+            readonly $schema?: string;
+            /** Format: int32 */
+            id: number;
         };
         DeleteProjectRequestBody: {
             /**
@@ -786,6 +903,22 @@ export interface components {
             modelPath: string;
             name: string;
             path: string;
+        };
+        EnrollmentPreview: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/EnrollmentPreview.json
+             */
+            readonly $schema?: string;
+            /** Format: date-time */
+            expiresAt: string;
+            intent: string;
+            target?: components["schemas"]["EnrollmentTarget"];
+        };
+        EnrollmentTarget: {
+            displayName: string;
+            username: string;
         };
         ExchangeRateView: {
             /**
@@ -1013,6 +1146,12 @@ export interface components {
             hasMore: boolean;
             nextCursor?: string;
         };
+        Permissions: {
+            manage_own_api_keys: boolean;
+            view_models: boolean;
+            view_own_traces: boolean;
+            view_own_usage: boolean;
+        };
         PicoTeraError: {
             /**
              * Format: uri
@@ -1223,6 +1362,20 @@ export interface components {
             name: string;
             source: string;
             updatedAt: string;
+        };
+        SessionView: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/SessionView.json
+             */
+            readonly $schema?: string;
+            displayName: string;
+            /** Format: int32 */
+            id: number;
+            permissions: components["schemas"]["Permissions"];
+            role: string;
+            username: string;
         };
         SimulateCandidate: {
             bridged: boolean;
@@ -1532,6 +1685,35 @@ export interface operations {
             };
         };
     };
+    getAuthStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthStatus"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
     listEndpoints: {
         parameters: {
             query?: never;
@@ -1613,6 +1795,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    previewEnrollment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrollmentPreview"];
+                };
             };
             /** @description Error */
             default: {
@@ -1866,6 +2079,95 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["KvEntryView"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    getMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    listMyCredentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CredentialView"][] | null;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    deleteMyCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteMyCredentialInBody"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {
