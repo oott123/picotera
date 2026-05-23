@@ -1,6 +1,6 @@
 {
   "planPath": "specs/2026-05-23-auth-system/plan.md",
-  "lastUpdated": "2026-05-23T07:07:53.418982+00:00",
+  "lastUpdated": "2026-05-23T07:08:17.479150+00:00",
   "tasks": [
     {
       "id": "17",
@@ -147,7 +147,7 @@
       "id": "32",
       "planTask": 16,
       "subject": "P1.16 Router augmentation + layouts + guard",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         "33"
       ]
@@ -156,7 +156,7 @@
       "id": "34",
       "planTask": 17,
       "subject": "P1.17 LoginView",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         "32"
       ]
@@ -165,7 +165,7 @@
       "id": "30",
       "planTask": 18,
       "subject": "P1.18 EnrollView",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         "32"
       ]
@@ -174,7 +174,7 @@
       "id": "31",
       "planTask": 19,
       "subject": "P1.19 MeView",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         "32"
       ]
@@ -183,7 +183,7 @@
       "id": "29",
       "planTask": 20,
       "subject": "P1.20 AppSidebar permission filtering",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         "31"
       ]
@@ -192,7 +192,7 @@
       "id": "37",
       "planTask": 21,
       "subject": "P2.21 sqlc account CRUD + last-admin guard",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         "29"
       ]
@@ -201,7 +201,7 @@
       "id": "39",
       "planTask": 22,
       "subject": "P2.22 handle_account.go (admin CRUD + invitations)",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         "37"
       ]
@@ -210,7 +210,7 @@
       "id": "41",
       "planTask": 23,
       "subject": "P2.23 AccountsView + AccountForm",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         "39"
       ]
@@ -219,7 +219,7 @@
       "id": "42",
       "planTask": 24,
       "subject": "P3.24 Scoped sqlc queries",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         "41"
       ]
