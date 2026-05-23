@@ -90,6 +90,7 @@ type Querier interface {
 	ListOverviewSeriesTraces(ctx context.Context, arg ListOverviewSeriesTracesParams) ([]ListOverviewSeriesTracesRow, error)
 	ListOverviewSpeedSeries(ctx context.Context, arg ListOverviewSpeedSeriesParams) ([]ListOverviewSpeedSeriesRow, error)
 	ListOverviewTraceCountsByDimension(ctx context.Context, arg ListOverviewTraceCountsByDimensionParams) ([]ListOverviewTraceCountsByDimensionRow, error)
+	ListPendingInvitations(ctx context.Context) ([]Enrollment, error)
 	ListProjectPaths(ctx context.Context) ([]ListProjectPathsRow, error)
 	ListProjects(ctx context.Context) ([]Project, error)
 	ListProviderEndpoints(ctx context.Context, providerID pgtype.Int4) ([]ProviderEndpoint, error)
@@ -101,6 +102,11 @@ type Querier interface {
 	ListRequestsBySpan(ctx context.Context, arg ListRequestsBySpanParams) ([]ListRequestsBySpanRow, error)
 	ListScripts(ctx context.Context) ([]Script, error)
 	ListTraceBackfillCandidates(ctx context.Context) ([]ListTraceBackfillCandidatesRow, error)
+	// Same DB effect as ConsumeEnrollment but intent-restricted to 'invite' so an
+	// admin cannot accidentally use this to mark a bootstrap/reset token consumed.
+	// Returns the row only if it was unconsumed AND of intent=invite; otherwise
+	// pgx.ErrNoRows surfaces and the handler maps to invitation_not_found.
+	RevokeInvitation(ctx context.Context, token string) (Enrollment, error)
 	UpdateAccount(ctx context.Context, arg UpdateAccountParams) (Account, error)
 	UpdateApiKey(ctx context.Context, arg UpdateApiKeyParams) (ApiKey, error)
 	UpdateCredentialUsage(ctx context.Context, arg UpdateCredentialUsageParams) error

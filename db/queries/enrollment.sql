@@ -19,3 +19,20 @@ UPDATE enrollment
 SET consumed_at = now()
 WHERE token = $1 AND consumed_at IS NULL
 RETURNING *;
+
+-- name: ListPendingInvitations :many
+SELECT * FROM enrollment
+WHERE intent = 'invite'
+  AND consumed_at IS NULL
+  AND expires_at > now()
+ORDER BY created_at DESC;
+
+-- name: RevokeInvitation :one
+-- Same DB effect as ConsumeEnrollment but intent-restricted to 'invite' so an
+-- admin cannot accidentally use this to mark a bootstrap/reset token consumed.
+-- Returns the row only if it was unconsumed AND of intent=invite; otherwise
+-- pgx.ErrNoRows surfaces and the handler maps to invitation_not_found.
+UPDATE enrollment
+SET consumed_at = now()
+WHERE token = $1 AND intent = 'invite' AND consumed_at IS NULL
+RETURNING *;

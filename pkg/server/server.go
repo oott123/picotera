@@ -309,6 +309,8 @@ func (s *Server) registerOperations() {
 	registerOp(mgmt, contract.OperationRevokeAccountSessions, s.handleRevokeAccountSessions, admin)
 	registerOp(mgmt, contract.OperationReissueEnrollment, s.handleReissueEnrollment, admin)
 	registerOp(mgmt, contract.OperationCreateInvitation, s.handleCreateInvitation, admin)
+	registerOp(mgmt, contract.OperationListInvitations, s.handleListInvitations, admin)
+	registerOp(mgmt, contract.OperationRevokeInvitation, s.handleRevokeInvitation, admin)
 
 	// Scripts — admin
 	registerOp(mgmt, contract.OperationListScripts, s.handleListScripts, admin)

@@ -288,10 +288,28 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List outstanding (unconsumed, unexpired) invitations. */
+        get: operations["listInvitations"];
         put?: never;
         /** Create an account and an invite-intent enrollment URL; reveal-once. */
         post: operations["createInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/invitations/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke a pending invitation by token. */
+        post: operations["revokeInvitation"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1150,6 +1168,16 @@ export interface components {
             expiresAt: string;
             url: string;
         };
+        InvitationView: {
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+            permissions: components["schemas"]["Permissions"];
+            role: string;
+            token: string;
+            url: string;
+        };
         KvEntryView: {
             /**
              * Format: uri
@@ -1562,6 +1590,15 @@ export interface components {
             readonly $schema?: string;
             /** Format: int64 */
             revoked: number;
+        };
+        RevokeInvitationInBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/RevokeInvitationInBody.json
+             */
+            readonly $schema?: string;
+            token: string;
         };
         ScriptMutateBody: {
             /**
@@ -2423,6 +2460,35 @@ export interface operations {
             };
         };
     };
+    listInvitations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationView"][] | null;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
     createInvitation: {
         parameters: {
             query?: never;
@@ -2444,6 +2510,37 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["InvitationResponse"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    revokeInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevokeInvitationInBody"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

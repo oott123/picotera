@@ -497,6 +497,78 @@ func (s *Server) handleCreateInvitation(ctx context.Context, in *createInvitatio
 	}, nil
 }
 
+// ----- GET /invitations ------------------------------------------------------
+
+type listInvitationsOut struct {
+	Body []contract.InvitationView
+}
+
+func (s *Server) handleListInvitations(ctx context.Context, _ *struct{}) (*listInvitationsOut, error) {
+	rows, err := s.queries.ListPendingInvitations(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("handleListInvitations: %w", err)
+	}
+	views := make([]contract.InvitationView, 0, len(rows))
+	for _, r := range rows {
+		// Permissions snapshot from template_* columns. If template_* are NULL
+		// (legacy rows from before P4.04), treat as all-false.
+		perms := contract.Permissions{
+			ViewOwnUsage:     r.TemplateCanViewOwnUsage.Bool,
+			ManageOwnAPIKeys: r.TemplateCanManageOwnApiKeys.Bool,
+			ViewModels:       r.TemplateCanViewModels.Bool,
+			ViewOwnTraces:    r.TemplateCanViewOwnTraces.Bool,
+		}
+		role := "user"
+		if r.TemplateRole.Valid {
+			role = r.TemplateRole.String
+		}
+		views = append(views, contract.InvitationView{
+			Token:       r.Token,
+			URL:         s.config.PublicOrigins[0] + "/enroll/" + r.Token,
+			Role:        role,
+			Permissions: perms,
+			CreatedAt:   r.CreatedAt.Time,
+			ExpiresAt:   r.ExpiresAt.Time,
+		})
+	}
+	return &listInvitationsOut{Body: views}, nil
+}
+
+// ----- POST /invitations/revoke ----------------------------------------------
+
+type revokeInvitationIn struct {
+	Body struct {
+		Token string `json:"token"`
+	}
+}
+
+func (s *Server) handleRevokeInvitation(ctx context.Context, in *revokeInvitationIn) (*struct{}, error) {
+	sess := auth.SessionFromContext(ctx)
+	_, err := s.queries.RevokeInvitation(ctx, in.Body.Token)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, authErrToHuma(auth.ErrInvitationNotFound())
+		}
+		return nil, fmt.Errorf("handleRevokeInvitation: %w", err)
+	}
+	// Safe to log a 4-char prefix — uniquely identifies the row for audit
+	// without exposing the full bearer token. (See P4.08 logging conventions.)
+	tokenPrefix := in.Body.Token
+	if len(tokenPrefix) > 4 {
+		tokenPrefix = tokenPrefix[:4]
+	}
+	actorID := int32(0)
+	if sess != nil {
+		actorID = sess.Account.ID
+	}
+	logx.WithContext(ctx).WithFields(logrus.Fields{
+		"event":    "auth.invitation_revoked",
+		"actor_id": actorID,
+		"token4":   tokenPrefix,
+	}).Info("auth")
+	return &struct{}{}, nil
+}
+
 // ----- shared output types ---------------------------------------------------
 
 type accountOut struct {

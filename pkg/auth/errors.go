@@ -100,6 +100,15 @@ func ErrCredentialNotFound() *AuthError {
 	return newErr(http.StatusNotFound, "credential_not_found", "credential not found")
 }
 
+// ErrInvitationNotFound differentiates "token doesn't exist as a pending
+// invitation" from "token consumed/expired" so the admin UI can show a clean
+// message. We do NOT distinguish never-existed vs already-consumed/expired
+// (mirrors the LoadEnrollment design — don't leak token-existence to clients).
+func ErrInvitationNotFound() *AuthError {
+	return &AuthError{Code: "invitation_not_found", Status: 404,
+		Message: "invitation not found"}
+}
+
 func ErrNotBootstrapped() *AuthError {
 	return newErr(http.StatusServiceUnavailable, "not_bootstrapped", "no admin enrolled; run `picotera enroll-admin`")
 }

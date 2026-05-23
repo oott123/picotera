@@ -671,6 +671,23 @@ export async function createInvitation(body: {
   return data
 }
 
+// --- Invitations ---
+
+type InvitationView = components['schemas']['InvitationView']
+
+export async function listInvitations(): Promise<InvitationView[]> {
+  const { data, error } = await api.GET('/api/picotera/invitations')
+  if (error) fail(error, '加载邀请失败')
+  return data ?? []
+}
+
+export async function revokeInvitation(token: string): Promise<void> {
+  const { error } = await api.POST('/api/picotera/invitations/revoke', {
+    body: { token },
+  })
+  if (error) fail(error, '撤销邀请失败')
+}
+
 // --- Invalidation helpers ---
 
 export function invalidateSession(client: QueryClient) {
@@ -691,4 +708,8 @@ export function invalidateAccounts(client: QueryClient) {
 
 export function invalidateEnrollment(client: QueryClient, token: string) {
   client.invalidateQueries({ queryKey: queryKeys.enrollments.detail(token) })
+}
+
+export function invalidateInvitations(client: QueryClient) {
+  client.invalidateQueries({ queryKey: queryKeys.invitations.all })
 }

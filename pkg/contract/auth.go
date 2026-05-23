@@ -270,3 +270,28 @@ var OperationCreateInvitation = huma.Operation{
 	Path:        "/invitations",
 	Summary:     "Create an account and an invite-intent enrollment URL; reveal-once.",
 }
+
+// InvitationView is the server-side projection of a pending enrollment row,
+// including the URL so admin clients don't have to reconstruct it.
+type InvitationView struct {
+	Token       string      `json:"token"`
+	URL         string      `json:"url"`
+	Role        string      `json:"role"`
+	Permissions Permissions `json:"permissions"`
+	CreatedAt   time.Time   `json:"createdAt"`
+	ExpiresAt   time.Time   `json:"expiresAt"`
+}
+
+var OperationListInvitations = huma.Operation{
+	OperationID: "listInvitations",
+	Method:      http.MethodGet,
+	Path:        "/invitations",
+	Summary:     "List outstanding (unconsumed, unexpired) invitations.",
+}
+
+var OperationRevokeInvitation = huma.Operation{
+	OperationID: "revokeInvitation",
+	Method:      http.MethodPost,
+	Path:        "/invitations/revoke",
+	Summary:     "Revoke a pending invitation by token.",
+}

@@ -124,3 +124,77 @@ func (q *Queries) InsertEnrollment(ctx context.Context, arg InsertEnrollmentPara
 	)
 	return i, err
 }
+
+const listPendingInvitations = `-- name: ListPendingInvitations :many
+SELECT token, intent, target_account_id, created_at, expires_at, consumed_at, template_role, template_can_view_own_usage, template_can_manage_own_api_keys, template_can_view_models, template_can_view_own_traces, template_username, template_display_name FROM enrollment
+WHERE intent = 'invite'
+  AND consumed_at IS NULL
+  AND expires_at > now()
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListPendingInvitations(ctx context.Context) ([]Enrollment, error) {
+	rows, err := q.db.Query(ctx, listPendingInvitations)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Enrollment
+	for rows.Next() {
+		var i Enrollment
+		if err := rows.Scan(
+			&i.Token,
+			&i.Intent,
+			&i.TargetAccountID,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.ConsumedAt,
+			&i.TemplateRole,
+			&i.TemplateCanViewOwnUsage,
+			&i.TemplateCanManageOwnApiKeys,
+			&i.TemplateCanViewModels,
+			&i.TemplateCanViewOwnTraces,
+			&i.TemplateUsername,
+			&i.TemplateDisplayName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const revokeInvitation = `-- name: RevokeInvitation :one
+UPDATE enrollment
+SET consumed_at = now()
+WHERE token = $1 AND intent = 'invite' AND consumed_at IS NULL
+RETURNING token, intent, target_account_id, created_at, expires_at, consumed_at, template_role, template_can_view_own_usage, template_can_manage_own_api_keys, template_can_view_models, template_can_view_own_traces, template_username, template_display_name
+`
+
+// Same DB effect as ConsumeEnrollment but intent-restricted to 'invite' so an
+// admin cannot accidentally use this to mark a bootstrap/reset token consumed.
+// Returns the row only if it was unconsumed AND of intent=invite; otherwise
+// pgx.ErrNoRows surfaces and the handler maps to invitation_not_found.
+func (q *Queries) RevokeInvitation(ctx context.Context, token string) (Enrollment, error) {
+	row := q.db.QueryRow(ctx, revokeInvitation, token)
+	var i Enrollment
+	err := row.Scan(
+		&i.Token,
+		&i.Intent,
+		&i.TargetAccountID,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.ConsumedAt,
+		&i.TemplateRole,
+		&i.TemplateCanViewOwnUsage,
+		&i.TemplateCanManageOwnApiKeys,
+		&i.TemplateCanViewModels,
+		&i.TemplateCanViewOwnTraces,
+		&i.TemplateUsername,
+		&i.TemplateDisplayName,
+	)
+	return i, err
+}

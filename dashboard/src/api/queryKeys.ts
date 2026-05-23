@@ -118,4 +118,7 @@ export const queryKeys = {
     all: ['enrollments'] as const,
     detail: (token: string) => ['enrollments', 'detail', token] as const,
   },
+  invitations: {
+    all: ['invitations'] as const,
+  },
 }

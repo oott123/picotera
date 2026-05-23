@@ -8,9 +8,12 @@ import type { components } from '@/openapi-types'
 import {
   deleteAccount,
   invalidateAccounts,
+  invalidateInvitations,
   listAccounts,
+  listInvitations,
   reissueEnrollment,
   revokeAccountSessions,
+  revokeInvitation,
   updateAccount,
 } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
@@ -18,6 +21,7 @@ import AccountForm from '@/components/AccountForm.vue'
 import { Button, IconButton, DataCard, DataTable, Th, Td, Tr, StateText, Tag, Icon } from '@/ui'
 
 type AccountView = components['schemas']['AccountView']
+type InvitationView = components['schemas']['InvitationView']
 
 const panel = useSidePanel()
 const confirm = useConfirm()
@@ -31,6 +35,42 @@ const accountsQuery = useQuery({
 const accounts = computed(() => accountsQuery.data.value ?? [])
 const loading = computed(() => accountsQuery.isLoading.value)
 const count = computed(() => accounts.value.length)
+
+const invitationsQuery = useQuery({
+  queryKey: queryKeys.invitations.all,
+  queryFn: listInvitations,
+})
+const invitations = computed(() => invitationsQuery.data.value ?? [])
+
+const copiedToken = ref<string | null>(null)
+let copyTimer: ReturnType<typeof setTimeout> | null = null
+
+async function copyInviteUrl(inv: InvitationView) {
+  try {
+    await navigator.clipboard.writeText(inv.url)
+    copiedToken.value = inv.token
+    if (copyTimer) clearTimeout(copyTimer)
+    copyTimer = setTimeout(() => {
+      copiedToken.value = null
+    }, 1500)
+  } catch {
+    // clipboard unavailable — silently ignore
+  }
+}
+
+const revokeInvitationMutation = useMutation({
+  mutationFn: (token: string) => revokeInvitation(token),
+  onSuccess: () => invalidateInvitations(queryClient),
+})
+
+function confirmRevokeInvitation(inv: InvitationView) {
+  confirm.require({
+    message: '确定要撤销这个邀请吗？该链接将立即失效。',
+    accept: async () => {
+      await revokeInvitationMutation.mutateAsync(inv.token)
+    },
+  })
+}
 
 // Track which row's reissue is in-flight to show a transient loading state
 const reissuingId = ref<number | null>(null)
@@ -141,6 +181,67 @@ function fmtTime(iso?: string | null): string {
         </Button>
       </div>
     </div>
+    <DataCard v-if="invitations.length > 0">
+      <div class="px-4 py-3 border-b border-line">
+        <h3 class="text-sm font-medium text-ink">待发送邀请（{{ invitations.length }}）</h3>
+      </div>
+      <DataTable>
+        <thead>
+          <tr>
+            <Th>角色</Th>
+            <Th>权限</Th>
+            <Th>创建时间</Th>
+            <Th>过期时间</Th>
+            <Th actions />
+          </tr>
+        </thead>
+        <tbody>
+          <Tr v-for="inv in invitations" :key="inv.token">
+            <Td>
+              <Tag :variant="inv.role === 'admin' ? 'accent' : 'default'">
+                {{ inv.role === 'admin' ? '管理员' : '标准用户' }}
+              </Tag>
+            </Td>
+            <Td>
+              <div class="flex flex-wrap gap-1">
+                <Tag v-if="inv.role === 'admin'" variant="muted">全部</Tag>
+                <template v-else>
+                  <Tag v-if="inv.permissions.view_own_usage" variant="muted">用量</Tag>
+                  <Tag v-if="inv.permissions.manage_own_api_keys" variant="muted">密钥</Tag>
+                  <Tag v-if="inv.permissions.view_models" variant="muted">模型</Tag>
+                  <Tag v-if="inv.permissions.view_own_traces" variant="muted">链路</Tag>
+                </template>
+              </div>
+            </Td>
+            <Td>
+              <span class="text-xs text-ink-muted">{{ fmtTime(inv.createdAt) }}</span>
+            </Td>
+            <Td>
+              <span class="text-xs text-ink-muted">{{ fmtTime(inv.expiresAt) }}</span>
+            </Td>
+            <Td actions>
+              <div class="inline-flex gap-1">
+                <IconButton
+                  :title="copiedToken === inv.token ? '已复制' : '复制链接'"
+                  :aria-label="copiedToken === inv.token ? '已复制' : '复制链接'"
+                  @click="copyInviteUrl(inv)"
+                >
+                  <Icon :name="copiedToken === inv.token ? 'check' : 'copy'" :size="13" />
+                </IconButton>
+                <IconButton
+                  title="撤销邀请"
+                  aria-label="撤销邀请"
+                  :disabled="revokeInvitationMutation.isPending.value"
+                  @click="confirmRevokeInvitation(inv)"
+                >
+                  <Icon name="trash" :size="13" />
+                </IconButton>
+              </div>
+            </Td>
+          </Tr>
+        </tbody>
+      </DataTable>
+    </DataCard>
     <StateText v-if="loading">加载中…</StateText>
     <DataCard v-else-if="accounts.length">
       <DataTable>

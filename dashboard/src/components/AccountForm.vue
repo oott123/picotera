@@ -3,7 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
 import { SidePanel, Button, Input, Field, Icon, SegmentedControl } from '@/ui'
 import type { components } from '@/openapi-types'
-import { createInvitation, updateAccount, invalidateAccounts } from '@/api/client'
+import { createInvitation, updateAccount, invalidateAccounts, invalidateInvitations } from '@/api/client'
 import { useConfirm } from '@/composables/useConfirm'
 
 type AccountView = components['schemas']['AccountView']
@@ -110,7 +110,10 @@ const updateMutation = useMutation({
 const inviteMutation = useMutation({
   mutationFn: (body: { role: string; permissions: Permissions }) =>
     createInvitation(body),
-  onSuccess: () => invalidateAccounts(queryClient),
+  onSuccess: () => {
+    invalidateAccounts(queryClient)
+    invalidateInvitations(queryClient)
+  },
 })
 
 async function submit() {
