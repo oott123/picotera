@@ -53,6 +53,13 @@ func ErrAdminCannotBeDisabled() *AuthError {
 		Message: "admin accounts cannot be disabled; demote to user first"}
 }
 
+// ErrCannotDeleteSelf rejects an admin's attempt to delete their own account.
+// Recoverable but surprising — ask another admin instead.
+func ErrCannotDeleteSelf() *AuthError {
+	return &AuthError{Code: "cannot_delete_self", Status: 409,
+		Message: "you cannot delete your own account; ask another admin"}
+}
+
 func ErrUsernameTaken() *AuthError {
 	return newErr(http.StatusConflict, "username_taken", "username already exists")
 }

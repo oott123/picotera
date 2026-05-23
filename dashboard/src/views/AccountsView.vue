@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { useConfirm } from '@/composables/useConfirm'
 import { useSidePanel } from '@/composables/useSidePanel'
+import { useSession } from '@/composables/useSession'
 import type { components } from '@/openapi-types'
 import {
   deleteAccount,
@@ -21,6 +22,7 @@ type AccountView = components['schemas']['AccountView']
 const panel = useSidePanel()
 const confirm = useConfirm()
 const queryClient = useQueryClient()
+const session = useSession()
 
 const accountsQuery = useQuery({
   queryKey: queryKeys.accounts.list,
@@ -226,6 +228,7 @@ function fmtTime(iso?: string | null): string {
                   <Icon name="edit" :size="13" />
                 </IconButton>
                 <IconButton
+                  v-if="a.id !== session.user.value?.id"
                   variant="danger"
                   title="删除"
                   aria-label="删除"

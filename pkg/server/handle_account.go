@@ -219,6 +219,12 @@ type deleteAccountIn struct {
 }
 
 func (s *Server) handleDeleteAccount(ctx context.Context, in *deleteAccountIn) (*struct{}, error) {
+	sess := auth.SessionFromContext(ctx)
+	// Admins may not delete their own row — ask another admin to do it.
+	if sess != nil && in.Body.ID == sess.Account.ID {
+		return nil, authErrToHuma(auth.ErrCannotDeleteSelf())
+	}
+
 	tx, err := s.dbPool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("handleDeleteAccount: begin tx: %w", err)
@@ -255,7 +261,6 @@ func (s *Server) handleDeleteAccount(ctx context.Context, in *deleteAccountIn) (
 		return nil, fmt.Errorf("handleDeleteAccount: commit: %w", err)
 	}
 
-	sess := auth.SessionFromContext(ctx)
 	actorID := int32(0)
 	if sess != nil {
 		actorID = sess.Account.ID
