@@ -133,7 +133,7 @@ const submitDisabled = computed(() => {
       <Field label="账户">
         <Input :model-value="preview.data.value.target?.username" mono disabled />
       </Field>
-      <div class="bg-err/8 text-err text-sm rounded-md px-3 py-2">
+      <div class="bg-err-faint text-err-ink text-sm rounded-md px-3 py-2">
         此操作将删除该账户的所有现有 Passkey。
       </div>
       <label class="flex items-start gap-2 text-sm text-ink-muted cursor-pointer select-none">
