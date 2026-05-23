@@ -1281,6 +1281,23 @@ components:
       required:
         - id
       type: object
+    RenameMyCredentialInBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/RenameMyCredentialInBody.json
+          format: uri
+          readOnly: true
+          type: string
+        id:
+          format: int32
+          type: integer
+        nickname:
+          type: string
+      required:
+        - id
+      type: object
     RequestTraceView:
       additionalProperties: false
       properties:
@@ -2605,6 +2622,27 @@ paths:
       security:
         - picoteraSession: []
       summary: Remove one of the caller's passkeys (rejected when it would leave zero).
+  /api/picotera/me/credentials/rename:
+    post:
+      operationId: renameMyCredential
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenameMyCredentialInBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PicoTeraError"
+          description: Error
+      security:
+        - picoteraSession: []
+      summary: Rename one of the caller's own passkeys.
   /api/picotera/models:
     get:
       operationId: listModels

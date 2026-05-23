@@ -26,8 +26,9 @@ const preview = useQuery({
   staleTime: Infinity,
 })
 
-const bootstrapForm = reactive({ username: '', displayName: '' })
-const inviteForm = reactive({ username: '', displayName: '' })
+const bootstrapForm = reactive({ username: '', displayName: '', nickname: '' })
+const inviteForm = reactive({ username: '', displayName: '', nickname: '' })
+const resetForm = reactive({ nickname: '' })
 const resetConfirmed = ref(false)
 const errorMessage = ref<string | null>(null)
 
@@ -36,10 +37,18 @@ const enroll = useMutation({
     const intent = preview.data.value!.intent
     const body =
       intent === 'bootstrap'
-        ? { username: bootstrapForm.username, displayName: bootstrapForm.displayName }
+        ? {
+            username: bootstrapForm.username,
+            displayName: bootstrapForm.displayName,
+            nickname: bootstrapForm.nickname || undefined,
+          }
         : intent === 'invite'
-          ? { username: inviteForm.username, displayName: inviteForm.displayName }
-          : {}
+          ? {
+              username: inviteForm.username,
+              displayName: inviteForm.displayName,
+              nickname: inviteForm.nickname || undefined,
+            }
+          : { nickname: resetForm.nickname || undefined }
     const options = await beginEnrollmentRegistration(token.value, body)
     const attestation = await webauthnCreate(options as Parameters<typeof webauthnCreate>[0])
     return completeEnrollmentRegistration(token.value, attestation)
@@ -119,6 +128,13 @@ const submitDisabled = computed(() => {
           placeholder="Alice"
         />
       </Field>
+      <Field label="昵称（可选）">
+        <Input
+          v-model.trim="bootstrapForm.nickname"
+          maxlength="60"
+          placeholder="例如 我的 MacBook"
+        />
+      </Field>
       <Button type="submit" :disabled="submitDisabled">注册 Passkey</Button>
       <p v-if="errorMessage" class="text-sm text-err">{{ errorMessage }}</p>
     </form>
@@ -147,6 +163,13 @@ const submitDisabled = computed(() => {
           autocomplete="name"
         />
       </Field>
+      <Field label="昵称（可选）">
+        <Input
+          v-model.trim="inviteForm.nickname"
+          maxlength="60"
+          placeholder="例如 我的 MacBook"
+        />
+      </Field>
       <Button type="submit" :disabled="submitDisabled">注册 Passkey</Button>
       <p v-if="errorMessage" class="text-sm text-err">{{ errorMessage }}</p>
     </form>
@@ -168,6 +191,13 @@ const submitDisabled = computed(() => {
         <input v-model="resetConfirmed" type="checkbox" class="mt-0.5 accent-accent" />
         <span>我已了解此操作将删除现有所有密钥。</span>
       </label>
+      <Field label="昵称（可选）">
+        <Input
+          v-model.trim="resetForm.nickname"
+          maxlength="60"
+          placeholder="例如 我的 MacBook"
+        />
+      </Field>
       <Button type="submit" :disabled="submitDisabled">注册 Passkey</Button>
       <p v-if="errorMessage" class="text-sm text-err">{{ errorMessage }}</p>
     </form>

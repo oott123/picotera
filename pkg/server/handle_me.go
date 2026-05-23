@@ -213,6 +213,44 @@ func nicknameParam(s string) pgtype.Text {
 	return pgtype.Text{String: s, Valid: true}
 }
 
+// ----- POST /me/credentials/rename ---------------------------------------
+
+type renameMyCredentialIn struct {
+	Body struct {
+		ID       int32   `json:"id"`
+		Nickname *string `json:"nickname,omitempty"`
+	}
+}
+
+func (s *Server) handleRenameMyCredential(ctx context.Context, in *renameMyCredentialIn) (*struct{}, error) {
+	if err := auth.ValidateNickname(in.Body.Nickname); err != nil {
+		return nil, authErrToHuma(err)
+	}
+	sess := auth.SessionFromContext(ctx)
+	normalized := auth.NormalizeNickname(in.Body.Nickname)
+	var nickname pgtype.Text
+	if normalized != nil {
+		nickname = pgtype.Text{String: *normalized, Valid: true}
+	}
+	n, err := s.queries.UpdateMyCredentialNickname(ctx, db.UpdateMyCredentialNicknameParams{
+		ID:        in.Body.ID,
+		AccountID: sess.Account.ID,
+		Nickname:  nickname,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("handleRenameMyCredential: %w", err)
+	}
+	if n == 0 {
+		return nil, authErrToHuma(auth.ErrCredentialNotFound())
+	}
+	logx.WithContext(ctx).WithFields(logrus.Fields{
+		"event":         "auth.credential_renamed_self",
+		"account_id":    sess.Account.ID,
+		"credential_id": in.Body.ID,
+	}).Info("auth")
+	return &struct{}{}, nil
+}
+
 // ----- POST /me/credentials/delete ---------------------------------------
 
 type deleteMyCredentialIn struct {

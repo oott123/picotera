@@ -76,6 +76,10 @@ func ErrInvalidUsername() *AuthError {
 	return newErr(http.StatusBadRequest, "invalid_username", "用户名必须为 2-32 个小写字母、数字、下划线或连字符")
 }
 
+func ErrInvalidNickname() *AuthError {
+	return newErr(http.StatusBadRequest, "invalid_nickname", "昵称必须为 1-60 个字符且不含控制字符")
+}
+
 func ErrInvalidDisplayName() *AuthError {
 	return newErr(http.StatusBadRequest, "invalid_display_name", "显示名长度必须为 1-128 字符且不含控制字符")
 }

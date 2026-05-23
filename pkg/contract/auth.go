@@ -194,6 +194,13 @@ var OperationDeleteMyCredential = huma.Operation{
 	Summary:     "Remove one of the caller's passkeys (rejected when it would leave zero).",
 }
 
+var OperationRenameMyCredential = huma.Operation{
+	OperationID: "renameMyCredential",
+	Method:      http.MethodPost,
+	Path:        "/me/credentials/rename",
+	Summary:     "Rename one of the caller's own passkeys.",
+}
+
 var OperationPreviewEnrollment = huma.Operation{
 	OperationID: "previewEnrollment",
 	Method:      http.MethodGet,

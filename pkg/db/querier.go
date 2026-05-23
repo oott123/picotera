@@ -110,6 +110,10 @@ type Querier interface {
 	UpdateAccount(ctx context.Context, arg UpdateAccountParams) (Account, error)
 	UpdateApiKey(ctx context.Context, arg UpdateApiKeyParams) (ApiKey, error)
 	UpdateCredentialUsage(ctx context.Context, arg UpdateCredentialUsageParams) error
+	// Owner-scoped update: only the account's own credential row is updated.
+	// Zero rows affected means the id doesn't match an owned credential; the
+	// handler then surfaces credential_not_found.
+	UpdateMyCredentialNickname(ctx context.Context, arg UpdateMyCredentialNicknameParams) (int64, error)
 	UpdateProject(ctx context.Context, arg UpdateProjectParams) (Project, error)
 	UpdateProvider(ctx context.Context, arg UpdateProviderParams) (Provider, error)
 	UpdateRequestMetrics(ctx context.Context, arg UpdateRequestMetricsParams) error

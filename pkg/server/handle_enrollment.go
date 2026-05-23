@@ -75,34 +75,42 @@ func (s *Server) handlePreviewEnrollment(ctx context.Context, in *previewIn) (*p
 
 // ----- begin (raw chi — sets KV ceremony stash) ----------------------------
 
-// enrollBeginBody carries the username + display_name. Used for both bootstrap
-// and invite intents (the invitee chooses; the template's suggestion is a
-// preview hint only). Empty body for reset.
+// enrollBeginBody carries the username + display_name + optional nickname.
+// Used for both bootstrap and invite intents (the invitee chooses; the
+// template's suggestion is a preview hint only). Empty body for reset.
 type enrollBeginBody struct {
 	Username    string `json:"username,omitempty"`
 	DisplayName string `json:"displayName,omitempty"`
+	Nickname    string `json:"nickname,omitempty"` // for the first passkey of this account
 }
 
 // enrollCeremonyStash combines the WebAuthn session data with the pending
 // account info. Bootstrap and invite both create new accounts at consume time
 // (so we must remember the proposed username/displayName + generated user
-// handle until then). Reset uses the existing account, no stash data needed.
+// handle until then). Reset stashes the optional nickname only.
 type enrollCeremonyStash struct {
 	Data      webauthn.SessionData `json:"data"`
 	Bootstrap *bootstrapCeremony   `json:"bootstrap,omitempty"`
 	Invite    *inviteCeremony      `json:"invite,omitempty"`
+	Reset     *resetCeremony       `json:"reset,omitempty"`
 }
 
 type bootstrapCeremony struct {
 	Username           string `json:"username"`
 	DisplayName        string `json:"displayName"`
 	WebauthnUserHandle []byte `json:"webauthn_user_handle"`
+	Nickname           string `json:"nickname,omitempty"`
 }
 
 type inviteCeremony struct {
 	Username           string `json:"username"`
 	DisplayName        string `json:"displayName"`
 	WebauthnUserHandle []byte `json:"webauthn_user_handle"`
+	Nickname           string `json:"nickname,omitempty"`
+}
+
+type resetCeremony struct {
+	Nickname string `json:"nickname,omitempty"`
 }
 
 func (s *Server) handleEnrollmentBeginHTTP(w http.ResponseWriter, r *http.Request) {
@@ -129,6 +137,10 @@ func (s *Server) handleEnrollmentBeginHTTP(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		if err := auth.ValidateDisplayName(body.DisplayName); err != nil {
+			writeAuthErr(w, err)
+			return
+		}
+		if err := auth.ValidateNickname(&body.Nickname); err != nil {
 			writeAuthErr(w, err)
 			return
 		}
@@ -159,6 +171,7 @@ func (s *Server) handleEnrollmentBeginHTTP(w http.ResponseWriter, r *http.Reques
 			Username:           body.Username,
 			DisplayName:        body.DisplayName,
 			WebauthnUserHandle: handle,
+			Nickname:           body.Nickname,
 		}
 
 	case auth.IntentInvite:
@@ -167,6 +180,10 @@ func (s *Server) handleEnrollmentBeginHTTP(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		if err := auth.ValidateDisplayName(body.DisplayName); err != nil {
+			writeAuthErr(w, err)
+			return
+		}
+		if err := auth.ValidateNickname(&body.Nickname); err != nil {
 			writeAuthErr(w, err)
 			return
 		}
@@ -205,9 +222,14 @@ func (s *Server) handleEnrollmentBeginHTTP(w http.ResponseWriter, r *http.Reques
 			Username:           body.Username,
 			DisplayName:        body.DisplayName,
 			WebauthnUserHandle: handle,
+			Nickname:           body.Nickname,
 		}
 
 	case auth.IntentReset:
+		if err := auth.ValidateNickname(&body.Nickname); err != nil {
+			writeAuthErr(w, err)
+			return
+		}
 		if !e.TargetAccountID.Valid {
 			writeAuthErr(w, auth.ErrEnrollmentConsumed())
 			return
@@ -222,6 +244,7 @@ func (s *Server) handleEnrollmentBeginHTTP(w http.ResponseWriter, r *http.Reques
 		// can't re-register the same authenticator); they're DELETED at /complete
 		// commit time, not here.
 		wu = &auth.WebAuthnAccount{Account: &a, Credentials: creds}
+		stash.Reset = &resetCeremony{Nickname: body.Nickname}
 
 	default:
 		writeAuthErr(w, auth.ErrEnrollmentConsumed())
@@ -340,7 +363,7 @@ func (s *Server) handleEnrollmentCompleteHTTP(w http.ResponseWriter, r *http.Req
 			return
 		}
 		account = a
-		if _, err := insertCredentialForTx(qtx, r.Context(), a.ID, cred); err != nil {
+		if _, err := insertCredentialForTx(qtx, r.Context(), a.ID, cred, auth.NormalizeNickname(&stash.Bootstrap.Nickname)); err != nil {
 			writeAuthErr(w, fmt.Errorf("enrollment/complete: insert credential: %w", err))
 			return
 		}
@@ -387,7 +410,7 @@ func (s *Server) handleEnrollmentCompleteHTTP(w http.ResponseWriter, r *http.Req
 			return
 		}
 		account = a
-		if _, err := insertCredentialForTx(qtx, r.Context(), a.ID, cred); err != nil {
+		if _, err := insertCredentialForTx(qtx, r.Context(), a.ID, cred, auth.NormalizeNickname(&stash.Invite.Nickname)); err != nil {
 			writeAuthErr(w, fmt.Errorf("enrollment/complete: insert credential: %w", err))
 			return
 		}
@@ -419,7 +442,11 @@ func (s *Server) handleEnrollmentCompleteHTTP(w http.ResponseWriter, r *http.Req
 			return
 		}
 		account = a
-		if _, err := insertCredentialForTx(qtx, r.Context(), a.ID, cred); err != nil {
+		var resetNickname *string
+		if stash.Reset != nil {
+			resetNickname = auth.NormalizeNickname(&stash.Reset.Nickname)
+		}
+		if _, err := insertCredentialForTx(qtx, r.Context(), a.ID, cred, resetNickname); err != nil {
 			writeAuthErr(w, fmt.Errorf("enrollment/complete: insert credential: %w", err))
 			return
 		}
@@ -461,12 +488,16 @@ func (s *Server) handleEnrollmentCompleteHTTP(w http.ResponseWriter, r *http.Req
 }
 
 // insertCredentialForTx persists a webauthn.Credential into webauthn_credential
-// inside an existing TX. Returns the new row's id (unused at present but
-// available for logging/audit).
-func insertCredentialForTx(q db.Querier, ctx context.Context, accountID int32, cred *webauthn.Credential) (int32, error) {
+// inside an existing TX. The optional nickname is stored as-is (callers should
+// pass auth.NormalizeNickname output). Returns the new row's id.
+func insertCredentialForTx(q db.Querier, ctx context.Context, accountID int32, cred *webauthn.Credential, nickname *string) (int32, error) {
 	transports := make([]string, 0, len(cred.Transport))
 	for _, t := range cred.Transport {
 		transports = append(transports, string(t))
+	}
+	var n pgtype.Text
+	if nickname != nil {
+		n = pgtype.Text{String: *nickname, Valid: true}
 	}
 	row, err := q.InsertCredential(ctx, db.InsertCredentialParams{
 		AccountID:       accountID,
@@ -478,7 +509,7 @@ func insertCredentialForTx(q db.Querier, ctx context.Context, accountID int32, c
 		AttestationType: cred.AttestationType,
 		BackupEligible:  cred.Flags.BackupEligible,
 		BackupState:     cred.Flags.BackupState,
-		Nickname:        pgtype.Text{}, // not collected in v1
+		Nickname:        n,
 	})
 	return row.ID, err
 }

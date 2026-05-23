@@ -237,6 +237,7 @@ func (s *Server) registerOperations() {
 	registerOp(mgmt, contract.OperationGetMe, s.handleGetMe, sessionReq)
 	registerOp(mgmt, contract.OperationListMyCredentials, s.handleListMyCredentials, sessionReq)
 	registerOp(mgmt, contract.OperationDeleteMyCredential, s.handleDeleteMyCredential, sessionReq)
+	registerOp(mgmt, contract.OperationRenameMyCredential, s.handleRenameMyCredential, sessionReq)
 	registerOpHTTP(s.router, "POST", "/api/picotera/me/credentials/register/begin",
 		sessionReq, s.handleAddCredentialBeginHTTP)
 	registerOpHTTP(s.router, "POST", "/api/picotera/me/credentials/register/complete",

@@ -9,12 +9,16 @@ import {
   addCredentialBegin,
   addCredentialComplete,
   deleteMyCredential,
+  renameMyCredential,
   invalidateOwnCredentials,
   ApiRequestError,
 } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
 import { webauthnCreate, WebAuthnUserCancelled } from '@/api/webauthn'
 import { Button, IconButton, Input, Badge, DataCard, DataTable, Th, Td, Tr, StateText, Icon } from '@/ui'
+import type { components } from '@/openapi-types'
+
+type CredentialView = components['schemas']['CredentialView']
 
 const router = useRouter()
 const qc = useQueryClient()
@@ -61,8 +65,47 @@ const deleteMutation = useMutation({
   },
 })
 
+// --- inline rename state ---
+const editingId = ref<number | null>(null)
+const editingValue = ref('')
+
+const renameMutation = useMutation({
+  mutationFn: ({ id, nickname }: { id: number; nickname: string | null }) =>
+    renameMyCredential(id, nickname),
+  onSuccess: () => {
+    invalidateOwnCredentials(qc)
+  },
+})
+
+function startEdit(c: CredentialView) {
+  editingId.value = c.id
+  editingValue.value = c.nickname ?? ''
+}
+
+function cancelEdit() {
+  editingId.value = null
+  editingValue.value = ''
+}
+
+async function saveEdit() {
+  if (editingId.value === null) return
+  const nickname = editingValue.value.trim() || null
+  await renameMutation.mutateAsync({ id: editingId.value, nickname })
+  cancelEdit()
+}
+
+function onEditKey(e: KeyboardEvent) {
+  if (e.key === 'Enter') saveEdit()
+  else if (e.key === 'Escape') cancelEdit()
+}
+// --- end inline rename state ---
+
 const credentials = computed(() => credentialsQuery.data.value ?? [])
 const credentialCount = computed(() => credentials.value.length)
+
+const deleteDisabledReason = computed(() =>
+  credentialCount.value === 1 ? '至少保留一把密钥' : undefined,
+)
 
 function onDelete(id: number) {
   confirm.require({
@@ -185,7 +228,33 @@ function roleLabel(role: string): string {
             </thead>
             <tbody>
               <Tr v-for="c in credentials" :key="c.id">
-                <Td>{{ c.nickname ?? '—' }}</Td>
+                <Td>
+                  <template v-if="editingId === c.id">
+                    <div class="flex items-center gap-1">
+                      <Input
+                        v-model="editingValue"
+                        size="sm"
+                        maxlength="60"
+                        placeholder="(无昵称)"
+                        autofocus
+                        @keydown="onEditKey"
+                      />
+                      <IconButton
+                        title="保存"
+                        :disabled="renameMutation.isPending.value"
+                        @click="saveEdit"
+                      >
+                        <Icon name="check" :size="13" />
+                      </IconButton>
+                      <IconButton title="取消" @click="cancelEdit">
+                        <Icon name="close" :size="13" />
+                      </IconButton>
+                    </div>
+                  </template>
+                  <template v-else>
+                    {{ c.nickname ?? '—' }}
+                  </template>
+                </Td>
                 <Td>
                   <code class="font-mono text-2xs text-ink-muted">{{ c.credentialIdSuffix }}</code>
                 </Td>
@@ -202,10 +271,18 @@ function roleLabel(role: string): string {
                 <Td actions>
                   <div class="inline-flex gap-1 opacity-55 group-hover:opacity-100 transition-opacity">
                     <IconButton
+                      v-if="editingId !== c.id"
+                      title="重命名"
+                      aria-label="重命名"
+                      @click="startEdit(c)"
+                    >
+                      <Icon name="edit" :size="13" />
+                    </IconButton>
+                    <IconButton
                       variant="danger"
-                      :title="credentialCount === 1 ? '至少保留一把密钥' : '删除'"
+                      :title="deleteDisabledReason ?? '删除'"
                       aria-label="删除"
-                      :disabled="credentialCount === 1 || deleteMutation.isPending.value"
+                      :disabled="credentialCount === 1 || deleteMutation.isPending.value || editingId === c.id"
                       @click="onDelete(c.id)"
                     >
                       <Icon name="trash" :size="13" />

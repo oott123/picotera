@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"picotera/pkg/contract"
 	"picotera/pkg/db"
@@ -37,6 +38,40 @@ func ValidateDisplayName(s string) error {
 		}
 	}
 	return nil
+}
+
+// ValidateNickname permits nil/empty (clears the nickname) OR a 1-60 char
+// non-control-character string. Whitespace-only strings are treated as empty.
+func ValidateNickname(s *string) error {
+	if s == nil {
+		return nil
+	}
+	v := strings.TrimSpace(*s)
+	if v == "" {
+		return nil
+	}
+	if len(v) > 60 {
+		return ErrInvalidNickname()
+	}
+	for _, r := range v {
+		if r < 0x20 || r == 0x7f {
+			return ErrInvalidNickname()
+		}
+	}
+	return nil
+}
+
+// NormalizeNickname returns the trimmed value, or nil if the result would be
+// empty (so the DB column ends up NULL rather than empty-string).
+func NormalizeNickname(s *string) *string {
+	if s == nil {
+		return nil
+	}
+	v := strings.TrimSpace(*s)
+	if v == "" {
+		return nil
+	}
+	return &v
 }
 
 // GenerateUserHandle returns 64 cryptographically-random bytes intended

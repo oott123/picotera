@@ -25,3 +25,11 @@ SELECT COUNT(*) FROM webauthn_credential WHERE account_id = $1;
 
 -- name: DeleteAllCredentialsForAccount :exec
 DELETE FROM webauthn_credential WHERE account_id = $1;
+
+-- name: UpdateMyCredentialNickname :execrows
+-- Owner-scoped update: only the account's own credential row is updated.
+-- Zero rows affected means the id doesn't match an owned credential; the
+-- handler then surfaces credential_not_found.
+UPDATE webauthn_credential
+SET nickname = $3
+WHERE id = $1 AND account_id = $2;

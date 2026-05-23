@@ -506,7 +506,7 @@ export async function fetchEnrollment(token: string): Promise<EnrollmentPreview>
  */
 export async function beginEnrollmentRegistration(
   token: string,
-  body: { username?: string; displayName?: string },
+  body: { username?: string; displayName?: string; nickname?: string },
 ): Promise<unknown> {
   const res = await fetch(`/api/picotera/enrollments/${encodeURIComponent(token)}/register/begin`, {
     method: 'POST',
@@ -591,6 +591,14 @@ export async function addCredentialComplete(
     throw new ApiRequestError(errBody)
   }
   return res.json() as Promise<CredentialView>
+}
+
+export async function renameMyCredential(id: number, nickname: string | null): Promise<void> {
+  const { error } = await api.POST('/api/picotera/me/credentials/rename', {
+    // nickname null → omit field (server treats absent *string as nil → clears nickname)
+    body: { id, ...(nickname !== null ? { nickname } : {}) },
+  })
+  if (error) fail(error, '重命名失败')
 }
 
 export async function deleteMyCredential(id: number): Promise<void> {

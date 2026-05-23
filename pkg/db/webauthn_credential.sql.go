@@ -178,3 +178,26 @@ func (q *Queries) UpdateCredentialUsage(ctx context.Context, arg UpdateCredentia
 	_, err := q.db.Exec(ctx, updateCredentialUsage, arg.ID, arg.AccountID, arg.SignCount)
 	return err
 }
+
+const updateMyCredentialNickname = `-- name: UpdateMyCredentialNickname :execrows
+UPDATE webauthn_credential
+SET nickname = $3
+WHERE id = $1 AND account_id = $2
+`
+
+type UpdateMyCredentialNicknameParams struct {
+	ID        int32       `json:"id"`
+	AccountID int32       `json:"accountId"`
+	Nickname  pgtype.Text `json:"nickname"`
+}
+
+// Owner-scoped update: only the account's own credential row is updated.
+// Zero rows affected means the id doesn't match an owned credential; the
+// handler then surfaces credential_not_found.
+func (q *Queries) UpdateMyCredentialNickname(ctx context.Context, arg UpdateMyCredentialNicknameParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateMyCredentialNickname, arg.ID, arg.AccountID, arg.Nickname)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}

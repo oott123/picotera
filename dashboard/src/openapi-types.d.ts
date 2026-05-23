@@ -419,6 +419,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/picotera/me/credentials/rename": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rename one of the caller's own passkeys. */
+        post: operations["renameMyCredential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/picotera/models": {
         parameters: {
             query?: never;
@@ -1496,6 +1513,17 @@ export interface components {
             readonly $schema?: string;
             /** Format: int32 */
             id: number;
+        };
+        RenameMyCredentialInBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/RenameMyCredentialInBody.json
+             */
+            readonly $schema?: string;
+            /** Format: int32 */
+            id: number;
+            nickname?: string;
         };
         RequestTraceView: {
             /** Format: int64 */
@@ -2750,6 +2778,37 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["DeleteMyCredentialInBody"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    renameMyCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameMyCredentialInBody"];
             };
         };
         responses: {
