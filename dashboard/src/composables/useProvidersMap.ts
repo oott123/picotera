@@ -3,11 +3,15 @@ import { useQuery } from '@tanstack/vue-query'
 import { listProviders } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
 import type { ProviderView } from '@/api'
+import { useSession } from '@/composables/useSession'
 
 export function useProvidersMap() {
+  const session = useSession()
+  // admin-only data; non-admin sees empty map and ID fallback labels
   const query = useQuery({
     queryKey: queryKeys.providers.all,
     queryFn: listProviders,
+    enabled: session.isAdmin,
   })
   const providers = computed(() => query.data.value ?? [])
   const providersMap = computed(() => {

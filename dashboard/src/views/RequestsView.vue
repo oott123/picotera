@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
 import { useProvidersMap } from '@/composables/useProvidersMap'
 import { useProjectsMap } from '@/composables/useProjectsMap'
+import { useSession } from '@/composables/useSession'
 import type { RequestView, EndpointView, ModelView } from '@/api'
 import { listEndpoints, listModels, listRequests } from '@/api/client'
 import { queryKeys, type RequestsFilters } from '@/api/queryKeys'
@@ -27,6 +28,7 @@ import {
 const panel = useSidePanel()
 const route = useRoute()
 const router = useRouter()
+const session = useSession()
 const { providers, providerLabel } = useProvidersMap()
 const { projects, projectLabel } = useProjectsMap()
 
@@ -59,13 +61,16 @@ const cursorIndex = ref(initialCursor ? 1 : 0)
 const pageCursors = ref<string[]>(initialCursor ? ['', initialCursor] : [''])
 const hasPaginationHistory = ref(!initialCursor)
 
+// view_models permission gates filter dropdowns; skip fetch when missing to avoid 403
 const endpointsQuery = useQuery({
   queryKey: queryKeys.endpoints.all,
   queryFn: listEndpoints,
+  enabled: computed(() => session.can('view_models')),
 })
 const modelsQuery = useQuery({
   queryKey: queryKeys.models.all,
   queryFn: listModels,
+  enabled: computed(() => session.can('view_models')),
 })
 const endpoints = computed<EndpointView[]>(() => endpointsQuery.data.value ?? [])
 const models = computed<ModelView[]>(() => modelsQuery.data.value ?? [])
@@ -541,26 +546,32 @@ function resetCursorAndReload() {
           />
         </template>
         <template #header-endpointPath>
+          <!-- requires view_models; skip dropdown when permission is absent -->
           <ColumnFilter
+            v-if="session.can('view_models')"
             v-model="filters.endpointPath"
             label="端点"
             :options="endpointOptions"
             placeholder="过滤端点…"
           />
+          <span v-else class="text-xs text-ink-muted">端点</span>
         </template>
         <template #header-model>
-          <ColumnFilter
-            v-model="filters.model"
-            label="模型"
-            :options="modelOptions"
-            placeholder="按路由的模型过滤"
-          />
-          <ColumnFilter
-            v-model="filters.upstreamModel"
-            label="上游"
-            :options="upstreamModelOptions"
-            placeholder="按实际发到上游的模型过滤"
-          />
+          <!-- requires view_models; skip dropdowns when permission is absent -->
+          <template v-if="session.can('view_models')">
+            <ColumnFilter
+              v-model="filters.model"
+              label="模型"
+              :options="modelOptions"
+              placeholder="按路由的模型过滤"
+            />
+            <ColumnFilter
+              v-model="filters.upstreamModel"
+              label="上游"
+              :options="upstreamModelOptions"
+              placeholder="按实际发到上游的模型过滤"
+            />
+          </template>
         </template>
         <template #cell-createdAt="{ row }">
           <div class="flex flex-col leading-tight">

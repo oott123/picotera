@@ -47,8 +47,13 @@ const queryClient = useQueryClient()
 const queries = useQueries({
   queries: [
     { queryKey: queryKeys.models.all, queryFn: listModels },
-    { queryKey: queryKeys.providers.all, queryFn: listProviders },
-    { queryKey: queryKeys.providerEndpoints.list(), queryFn: () => listProviderEndpoints() },
+    // admin-only data; non-admin sees empty provider/upstreams without a 403
+    { queryKey: queryKeys.providers.all, queryFn: listProviders, enabled: session.isAdmin },
+    {
+      queryKey: queryKeys.providerEndpoints.list(),
+      queryFn: () => listProviderEndpoints(),
+      enabled: session.isAdmin,
+    },
     { queryKey: queryKeys.endpoints.all, queryFn: listEndpoints },
   ],
 })
@@ -205,7 +210,8 @@ function confirmDelete(_event: Event, m: ModelView) {
             <tr>
               <Th>名称</Th>
               <Th>价格</Th>
-              <Th>上游</Th>
+              <!-- admin-only column: upstream counts require provider data -->
+              <Th v-if="session.isAdmin.value">上游</Th>
               <Th actions />
             </tr>
           </thead>
@@ -248,7 +254,7 @@ function confirmDelete(_event: Event, m: ModelView) {
                   </span>
                 </template>
               </Td>
-              <Td>
+              <Td v-if="session.isAdmin.value">
                 <span
                   v-if="(upstreamIndex[m.name]?.length ?? 0) > 0"
                   class="font-medium tabular-nums text-ink"
@@ -313,7 +319,8 @@ function confirmDelete(_event: Event, m: ModelView) {
       </DataCard>
       <StateText v-else>暂无模型，点击右上角按钮新增</StateText>
 
-      <section v-if="orphanRows.length" class="flex flex-col gap-2">
+      <!-- admin-only: orphan section requires provider data non-admins can't see -->
+      <section v-if="session.isAdmin.value && orphanRows.length" class="flex flex-col gap-2">
         <button
           type="button"
           class="flex items-center gap-1.5 text-left bg-transparent border-0 cursor-pointer p-0 text-xs font-medium text-ink-muted uppercase tracking-[0.03em]"

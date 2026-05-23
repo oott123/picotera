@@ -8,12 +8,16 @@ import {
   upsertExchangeRate,
 } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
+import { useSession } from '@/composables/useSession'
 
 export function useExchangeRates() {
   const client = useQueryClient()
+  const session = useSession()
+  // admin-only data; non-admin sees empty rates without a 403
   const query = useQuery({
     queryKey: queryKeys.exchangeRates.all,
     queryFn: listExchangeRates,
+    enabled: session.isAdmin,
   })
 
   const rates = computed(() => query.data.value ?? [])
