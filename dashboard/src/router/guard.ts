@@ -3,15 +3,9 @@ import { queryClient } from '@/api/queryClient'
 import { queryKeys } from '@/api/queryKeys'
 import { fetchMe } from '@/api/client'
 import type { components } from '@/openapi-types'
+import { fallbackFor } from './fallback'
 
 type SessionView = components['schemas']['SessionView']
-
-function fallbackFor(me: SessionView): string {
-  if (me.role === 'admin') return '/overview'
-  if (me.permissions.view_own_usage) return '/requests'
-  if (me.permissions.manage_own_api_keys) return '/api-keys'
-  return '/me'
-}
 
 export async function authGuard(
   to: RouteLocationNormalized,

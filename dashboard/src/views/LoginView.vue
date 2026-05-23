@@ -12,6 +12,7 @@ import { queryKeys } from '@/api/queryKeys'
 import { OPERATIONAL_STALE_TIME } from '@/api/queryClient'
 import { webauthnGet, WebAuthnUserCancelled } from '@/api/webauthn'
 import { Button } from '@/ui'
+import { fallbackFor } from '@/router/fallback'
 
 const route = useRoute()
 const router = useRouter()
@@ -41,7 +42,11 @@ const loginMutation = useMutation({
   },
   onSuccess(session) {
     qc.setQueryData(queryKeys.session.current, session)
-    router.replace(safeNext())
+    const next = safeNext()
+    // safeNext defaults to /overview which is admin-only; substitute the role-aware
+    // fallback so non-admins land on a page they actually have permission for.
+    const target = next === '/overview' && session.role !== 'admin' ? fallbackFor(session) : next
+    router.replace(target)
   },
   onError(err: unknown) {
     if (err instanceof WebAuthnUserCancelled) {

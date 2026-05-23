@@ -11,6 +11,7 @@ import {
 import { queryKeys } from '@/api/queryKeys'
 import { webauthnCreate, WebAuthnUserCancelled } from '@/api/webauthn'
 import { Button, Input, Field } from '@/ui'
+import { fallbackFor } from '@/router/fallback'
 
 const route = useRoute()
 const router = useRouter()
@@ -60,7 +61,8 @@ const enroll = useMutation({
   },
   onSuccess(session) {
     qc.setQueryData(queryKeys.session.current, session)
-    router.replace('/overview')
+    // Route to the best page for this session — non-admins can't access /overview.
+    router.replace(fallbackFor(session))
   },
   onError(err: unknown) {
     console.error('[enroll] registration failed', err)
