@@ -686,18 +686,15 @@ func autoProjectName(p string) string {
 	return base
 }
 
-// accountIDForAPIKey returns the apiKey's owning account_id, or 0 if the
-// key is a system key (account_id IS NULL). The zero return is the agreed
-// sentinel that downstream project resolution / per-account scoping treats
-// as "no owner, skip personal scoping."
+// accountIDForAPIKey returns the apiKey's owning account_id, or 0 when apiKey
+// is nil (pre-auth / failed-auth path). Post-migration 030, api_key.account_id
+// is NOT NULL so every authenticated key has an owner; the zero return only
+// happens when there is no key at all.
 func accountIDForAPIKey(apiKey *db.ApiKey) int32 {
 	if apiKey == nil {
 		return 0
 	}
-	if !apiKey.AccountID.Valid {
-		return 0
-	}
-	return apiKey.AccountID.Int32
+	return apiKey.AccountID
 }
 
 // upsertProjectSeen updates project.first_seen_at / last_seen_at for the

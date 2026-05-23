@@ -9,18 +9,19 @@ import (
 )
 
 type Account struct {
-	ID                  int32              `json:"id"`
-	Username            string             `json:"username"`
-	DisplayName         string             `json:"displayName"`
-	WebauthnUserHandle  []byte             `json:"webauthnUserHandle"`
-	Role                string             `json:"role"`
-	CanViewOwnUsage     bool               `json:"canViewOwnUsage"`
-	CanManageOwnApiKeys bool               `json:"canManageOwnApiKeys"`
-	CanViewModels       bool               `json:"canViewModels"`
-	CanViewOwnTraces    bool               `json:"canViewOwnTraces"`
-	Disabled            bool               `json:"disabled"`
-	CreatedAt           pgtype.Timestamptz `json:"createdAt"`
-	UpdatedAt           pgtype.Timestamptz `json:"updatedAt"`
+	ID                   int32              `json:"id"`
+	Username             string             `json:"username"`
+	DisplayName          string             `json:"displayName"`
+	WebauthnUserHandle   []byte             `json:"webauthnUserHandle"`
+	Role                 string             `json:"role"`
+	CanViewOwnUsage      bool               `json:"canViewOwnUsage"`
+	CanManageOwnApiKeys  bool               `json:"canManageOwnApiKeys"`
+	CanViewModels        bool               `json:"canViewModels"`
+	CanViewOwnTraces     bool               `json:"canViewOwnTraces"`
+	Disabled             bool               `json:"disabled"`
+	CreatedAt            pgtype.Timestamptz `json:"createdAt"`
+	UpdatedAt            pgtype.Timestamptz `json:"updatedAt"`
+	CanManageOwnProjects bool               `json:"canManageOwnProjects"`
 }
 
 type ApiKey struct {
@@ -31,7 +32,7 @@ type ApiKey struct {
 	Disabled    bool               `json:"disabled"`
 	CreatedAt   pgtype.Timestamptz `json:"createdAt"`
 	UpdatedAt   pgtype.Timestamptz `json:"updatedAt"`
-	AccountID   pgtype.Int4        `json:"accountId"`
+	AccountID   int32              `json:"accountId"`
 }
 
 type Endpoint struct {
@@ -129,6 +130,7 @@ type Request struct {
 	UserMessagePreview pgtype.Text      `json:"userMessagePreview"`
 	CacheWrite1hTokens pgtype.Int4      `json:"cacheWrite1hTokens"`
 	ProjectID          pgtype.Int4      `json:"projectId"`
+	AccountID          pgtype.Int4      `json:"accountId"`
 }
 
 type RequestOverviewHourly struct {

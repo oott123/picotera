@@ -88,7 +88,7 @@ type Querier interface {
 	InsertScript(ctx context.Context, arg InsertScriptParams) (Script, error)
 	ListAccounts(ctx context.Context) ([]ListAccountsRow, error)
 	ListApiKeys(ctx context.Context) ([]ApiKey, error)
-	ListApiKeysByAccount(ctx context.Context, accountID pgtype.Int4) ([]ApiKey, error)
+	ListApiKeysByAccount(ctx context.Context, accountID int32) ([]ApiKey, error)
 	ListCredentialsByAccount(ctx context.Context, accountID int32) ([]WebauthnCredential, error)
 	ListEnabledScripts(ctx context.Context) ([]Script, error)
 	ListOverviewBreakdownCosts(ctx context.Context, arg ListOverviewBreakdownCostsParams) ([]ListOverviewBreakdownCostsRow, error)

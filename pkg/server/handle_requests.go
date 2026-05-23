@@ -88,7 +88,7 @@ func (s *Server) handleListRequests(ctx context.Context, input *contract.ListReq
 			return nil, authErrToHuma(auth.ErrFiltersNotSupported())
 		}
 		rows, err := s.queries.ListRequestsByAccount(ctx, db.ListRequestsByAccountParams{
-			AccountID: pgtype.Int4{Int32: sess.Account.ID, Valid: true},
+			AccountID: sess.Account.ID,
 			Limit:     fetchLimit,
 		})
 		if err != nil {
@@ -326,7 +326,7 @@ func (s *Server) handleGetRequest(ctx context.Context, input *contract.GetReques
 		req, err = s.queries.GetRequestOwnedBy(ctx, db.GetRequestOwnedByParams{
 			ID:          input.ID,
 			IDCreatedAt: pgtype.Timestamp{Time: idCreatedAt, Valid: true},
-			AccountID:   pgtype.Int4{Int32: sess.Account.ID, Valid: true},
+			AccountID:   sess.Account.ID,
 		})
 	}
 	if err != nil {
@@ -382,7 +382,7 @@ func (s *Server) handleListRequestSpans(ctx context.Context, input *contract.Lis
 	_, err = s.queries.GetRequestOwnedBy(ctx, db.GetRequestOwnedByParams{
 		ID:          input.ID,
 		IDCreatedAt: pgtype.Timestamp{Time: idCreatedAt, Valid: true},
-		AccountID:   pgtype.Int4{Int32: sess.Account.ID, Valid: true},
+		AccountID:   sess.Account.ID,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

@@ -11,7 +11,6 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func marshalAnnotations(a map[string]string) ([]byte, error) {
@@ -28,7 +27,7 @@ func (s *Server) handleListApiKeys(ctx context.Context, _ *struct{}) (*contract.
 	if sess.Account.Role == "admin" {
 		rows, err = s.queries.ListApiKeys(ctx)
 	} else {
-		rows, err = s.queries.ListApiKeysByAccount(ctx, pgtype.Int4{Int32: sess.Account.ID, Valid: true})
+		rows, err = s.queries.ListApiKeysByAccount(ctx, sess.Account.ID)
 	}
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to list api keys", err)
@@ -50,7 +49,7 @@ func (s *Server) handleGetApiKey(ctx context.Context, in *contract.GetApiKeyRequ
 		// Non-admin may only see their own keys; treat not-owned as not-found to avoid leaking existence.
 		_, err := s.queries.GetApiKeyOwnedBy(ctx, db.GetApiKeyOwnedByParams{
 			ID:        in.ID,
-			AccountID: pgtype.Int4{Int32: sess.Account.ID, Valid: true},
+			AccountID: sess.Account.ID,
 		})
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -82,18 +81,12 @@ func (s *Server) handleCreateApiKey(ctx context.Context, in *contract.CreateApiK
 		return nil, huma.Error500InternalServerError("failed to encode annotations", err)
 	}
 	sess := auth.SessionFromContext(ctx)
-	// Non-admin keys are always owned by the caller; admin keys are unowned (NULL) so
-	// they are not bound to any account and can be used for system-level automation.
-	var accountID pgtype.Int4
-	if sess.Account.Role != "admin" {
-		accountID = pgtype.Int4{Int32: sess.Account.ID, Valid: true}
-	}
 	r, err := s.queries.InsertApiKey(ctx, db.InsertApiKeyParams{
 		Name:        in.Body.Name,
 		Key:         in.Body.Key,
 		Disabled:    in.Body.Disabled,
 		Annotations: annotations,
-		AccountID:   accountID,
+		AccountID:   sess.Account.ID,
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -117,7 +110,7 @@ func (s *Server) handleUpdateApiKey(ctx context.Context, in *contract.UpdateApiK
 		// Non-admin: verify ownership before mutating; 404 to avoid leaking existence.
 		_, err := s.queries.GetApiKeyOwnedBy(ctx, db.GetApiKeyOwnedByParams{
 			ID:        in.ID,
-			AccountID: pgtype.Int4{Int32: sess.Account.ID, Valid: true},
+			AccountID: sess.Account.ID,
 		})
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -159,7 +152,7 @@ func (s *Server) handleDeleteApiKey(ctx context.Context, in *contract.DeleteApiK
 		// Non-admin: verify ownership before deleting; 404 to avoid leaking existence.
 		_, err := s.queries.GetApiKeyOwnedBy(ctx, db.GetApiKeyOwnedByParams{
 			ID:        in.Body.ID,
-			AccountID: pgtype.Int4{Int32: sess.Account.ID, Valid: true},
+			AccountID: sess.Account.ID,
 		})
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {

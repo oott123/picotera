@@ -7,8 +7,6 @@ package db
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const deleteApiKey = `-- name: DeleteApiKey :exec
@@ -65,8 +63,8 @@ SELECT id, name, annotations, key, disabled, created_at, updated_at, account_id 
 `
 
 type GetApiKeyOwnedByParams struct {
-	ID        int32       `json:"id"`
-	AccountID pgtype.Int4 `json:"accountId"`
+	ID        int32 `json:"id"`
+	AccountID int32 `json:"accountId"`
 }
 
 func (q *Queries) GetApiKeyOwnedBy(ctx context.Context, arg GetApiKeyOwnedByParams) (ApiKey, error) {
@@ -92,11 +90,11 @@ RETURNING id, name, annotations, key, disabled, created_at, updated_at, account_
 `
 
 type InsertApiKeyParams struct {
-	Name        string      `json:"name"`
-	Key         string      `json:"key"`
-	Disabled    bool        `json:"disabled"`
-	Annotations []byte      `json:"annotations"`
-	AccountID   pgtype.Int4 `json:"accountId"`
+	Name        string `json:"name"`
+	Key         string `json:"key"`
+	Disabled    bool   `json:"disabled"`
+	Annotations []byte `json:"annotations"`
+	AccountID   int32  `json:"accountId"`
 }
 
 func (q *Queries) InsertApiKey(ctx context.Context, arg InsertApiKeyParams) (ApiKey, error) {
@@ -158,7 +156,7 @@ const listApiKeysByAccount = `-- name: ListApiKeysByAccount :many
 SELECT id, name, annotations, key, disabled, created_at, updated_at, account_id FROM api_key WHERE account_id = $1 ORDER BY created_at DESC, id DESC
 `
 
-func (q *Queries) ListApiKeysByAccount(ctx context.Context, accountID pgtype.Int4) ([]ApiKey, error) {
+func (q *Queries) ListApiKeysByAccount(ctx context.Context, accountID int32) ([]ApiKey, error) {
 	rows, err := q.db.Query(ctx, listApiKeysByAccount, accountID)
 	if err != nil {
 		return nil, err

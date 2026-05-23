@@ -12,7 +12,7 @@ import (
 )
 
 const getRequest = `-- name: GetRequest :one
-SELECT id, span_id, parent_span_id, provider_id, endpoint_path, api_key_id, model, input_tokens, cache_read_tokens, output_tokens, cache_write_tokens, status_code, error_message, ttft_ms, time_spent_ms, created_at, type, status, upstream_model, model_cost, model_cost_currency, user_message_preview, cache_write_1h_tokens, project_id FROM request WHERE id = $1 AND created_at = $2::timestamp
+SELECT id, span_id, parent_span_id, provider_id, endpoint_path, api_key_id, model, input_tokens, cache_read_tokens, output_tokens, cache_write_tokens, status_code, error_message, ttft_ms, time_spent_ms, created_at, type, status, upstream_model, model_cost, model_cost_currency, user_message_preview, cache_write_1h_tokens, project_id, account_id FROM request WHERE id = $1 AND created_at = $2::timestamp
 `
 
 type GetRequestParams struct {
@@ -48,12 +48,13 @@ func (q *Queries) GetRequest(ctx context.Context, arg GetRequestParams) (Request
 		&i.UserMessagePreview,
 		&i.CacheWrite1hTokens,
 		&i.ProjectID,
+		&i.AccountID,
 	)
 	return i, err
 }
 
 const getRequestOwnedBy = `-- name: GetRequestOwnedBy :one
-SELECT r.id, r.span_id, r.parent_span_id, r.provider_id, r.endpoint_path, r.api_key_id, r.model, r.input_tokens, r.cache_read_tokens, r.output_tokens, r.cache_write_tokens, r.status_code, r.error_message, r.ttft_ms, r.time_spent_ms, r.created_at, r.type, r.status, r.upstream_model, r.model_cost, r.model_cost_currency, r.user_message_preview, r.cache_write_1h_tokens, r.project_id FROM request r
+SELECT r.id, r.span_id, r.parent_span_id, r.provider_id, r.endpoint_path, r.api_key_id, r.model, r.input_tokens, r.cache_read_tokens, r.output_tokens, r.cache_write_tokens, r.status_code, r.error_message, r.ttft_ms, r.time_spent_ms, r.created_at, r.type, r.status, r.upstream_model, r.model_cost, r.model_cost_currency, r.user_message_preview, r.cache_write_1h_tokens, r.project_id, r.account_id FROM request r
 JOIN api_key k ON k.id = r.api_key_id
 WHERE r.id = $1
   AND r.created_at = $3::timestamp
@@ -62,7 +63,7 @@ WHERE r.id = $1
 
 type GetRequestOwnedByParams struct {
 	ID          string           `json:"id"`
-	AccountID   pgtype.Int4      `json:"accountId"`
+	AccountID   int32            `json:"accountId"`
 	IDCreatedAt pgtype.Timestamp `json:"idCreatedAt"`
 }
 
@@ -94,6 +95,7 @@ func (q *Queries) GetRequestOwnedBy(ctx context.Context, arg GetRequestOwnedByPa
 		&i.UserMessagePreview,
 		&i.CacheWrite1hTokens,
 		&i.ProjectID,
+		&i.AccountID,
 	)
 	return i, err
 }
@@ -643,8 +645,8 @@ LIMIT $2
 `
 
 type ListRequestsByAccountParams struct {
-	AccountID pgtype.Int4 `json:"accountId"`
-	Limit     int32       `json:"limit"`
+	AccountID int32 `json:"accountId"`
+	Limit     int32 `json:"limit"`
 }
 
 type ListRequestsByAccountRow struct {
