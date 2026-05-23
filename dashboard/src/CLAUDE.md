@@ -2,7 +2,7 @@
 
 ## Permission-aware views
 
-Every view that's reachable by non-admin users (i.e. `meta.auth` is `'session'`, a permission, or has `mode`-driven UI differences for non-admin) MUST declare a single `mode` computed at the top of `<script setup>`. All permission gates within the view — both `useQuery({ enabled })` and `v-if` template checks — consult `mode` (or a named capability derived from `session`).
+Every view with **permission-driven UI differences** MUST declare a single `mode` computed at the top of `<script setup>`. All permission gates within the view — both `useQuery({ enabled })` and `v-if` template checks — consult `mode` (or a named capability derived from `session`). Views where admin and non-admin render identically (because the backend handles row-scoping transparently) don't need to declare a mode — the route's `meta.auth` already documents the entry gate, and a forced-but-unused `mode` declaration is just noise.
 
 ```ts
 const session = useSession()

@@ -28,6 +28,7 @@ const ceremony = usePasskeyCeremony<TResult>({
 
 const nickname = ref('')
 const renaming = ref(false)
+const renameError = ref<string | null>(null)
 
 onMounted(() => {
   void ceremony.run()
@@ -41,14 +42,25 @@ async function onDone() {
     renaming.value = true
     try {
       await props.rename(props.extractCredentialId(result), trimmed)
-    } catch {
-      // Rename failure is non-fatal — the credential exists, user can rename later.
-      // Swallow and proceed; parent receives result on emit('done').
-    } finally {
+      renameError.value = null
+    } catch (err) {
+      // Credential was created successfully; only the nickname didn't apply.
+      // Surface the error inline so the user can acknowledge before closing.
+      renameError.value =
+        err instanceof Error
+          ? `昵称保存失败：${err.message}`
+          : '昵称保存失败，可稍后在「我的账号」页面修改'
       renaming.value = false
+      return // user must acknowledge via 继续 before flow closes
     }
+    renaming.value = false
   }
   emit('done', result)
+}
+
+function onAcknowledgeRenameError() {
+  renameError.value = null
+  if (ceremony.result.value) emit('done', ceremony.result.value)
 }
 
 function onRetry() {
@@ -89,8 +101,12 @@ function onRetry() {
           autofocus
         />
       </Field>
-      <div class="flex justify-end">
-        <Button :disabled="renaming" @click="onDone">完成</Button>
+      <div v-if="renameError" class="bg-err-faint text-err-ink rounded-md px-3 py-2 text-sm">
+        {{ renameError }}
+      </div>
+      <div class="flex justify-end gap-2">
+        <Button v-if="renameError" @click="onAcknowledgeRenameError">继续</Button>
+        <Button v-else :disabled="renaming" @click="onDone">完成</Button>
       </div>
     </div>
 

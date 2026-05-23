@@ -2,6 +2,7 @@ import { computed } from 'vue'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { fetchMe, logout as apiLogout } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
+import { MANAGEMENT_STALE_TIME } from '@/api/queryClient'
 import type { components } from '@/openapi-types'
 
 type Session = components['schemas']['SessionView']
@@ -18,7 +19,7 @@ export function useSession() {
     queryKey: queryKeys.session.current,
     queryFn: fetchMe,
     retry: false,
-    staleTime: 30_000,
+    staleTime: MANAGEMENT_STALE_TIME,
   })
 
   return {

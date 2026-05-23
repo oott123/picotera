@@ -2,6 +2,25 @@ import { ref } from 'vue'
 import { ApiRequestError } from '@/api/client'
 import { webauthnCreate, WebAuthnUserCancelled } from '@/api/webauthn'
 
+function mapDOMException(err: DOMException): string {
+  switch (err.name) {
+    case 'NotAllowedError':
+      return '操作被拒绝或已超时，请重试。'
+    case 'SecurityError':
+      return '安全错误：请检查访问地址（必须是 https 或 localhost）。'
+    case 'InvalidStateError':
+      return '此设备的 Passkey 已注册，无需重复添加。'
+    case 'NotSupportedError':
+      return '当前浏览器不支持所需的 Passkey 算法。'
+    case 'AbortError':
+      return '操作已取消。'
+    case 'ConstraintError':
+      return '设备不满足 Passkey 创建条件（如未启用 UV / 生物识别）。'
+    default:
+      return '注册失败，请重试。'
+  }
+}
+
 export type CeremonyPhase = 'idle' | 'waiting' | 'success' | 'error'
 
 export interface CeremonyConfig<TResult> {
@@ -44,7 +63,7 @@ export function usePasskeyCeremony<TResult>(config: CeremonyConfig<TResult>) {
       } else if (err instanceof ApiRequestError) {
         errorMessage.value = err.message
       } else if (err instanceof DOMException) {
-        errorMessage.value = `注册失败：${err.name}: ${err.message}`
+        errorMessage.value = mapDOMException(err)
       } else if (err instanceof Error) {
         errorMessage.value = `注册失败：${err.message}`
       } else {

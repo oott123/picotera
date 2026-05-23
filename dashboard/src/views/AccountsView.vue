@@ -28,6 +28,20 @@ const confirm = useConfirm()
 const queryClient = useQueryClient()
 const session = useSession()
 
+// Sentinel -1: account ids are positive serials, so -1 never matches a real id.
+const selfId = computed(() => session.user.value?.id ?? -1)
+
+const statusMessage = ref<{ kind: 'success' | 'error'; text: string } | null>(null)
+let statusTimer: ReturnType<typeof setTimeout> | null = null
+
+function flashStatus(kind: 'success' | 'error', text: string) {
+  statusMessage.value = { kind, text }
+  if (statusTimer) clearTimeout(statusTimer)
+  statusTimer = setTimeout(() => {
+    statusMessage.value = null
+  }, 4000)
+}
+
 const accountsQuery = useQuery({
   queryKey: queryKeys.accounts.list,
   queryFn: listAccounts,
@@ -91,8 +105,8 @@ const toggleMutation = useMutation({
     }),
   onSuccess: () => invalidateAccounts(queryClient),
   onError: (e: unknown) => {
-    // Surface last-admin 409 as a brief alert; no crash
-    if (e instanceof Error) alert(e.message)
+    // Surface last-admin 409 as an inline banner; no crash
+    flashStatus('error', e instanceof Error ? e.message : '操作失败')
   },
 })
 
@@ -114,7 +128,7 @@ async function openReissue(a: AccountView) {
       { key: `account:reissue:${a.id}`, width: '560px' },
     )
   } catch (e: unknown) {
-    if (e instanceof Error) alert(e.message)
+    flashStatus('error', e instanceof Error ? e.message : '操作失败')
   } finally {
     reissuingId.value = null
   }
@@ -136,11 +150,10 @@ async function revokeSessionsFor(a: AccountView) {
   revokingId.value = a.id
   try {
     const result = await revokeAccountSessions(a.id)
-    // Brief feedback via browser alert — lightweight, no extra state needed
-    alert(`已吊销 ${result.revoked} 个会话`)
+    flashStatus('success', `已吊销 ${result.revoked} 个会话`)
     invalidateAccounts(queryClient)
   } catch (e: unknown) {
-    if (e instanceof Error) alert(e.message)
+    flashStatus('error', e instanceof Error ? e.message : '操作失败')
   } finally {
     revokingId.value = null
   }
@@ -172,6 +185,13 @@ function fmtTime(iso?: string | null): string {
 
 <template>
   <div class="flex flex-col gap-3.5">
+    <div
+      v-if="statusMessage"
+      class="rounded-md px-3 py-2 text-sm"
+      :class="statusMessage.kind === 'success' ? 'bg-accent-faint text-accent-ink' : 'bg-err-faint text-err-ink'"
+    >
+      {{ statusMessage.text }}
+    </div>
     <div class="flex items-center justify-between gap-3">
       <span class="text-xs text-ink-faint tabular-nums">{{ count }} 个用户</span>
       <div class="flex items-center gap-2">
@@ -329,7 +349,7 @@ function fmtTime(iso?: string | null): string {
                   <Icon name="edit" :size="13" />
                 </IconButton>
                 <IconButton
-                  v-if="a.id !== session.user.value?.id"
+                  v-if="a.id !== selfId"
                   variant="danger"
                   title="删除"
                   aria-label="删除"

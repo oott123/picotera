@@ -17,10 +17,14 @@ provideCurrencyContext(computed(() => prefs.displayCurrency ?? null))
 const session = useSession()
 const layouts = { app: AppLayout, minimal: MinimalLayout }
 const currentLayout = computed(() => layouts[route.meta.layout])
+
+// Only gate on session load for app-layout routes. Public/minimal routes
+// (login, enroll) don't need a /me probe — it 401s and causes a loading flash.
+const showLoading = computed(() => route.meta.layout === 'app' && session.isPending.value)
 </script>
 
 <template>
-  <div v-if="session.isPending.value" class="min-h-[100dvh] flex items-center justify-center text-ink-faint">
+  <div v-if="showLoading" class="min-h-[100dvh] flex items-center justify-center text-ink-faint">
     加载中…
   </div>
   <component v-else :is="currentLayout">
