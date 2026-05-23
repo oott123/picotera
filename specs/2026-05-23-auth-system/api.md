@@ -260,10 +260,10 @@ Every existing `huma.Register(...)` call moves to `registerOp(...)` with an expl
 |---|---|---|
 | `providers`, `provider-endpoints`, `endpoints`, `models` (writes) | `admin` | Provider/endpoint/model configuration is operator-only. |
 | `models` (reads), `endpoints` (reads) | `perm:view_models` | Non-admin users get read-only listings. |
-| `api-keys` (all operations) | `perm:manage_own_api_keys` | Admin sees all rows; user sees rows where `account_id = me`. New rows are stamped with `account_id` of the caller (admin can override; user cannot). |
+| `api-keys` (all operations) | `perm:manage_own_api_keys` | Admin sees all rows; user sees rows where `account_id = me`. New rows auto-stamp the caller's `account_id` for non-admin; admin's new rows leave `account_id` NULL (system-level keys). Admin does not currently have an API surface for provisioning a key on behalf of another user. |
 | `requests` list/detail | `perm:view_own_usage` (list) / `perm:view_own_traces` (detail / spans) | Scoped via `api_key.account_id`. |
 | `traces` | `perm:view_own_traces` | Same scoping. |
-| `overview` metrics | `perm:view_own_usage` | Same scoping. |
+| `overview` metrics | `perm:view_own_usage` | Per-account scoping for overview/distribution/series is not yet implemented because `request_overview_hourly` (Timescale continuous aggregate) lacks an `account_id` column. The handler explicitly returns 403 to non-admin callers despite their `view_own_usage` permission — those permissions remain for forward-compat with future scoped overview support. |
 | `scripts`, `kv`, `rates`, `projects`, `mappings`, `simulate`, `fetch-models`, `match-pricing` | `admin` | Operator-only surfaces. |
 
 ### Repository-layer scoping queries (added in `db/queries/`)

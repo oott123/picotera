@@ -233,6 +233,35 @@ func ToListRequestRowView(r *db.ListRequestsRow) *RequestView {
 	})
 }
 
+func ToListRequestSpansOwnedByRowView(r *db.ListRequestSpansOwnedByRow) *RequestView {
+	return toRequestView(requestLike{
+		ID:                   r.ID,
+		SpanID:               r.SpanID,
+		ParentSpanID:         r.ParentSpanID,
+		Type:                 r.Type,
+		Status:               r.Status,
+		ProviderID:           r.ProviderID,
+		EndpointPath:         r.EndpointPath,
+		ApiKeyID:             r.ApiKeyID,
+		Model:                r.Model,
+		UpstreamModel:        r.UpstreamModel,
+		InputTokens:          r.InputTokens,
+		CacheReadTokens:      r.CacheReadTokens,
+		OutputTokens:         r.OutputTokens,
+		CacheWriteTokens:     r.CacheWriteTokens,
+		CacheWrite1HTokens:   r.CacheWrite1hTokens,
+		StatusCode:           r.StatusCode,
+		ErrorMessage:         r.ErrorMessage,
+		TtftMs:               r.TtftMs,
+		TimeSpentMs:          r.TimeSpentMs,
+		CreatedAt:            r.CreatedAt,
+		ModelCost:            r.ModelCost,
+		ModelCostCurrency:    r.ModelCostCurrency,
+		UserMessagePreview:   r.UserMessagePreview,
+		ProjectID:            r.ProjectID,
+	})
+}
+
 func ToListRequestsBySpanRowView(r *db.ListRequestsBySpanRow) *RequestView {
 	return toRequestView(requestLike{
 		ID:                   r.ID,
@@ -271,6 +300,40 @@ func parseTraceCosts(raw []byte) ([]TraceCostView, error) {
 		costs = []TraceCostView{}
 	}
 	return costs, nil
+}
+
+func ToRequestTraceViewByAccount(r *db.ListRequestTracesByAccountRow) (*RequestTraceView, error) {
+	modelCosts, err := parseTraceCosts(r.ModelCosts)
+	if err != nil {
+		return nil, err
+	}
+	view := &RequestTraceView{
+		ID:                   r.ID,
+		ParentSpanID:         r.ParentSpanID,
+		MetaRequestCount:     r.MetaRequestCount,
+		UpstreamRequestCount: r.UpstreamRequestCount,
+		TotalTokens:          r.TotalTokens,
+		InputTokens:          r.InputTokens,
+		CacheReadTokens:      r.CacheReadTokens,
+		OutputTokens:         r.OutputTokens,
+		CacheWriteTokens:     r.CacheWriteTokens,
+		CacheWrite1HTokens:   r.CacheWrite1hTokens,
+		ModelCosts:           modelCosts,
+	}
+	if r.FirstRequestAt.Valid {
+		view.FirstRequestAt = r.FirstRequestAt.Time.UTC().Format(time.RFC3339Nano)
+	}
+	if r.LastRequestAt.Valid {
+		view.LastRequestAt = r.LastRequestAt.Time.UTC().Format(time.RFC3339Nano)
+	}
+	if r.UserMessagePreview.Valid {
+		view.UserMessagePreview = r.UserMessagePreview.String
+	}
+	if r.ProjectID.Valid {
+		v := r.ProjectID.Int32
+		view.ProjectID = &v
+	}
+	return view, nil
 }
 
 func ToRequestTraceView(r *db.ListRequestTracesRow) (*RequestTraceView, error) {

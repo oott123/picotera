@@ -52,6 +52,150 @@ func (q *Queries) GetRequest(ctx context.Context, arg GetRequestParams) (Request
 	return i, err
 }
 
+const getRequestOwnedBy = `-- name: GetRequestOwnedBy :one
+SELECT r.id, r.span_id, r.parent_span_id, r.provider_id, r.endpoint_path, r.api_key_id, r.model, r.input_tokens, r.cache_read_tokens, r.output_tokens, r.cache_write_tokens, r.status_code, r.error_message, r.ttft_ms, r.time_spent_ms, r.created_at, r.type, r.status, r.upstream_model, r.model_cost, r.model_cost_currency, r.user_message_preview, r.cache_write_1h_tokens, r.project_id FROM request r
+JOIN api_key k ON k.id = r.api_key_id
+WHERE r.id = $1
+  AND r.created_at = $3::timestamp
+  AND k.account_id = $2
+`
+
+type GetRequestOwnedByParams struct {
+	ID          string           `json:"id"`
+	AccountID   pgtype.Int4      `json:"accountId"`
+	IDCreatedAt pgtype.Timestamp `json:"idCreatedAt"`
+}
+
+func (q *Queries) GetRequestOwnedBy(ctx context.Context, arg GetRequestOwnedByParams) (Request, error) {
+	row := q.db.QueryRow(ctx, getRequestOwnedBy, arg.ID, arg.AccountID, arg.IDCreatedAt)
+	var i Request
+	err := row.Scan(
+		&i.ID,
+		&i.SpanID,
+		&i.ParentSpanID,
+		&i.ProviderID,
+		&i.EndpointPath,
+		&i.ApiKeyID,
+		&i.Model,
+		&i.InputTokens,
+		&i.CacheReadTokens,
+		&i.OutputTokens,
+		&i.CacheWriteTokens,
+		&i.StatusCode,
+		&i.ErrorMessage,
+		&i.TtftMs,
+		&i.TimeSpentMs,
+		&i.CreatedAt,
+		&i.Type,
+		&i.Status,
+		&i.UpstreamModel,
+		&i.ModelCost,
+		&i.ModelCostCurrency,
+		&i.UserMessagePreview,
+		&i.CacheWrite1hTokens,
+		&i.ProjectID,
+	)
+	return i, err
+}
+
+const listRequestSpansOwnedBy = `-- name: ListRequestSpansOwnedBy :many
+WITH anchor AS (
+  SELECT request.span_id
+  FROM request
+  JOIN api_key k ON k.id = request.api_key_id
+  WHERE request.id = $1::text
+    AND request.created_at = $2::timestamp
+    AND k.account_id = $3::int
+)
+SELECT r.id, r.span_id, r.parent_span_id, r.type, r.status, r.provider_id, r.endpoint_path,
+       r.api_key_id, r.model, r.upstream_model, r.input_tokens, r.cache_read_tokens, r.output_tokens,
+       r.cache_write_tokens, r.cache_write_1h_tokens, r.status_code, r.error_message, r.ttft_ms, r.time_spent_ms,
+       r.created_at,
+       r.model_cost, r.model_cost_currency,
+       r.user_message_preview, r.project_id
+FROM request r, anchor
+WHERE r.span_id = anchor.span_id
+ORDER BY r.created_at ASC, r.id ASC
+`
+
+type ListRequestSpansOwnedByParams struct {
+	ID          string           `json:"id"`
+	IDCreatedAt pgtype.Timestamp `json:"idCreatedAt"`
+	AccountID   int32            `json:"accountId"`
+}
+
+type ListRequestSpansOwnedByRow struct {
+	ID                 string           `json:"id"`
+	SpanID             pgtype.Text      `json:"spanId"`
+	ParentSpanID       pgtype.Text      `json:"parentSpanId"`
+	Type               int32            `json:"type"`
+	Status             int32            `json:"status"`
+	ProviderID         pgtype.Int4      `json:"providerId"`
+	EndpointPath       pgtype.Text      `json:"endpointPath"`
+	ApiKeyID           pgtype.Int4      `json:"apiKeyId"`
+	Model              pgtype.Text      `json:"model"`
+	UpstreamModel      pgtype.Text      `json:"upstreamModel"`
+	InputTokens        pgtype.Int4      `json:"inputTokens"`
+	CacheReadTokens    pgtype.Int4      `json:"cacheReadTokens"`
+	OutputTokens       pgtype.Int4      `json:"outputTokens"`
+	CacheWriteTokens   pgtype.Int4      `json:"cacheWriteTokens"`
+	CacheWrite1hTokens pgtype.Int4      `json:"cacheWrite1hTokens"`
+	StatusCode         pgtype.Int4      `json:"statusCode"`
+	ErrorMessage       pgtype.Text      `json:"errorMessage"`
+	TtftMs             pgtype.Int4      `json:"ttftMs"`
+	TimeSpentMs        pgtype.Int4      `json:"timeSpentMs"`
+	CreatedAt          pgtype.Timestamp `json:"createdAt"`
+	ModelCost          pgtype.Numeric   `json:"modelCost"`
+	ModelCostCurrency  pgtype.Text      `json:"modelCostCurrency"`
+	UserMessagePreview pgtype.Text      `json:"userMessagePreview"`
+	ProjectID          pgtype.Int4      `json:"projectId"`
+}
+
+func (q *Queries) ListRequestSpansOwnedBy(ctx context.Context, arg ListRequestSpansOwnedByParams) ([]ListRequestSpansOwnedByRow, error) {
+	rows, err := q.db.Query(ctx, listRequestSpansOwnedBy, arg.ID, arg.IDCreatedAt, arg.AccountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRequestSpansOwnedByRow
+	for rows.Next() {
+		var i ListRequestSpansOwnedByRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SpanID,
+			&i.ParentSpanID,
+			&i.Type,
+			&i.Status,
+			&i.ProviderID,
+			&i.EndpointPath,
+			&i.ApiKeyID,
+			&i.Model,
+			&i.UpstreamModel,
+			&i.InputTokens,
+			&i.CacheReadTokens,
+			&i.OutputTokens,
+			&i.CacheWriteTokens,
+			&i.CacheWrite1hTokens,
+			&i.StatusCode,
+			&i.ErrorMessage,
+			&i.TtftMs,
+			&i.TimeSpentMs,
+			&i.CreatedAt,
+			&i.ModelCost,
+			&i.ModelCostCurrency,
+			&i.UserMessagePreview,
+			&i.ProjectID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRequestTraces = `-- name: ListRequestTraces :many
 SELECT
   traces.id,
@@ -173,6 +317,164 @@ func (q *Queries) ListRequestTraces(ctx context.Context, arg ListRequestTracesPa
 	var items []ListRequestTracesRow
 	for rows.Next() {
 		var i ListRequestTracesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ParentSpanID,
+			&i.MetaRequestCount,
+			&i.UpstreamRequestCount,
+			&i.TotalTokens,
+			&i.InputTokens,
+			&i.CacheReadTokens,
+			&i.OutputTokens,
+			&i.CacheWriteTokens,
+			&i.CacheWrite1hTokens,
+			&i.ModelCosts,
+			&i.FirstRequestAt,
+			&i.LastRequestAt,
+			&i.UserMessagePreview,
+			&i.ProjectID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRequestTracesByAccount = `-- name: ListRequestTracesByAccount :many
+SELECT
+  traces.id,
+  traces.parent_span_id,
+  COALESCE(metrics.meta_request_count, 0)::bigint AS meta_request_count,
+  COALESCE(metrics.upstream_request_count, 0)::bigint AS upstream_request_count,
+  COALESCE(metrics.total_tokens, 0)::bigint AS total_tokens,
+  COALESCE(metrics.input_tokens, 0)::bigint AS input_tokens,
+  COALESCE(metrics.cache_read_tokens, 0)::bigint AS cache_read_tokens,
+  COALESCE(metrics.output_tokens, 0)::bigint AS output_tokens,
+  COALESCE(metrics.cache_write_tokens, 0)::bigint AS cache_write_tokens,
+  COALESCE(metrics.cache_write_1h_tokens, 0)::bigint AS cache_write_1h_tokens,
+  COALESCE(model_costs.costs, '[]'::jsonb)::jsonb AS model_costs,
+  traces.first_request_at,
+  traces.last_request_at,
+  preview.user_message_preview,
+  trace_project.project_id AS project_id
+FROM traces
+LEFT JOIN LATERAL (
+  SELECT
+    COUNT(*) FILTER (WHERE type = 0)::bigint AS meta_request_count,
+    COUNT(*) FILTER (WHERE type = 1)::bigint AS upstream_request_count,
+    COALESCE(SUM(
+      COALESCE(input_tokens, 0) + COALESCE(cache_read_tokens, 0) + COALESCE(output_tokens, 0)
+      + COALESCE(cache_write_tokens, 0) + COALESCE(cache_write_1h_tokens, 0)
+    ) FILTER (WHERE type = 1), 0)::bigint AS total_tokens,
+    COALESCE(SUM(COALESCE(input_tokens, 0)) FILTER (WHERE type = 1), 0)::bigint AS input_tokens,
+    COALESCE(SUM(COALESCE(cache_read_tokens, 0)) FILTER (WHERE type = 1), 0)::bigint AS cache_read_tokens,
+    COALESCE(SUM(COALESCE(output_tokens, 0)) FILTER (WHERE type = 1), 0)::bigint AS output_tokens,
+    COALESCE(SUM(COALESCE(cache_write_tokens, 0)) FILTER (WHERE type = 1), 0)::bigint AS cache_write_tokens,
+    COALESCE(SUM(COALESCE(cache_write_1h_tokens, 0)) FILTER (WHERE type = 1), 0)::bigint AS cache_write_1h_tokens
+  FROM request
+  WHERE parent_span_id = traces.parent_span_id
+    AND created_at >= traces.first_request_at
+    AND created_at <= traces.last_request_at
+) metrics ON true
+LEFT JOIN LATERAL (
+  SELECT jsonb_agg(
+    jsonb_build_object('currency', grouped.currency, 'amount', grouped.amount)
+    ORDER BY grouped.currency
+  ) AS costs
+  FROM (
+    SELECT model_cost_currency AS currency, SUM(model_cost)::float8 AS amount
+    FROM request
+    WHERE parent_span_id = traces.parent_span_id
+      AND created_at >= traces.first_request_at
+      AND created_at <= traces.last_request_at
+      AND type = 1
+      AND model_cost IS NOT NULL
+      AND model_cost_currency IS NOT NULL
+    GROUP BY model_cost_currency
+  ) grouped
+) model_costs ON true
+LEFT JOIN LATERAL (
+  SELECT user_message_preview FROM request
+  WHERE parent_span_id = traces.parent_span_id
+    AND created_at >= traces.first_request_at
+    AND created_at <= traces.last_request_at
+    AND type = 0
+    AND user_message_preview IS NOT NULL
+  ORDER BY created_at DESC, id DESC
+  LIMIT 1
+) preview ON true
+LEFT JOIN LATERAL (
+  SELECT project_id FROM request
+  WHERE parent_span_id = traces.parent_span_id
+    AND created_at >= traces.first_request_at
+    AND created_at <= traces.last_request_at
+    AND type = 0
+    AND project_id IS NOT NULL
+  ORDER BY created_at DESC, id DESC
+  LIMIT 1
+) trace_project ON true
+WHERE EXISTS (
+  SELECT 1 FROM request r
+  JOIN api_key k ON k.id = r.api_key_id
+  WHERE r.parent_span_id = traces.parent_span_id
+    AND r.created_at >= traces.first_request_at
+    AND r.created_at <= traces.last_request_at
+    AND k.account_id = $1::int
+)
+AND (
+  $2::timestamp IS NULL
+  OR (traces.last_request_at, traces.id) < (
+    $2::timestamp,
+    $3::text
+  )
+)
+ORDER BY traces.last_request_at DESC, traces.id DESC
+LIMIT $4::int
+`
+
+type ListRequestTracesByAccountParams struct {
+	AccountID           int32            `json:"accountId"`
+	CursorLastRequestAt pgtype.Timestamp `json:"cursorLastRequestAt"`
+	CursorTraceID       pgtype.Text      `json:"cursorTraceId"`
+	Limit               pgtype.Int4      `json:"limit"`
+}
+
+type ListRequestTracesByAccountRow struct {
+	ID                   string           `json:"id"`
+	ParentSpanID         string           `json:"parentSpanId"`
+	MetaRequestCount     int64            `json:"metaRequestCount"`
+	UpstreamRequestCount int64            `json:"upstreamRequestCount"`
+	TotalTokens          int64            `json:"totalTokens"`
+	InputTokens          int64            `json:"inputTokens"`
+	CacheReadTokens      int64            `json:"cacheReadTokens"`
+	OutputTokens         int64            `json:"outputTokens"`
+	CacheWriteTokens     int64            `json:"cacheWriteTokens"`
+	CacheWrite1hTokens   int64            `json:"cacheWrite1hTokens"`
+	ModelCosts           []byte           `json:"modelCosts"`
+	FirstRequestAt       pgtype.Timestamp `json:"firstRequestAt"`
+	LastRequestAt        pgtype.Timestamp `json:"lastRequestAt"`
+	UserMessagePreview   pgtype.Text      `json:"userMessagePreview"`
+	ProjectID            pgtype.Int4      `json:"projectId"`
+}
+
+func (q *Queries) ListRequestTracesByAccount(ctx context.Context, arg ListRequestTracesByAccountParams) ([]ListRequestTracesByAccountRow, error) {
+	rows, err := q.db.Query(ctx, listRequestTracesByAccount,
+		arg.AccountID,
+		arg.CursorLastRequestAt,
+		arg.CursorTraceID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRequestTracesByAccountRow
+	for rows.Next() {
+		var i ListRequestTracesByAccountRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.ParentSpanID,

@@ -64,6 +64,7 @@ type Querier interface {
 	// e.endpoint_type so the handler can pick the right transformer per row.
 	GetProvidersByEndpointTypesAndModel(ctx context.Context, arg GetProvidersByEndpointTypesAndModelParams) ([]GetProvidersByEndpointTypesAndModelRow, error)
 	GetRequest(ctx context.Context, arg GetRequestParams) (Request, error)
+	GetRequestOwnedBy(ctx context.Context, arg GetRequestOwnedByParams) (Request, error)
 	GetScript(ctx context.Context, id string) (Script, error)
 	HasAnyActiveAdmin(ctx context.Context) (bool, error)
 	InsertAccount(ctx context.Context, arg InsertAccountParams) (Account, error)
@@ -89,7 +90,9 @@ type Querier interface {
 	ListProjectPaths(ctx context.Context) ([]ListProjectPathsRow, error)
 	ListProjects(ctx context.Context) ([]Project, error)
 	ListProviderEndpoints(ctx context.Context, providerID pgtype.Int4) ([]ProviderEndpoint, error)
+	ListRequestSpansOwnedBy(ctx context.Context, arg ListRequestSpansOwnedByParams) ([]ListRequestSpansOwnedByRow, error)
 	ListRequestTraces(ctx context.Context, arg ListRequestTracesParams) ([]ListRequestTracesRow, error)
+	ListRequestTracesByAccount(ctx context.Context, arg ListRequestTracesByAccountParams) ([]ListRequestTracesByAccountRow, error)
 	ListRequests(ctx context.Context, arg ListRequestsParams) ([]ListRequestsRow, error)
 	ListRequestsByAccount(ctx context.Context, arg ListRequestsByAccountParams) ([]ListRequestsByAccountRow, error)
 	ListRequestsBySpan(ctx context.Context, arg ListRequestsBySpanParams) ([]ListRequestsBySpanRow, error)

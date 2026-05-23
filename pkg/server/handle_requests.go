@@ -219,37 +219,79 @@ func (s *Server) handleListRequestTraces(ctx context.Context, input *contract.Li
 		cursorTraceID = pgtype.Text{String: traceID, Valid: true}
 	}
 
-	rows, err := s.queries.ListRequestTraces(ctx, db.ListRequestTracesParams{
-		CursorLastRequestAt: cursorLastRequestAt,
-		CursorTraceID:       cursorTraceID,
-		Limit:               pgtype.Int4{Int32: fetchLimit, Valid: true},
-	})
-	if err != nil {
-		return nil, huma.Error500InternalServerError("failed to list request traces", err)
-	}
+	sess := auth.SessionFromContext(ctx)
 
-	hasMore := int32(len(rows)) > limit
-	if hasMore {
-		rows = rows[:limit]
-	}
-
-	items := make([]contract.RequestTraceView, len(rows))
-	for i, row := range rows {
-		view, err := contract.ToRequestTraceView(&row)
-		if err != nil {
-			return nil, huma.Error500InternalServerError("failed to parse request trace costs", err)
+	var (
+		items    []contract.RequestTraceView
+		hasMore  bool
+		lastRow  struct {
+			LastRequestAt pgtype.Timestamp
+			ID            string
 		}
-		items[i] = *view
+	)
+
+	if sess.Account.Role == "admin" {
+		rows, err := s.queries.ListRequestTraces(ctx, db.ListRequestTracesParams{
+			CursorLastRequestAt: cursorLastRequestAt,
+			CursorTraceID:       cursorTraceID,
+			Limit:               pgtype.Int4{Int32: fetchLimit, Valid: true},
+		})
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to list request traces", err)
+		}
+		hasMore = int32(len(rows)) > limit
+		if hasMore {
+			rows = rows[:limit]
+		}
+		items = make([]contract.RequestTraceView, len(rows))
+		for i, row := range rows {
+			view, err := contract.ToRequestTraceView(&row)
+			if err != nil {
+				return nil, huma.Error500InternalServerError("failed to parse request trace costs", err)
+			}
+			items[i] = *view
+		}
+		if hasMore && len(rows) > 0 {
+			last := rows[len(rows)-1]
+			lastRow.LastRequestAt = last.LastRequestAt
+			lastRow.ID = last.ID
+		}
+	} else {
+		rows, err := s.queries.ListRequestTracesByAccount(ctx, db.ListRequestTracesByAccountParams{
+			AccountID:           sess.Account.ID,
+			CursorLastRequestAt: cursorLastRequestAt,
+			CursorTraceID:       cursorTraceID,
+			Limit:               pgtype.Int4{Int32: fetchLimit, Valid: true},
+		})
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to list request traces", err)
+		}
+		hasMore = int32(len(rows)) > limit
+		if hasMore {
+			rows = rows[:limit]
+		}
+		items = make([]contract.RequestTraceView, len(rows))
+		for i, row := range rows {
+			view, err := contract.ToRequestTraceViewByAccount(&row)
+			if err != nil {
+				return nil, huma.Error500InternalServerError("failed to parse request trace costs", err)
+			}
+			items[i] = *view
+		}
+		if hasMore && len(rows) > 0 {
+			last := rows[len(rows)-1]
+			lastRow.LastRequestAt = last.LastRequestAt
+			lastRow.ID = last.ID
+		}
 	}
 
 	pagination := contract.PaginationInfo{HasMore: hasMore}
-	if hasMore && len(rows) > 0 {
-		last := rows[len(rows)-1]
+	if hasMore {
 		lastRequestAt := ""
-		if last.LastRequestAt.Valid {
-			lastRequestAt = last.LastRequestAt.Time.UTC().Format(time.RFC3339Nano)
+		if lastRow.LastRequestAt.Valid {
+			lastRequestAt = lastRow.LastRequestAt.Time.UTC().Format(time.RFC3339Nano)
 		}
-		cursor, err := contract.EncodeCursor("lastRequestAt", lastRequestAt, "traceId", last.ID)
+		cursor, err := contract.EncodeCursor("lastRequestAt", lastRequestAt, "traceId", lastRow.ID)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to encode cursor", err)
 		}
@@ -269,10 +311,20 @@ func (s *Server) handleGetRequest(ctx context.Context, input *contract.GetReques
 	if err != nil {
 		return nil, err
 	}
-	req, err := s.queries.GetRequest(ctx, db.GetRequestParams{
-		ID:          input.ID,
-		IDCreatedAt: pgtype.Timestamp{Time: idCreatedAt, Valid: true},
-	})
+	sess := auth.SessionFromContext(ctx)
+	var req db.Request
+	if sess.Account.Role == "admin" {
+		req, err = s.queries.GetRequest(ctx, db.GetRequestParams{
+			ID:          input.ID,
+			IDCreatedAt: pgtype.Timestamp{Time: idCreatedAt, Valid: true},
+		})
+	} else {
+		req, err = s.queries.GetRequestOwnedBy(ctx, db.GetRequestOwnedByParams{
+			ID:          input.ID,
+			IDCreatedAt: pgtype.Timestamp{Time: idCreatedAt, Valid: true},
+			AccountID:   pgtype.Int4{Int32: sess.Account.ID, Valid: true},
+		})
+	}
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, huma.Error404NotFound("request not found", errorx.RequestNotFound)
@@ -289,31 +341,50 @@ func (s *Server) handleListRequestSpans(ctx context.Context, input *contract.Lis
 	if err != nil {
 		return nil, err
 	}
-	req, err := s.queries.GetRequest(ctx, db.GetRequestParams{
-		ID:          input.ID,
-		IDCreatedAt: pgtype.Timestamp{Time: idCreatedAt, Valid: true},
-	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, huma.Error404NotFound("request not found", errorx.RequestNotFound)
+	sess := auth.SessionFromContext(ctx)
+	if sess.Account.Role == "admin" {
+		req, err := s.queries.GetRequest(ctx, db.GetRequestParams{
+			ID:          input.ID,
+			IDCreatedAt: pgtype.Timestamp{Time: idCreatedAt, Valid: true},
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, huma.Error404NotFound("request not found", errorx.RequestNotFound)
+			}
+			return nil, huma.Error500InternalServerError("failed to get request", err)
 		}
-		return nil, huma.Error500InternalServerError("failed to get request", err)
+		rows, err := s.queries.ListRequestsBySpan(ctx, db.ListRequestsBySpanParams{
+			ID:          input.ID,
+			IDCreatedAt: pgtype.Timestamp{Time: idCreatedAt, Valid: true},
+		})
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to list request spans", err)
+		}
+		if len(rows) == 0 {
+			view := contract.ToRequestView(&req)
+			s.attachArtifactUrls(ctx, view, req.CreatedAt)
+			return &contract.ListRequestSpansResponse{Body: []contract.RequestView{*view}}, nil
+		}
+		items := make([]contract.RequestView, len(rows))
+		for i, row := range rows {
+			items[i] = *contract.ToListRequestsBySpanRowView(&row)
+			s.attachArtifactUrls(ctx, &items[i], row.CreatedAt)
+		}
+		return &contract.ListRequestSpansResponse{Body: items}, nil
 	}
-	rows, err := s.queries.ListRequestsBySpan(ctx, db.ListRequestsBySpanParams{
+
+	// Non-admin: use ownership-scoped query. Empty CTE anchor means empty result (no leak).
+	rows, err := s.queries.ListRequestSpansOwnedBy(ctx, db.ListRequestSpansOwnedByParams{
 		ID:          input.ID,
 		IDCreatedAt: pgtype.Timestamp{Time: idCreatedAt, Valid: true},
+		AccountID:   sess.Account.ID,
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to list request spans", err)
 	}
-	if len(rows) == 0 {
-		view := contract.ToRequestView(&req)
-		s.attachArtifactUrls(ctx, view, req.CreatedAt)
-		return &contract.ListRequestSpansResponse{Body: []contract.RequestView{*view}}, nil
-	}
 	items := make([]contract.RequestView, len(rows))
 	for i, row := range rows {
-		items[i] = *contract.ToListRequestsBySpanRowView(&row)
+		items[i] = *contract.ToListRequestSpansOwnedByRowView(&row)
 		s.attachArtifactUrls(ctx, &items[i], row.CreatedAt)
 	}
 	return &contract.ListRequestSpansResponse{Body: items}, nil
