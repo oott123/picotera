@@ -78,6 +78,18 @@ async function openReissue(a: AccountView) {
   }
 }
 
+function confirmToggleDisabled(a: AccountView) {
+  const willDisable = !a.disabled
+  confirm.require({
+    message: willDisable
+      ? `确定要禁用账户「${a.displayName || a.username}」吗？该用户将无法登录。`
+      : `确定要启用账户「${a.displayName || a.username}」吗？`,
+    accept: async () => {
+      await toggleMutation.mutateAsync(a)
+    },
+  })
+}
+
 async function revokeSessionsFor(a: AccountView) {
   revokingId.value = a.id
   try {
@@ -184,7 +196,7 @@ function fmtTime(iso?: string | null): string {
                 <IconButton
                   :title="a.disabled ? '启用' : '禁用'"
                   :aria-label="a.disabled ? '启用' : '禁用'"
-                  @click="toggleMutation.mutateAsync(a)"
+                  @click="confirmToggleDisabled(a)"
                 >
                   <Icon :name="a.disabled ? 'eye-off' : 'eye'" :size="13" />
                 </IconButton>
