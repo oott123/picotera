@@ -19,11 +19,14 @@ Mode names are page-specific. Common patterns:
 Where the page's primary mode doesn't capture all permission distinctions, declare named **secondary capabilities** alongside:
 
 ```ts
-// RequestsView.vue — the filter dropdowns need view_models even in scoped mode.
-const canFilterByModel = computed(
-  () => mode.value === 'admin' || session.can('view_models')
+// ApiKeysView.vue — admin/scoped split governs which list endpoint to hit;
+// a secondary capability gates a specific sub-action.
+const canRevokeAny = computed(
+  () => mode.value === 'admin' || session.can('manage_own_api_keys')
 )
 ```
+
+When a view has **no single admin-vs-not axis** — every UI difference is gated on a different permission — skip the mode declaration entirely and use pure named capabilities. `RequestsView.vue` is the canonical example: it has no mode, just `canFilterByModel`, `canFilterByProject`, `canFilterByProvider` (each backed by the permission whose API populates the filter's data). The backend transparently scopes rows per role on the same endpoint, so the view renders identically for admin and non-admin.
 
 **Never reference `session.isAdmin.value` or `session.can(perm)` directly inside a view file.** All such checks belong in the mode/capability declarations at the top. This makes adding a new permission-aware element a single new check that matches the existing pattern, and reviewers can audit gating by looking at one block.
 

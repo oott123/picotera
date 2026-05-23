@@ -74,7 +74,6 @@ const cursorIndex = ref(initialCursor ? 1 : 0)
 const pageCursors = ref<string[]>(initialCursor ? ['', initialCursor] : [''])
 const hasPaginationHistory = ref(!initialCursor)
 
-// view_models permission gates filter dropdowns; skip fetch when missing to avoid 403
 const endpointsQuery = useQuery({
   queryKey: queryKeys.endpoints.all,
   queryFn: listEndpoints,

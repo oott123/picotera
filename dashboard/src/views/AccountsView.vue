@@ -230,6 +230,7 @@ function fmtTime(iso?: string | null): string {
                   <Tag v-if="inv.permissions.manage_own_api_keys" variant="muted">密钥</Tag>
                   <Tag v-if="inv.permissions.view_models" variant="muted">模型</Tag>
                   <Tag v-if="inv.permissions.view_own_traces" variant="muted">链路</Tag>
+                  <Tag v-if="inv.permissions.manage_own_projects" variant="muted">项目</Tag>
                 </template>
               </div>
             </Td>
@@ -300,12 +301,14 @@ function fmtTime(iso?: string | null): string {
                 <Tag v-if="a.permissions.manage_own_api_keys" variant="muted">密钥</Tag>
                 <Tag v-if="a.permissions.view_models" variant="muted">模型</Tag>
                 <Tag v-if="a.permissions.view_own_traces" variant="muted">链路</Tag>
+                <Tag v-if="a.permissions.manage_own_projects" variant="muted">项目</Tag>
                 <span
                   v-if="
                     !a.permissions.view_own_usage &&
                     !a.permissions.manage_own_api_keys &&
                     !a.permissions.view_models &&
-                    !a.permissions.view_own_traces
+                    !a.permissions.view_own_traces &&
+                    !a.permissions.manage_own_projects
                   "
                   class="text-xs text-ink-faint"
                 >—</span>

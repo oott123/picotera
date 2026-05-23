@@ -203,6 +203,9 @@ func (s *Server) handleUpdateAccount(ctx context.Context, in *updateAccountIn) (
 	if current.CanViewOwnTraces != updated.CanViewOwnTraces {
 		changes["view_own_traces"] = []bool{current.CanViewOwnTraces, updated.CanViewOwnTraces}
 	}
+	if current.CanManageOwnProjects != updated.CanManageOwnProjects {
+		changes["manage_own_projects"] = []bool{current.CanManageOwnProjects, updated.CanManageOwnProjects}
+	}
 	if len(changes) > 0 {
 		actorID := int32(0)
 		if sess != nil {

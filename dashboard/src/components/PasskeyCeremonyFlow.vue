@@ -79,7 +79,7 @@ function onRetry() {
       <div class="w-12 h-12 rounded-full border-2 border-line border-t-accent animate-spin"></div>
       <p class="text-sm text-ink-muted text-center">
         请使用您的 Passkey 设备完成验证…<br />
-        <span class="text-xs text-ink-faint">浏览器或 Passkey 管理器将弹出确认窗口</span>
+        <span class="text-xs text-ink-faint">请在浏览器或密码管理器弹窗中操作</span>
       </p>
     </div>
 
@@ -97,7 +97,7 @@ function onRetry() {
         <Input
           v-model="nickname"
           maxlength="60"
-          placeholder="例如 我的 MacBook"
+          placeholder="例如 Laptop"
           autofocus
         />
       </Field>
