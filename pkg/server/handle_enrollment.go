@@ -325,7 +325,10 @@ func (s *Server) handleEnrollmentCompleteHTTP(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	var account db.Account
+	var (
+		account db.Account
+		credID  int32
+	)
 
 	switch consumed.Intent {
 	case auth.IntentBootstrap:
@@ -363,7 +366,8 @@ func (s *Server) handleEnrollmentCompleteHTTP(w http.ResponseWriter, r *http.Req
 			return
 		}
 		account = a
-		if _, err := insertCredentialForTx(qtx, r.Context(), a.ID, cred, auth.NormalizeNickname(&stash.Bootstrap.Nickname)); err != nil {
+		credID, err = insertCredentialForTx(qtx, r.Context(), a.ID, cred, auth.NormalizeNickname(&stash.Bootstrap.Nickname))
+		if err != nil {
 			writeAuthErr(w, fmt.Errorf("enrollment/complete: insert credential: %w", err))
 			return
 		}
@@ -410,7 +414,8 @@ func (s *Server) handleEnrollmentCompleteHTTP(w http.ResponseWriter, r *http.Req
 			return
 		}
 		account = a
-		if _, err := insertCredentialForTx(qtx, r.Context(), a.ID, cred, auth.NormalizeNickname(&stash.Invite.Nickname)); err != nil {
+		credID, err = insertCredentialForTx(qtx, r.Context(), a.ID, cred, auth.NormalizeNickname(&stash.Invite.Nickname))
+		if err != nil {
 			writeAuthErr(w, fmt.Errorf("enrollment/complete: insert credential: %w", err))
 			return
 		}
@@ -446,7 +451,8 @@ func (s *Server) handleEnrollmentCompleteHTTP(w http.ResponseWriter, r *http.Req
 		if stash.Reset != nil {
 			resetNickname = auth.NormalizeNickname(&stash.Reset.Nickname)
 		}
-		if _, err := insertCredentialForTx(qtx, r.Context(), a.ID, cred, resetNickname); err != nil {
+		credID, err = insertCredentialForTx(qtx, r.Context(), a.ID, cred, resetNickname)
+		if err != nil {
 			writeAuthErr(w, fmt.Errorf("enrollment/complete: insert credential: %w", err))
 			return
 		}
@@ -483,8 +489,17 @@ func (s *Server) handleEnrollmentCompleteHTTP(w http.ResponseWriter, r *http.Req
 	}
 	http.SetCookie(w, auth.FreshSessionCookie(s.config, r, account.ID, sessionToken, s.config.SessionTTL))
 
+	// Capture the new credential's id so the FE can offer a "name your passkey"
+	// prompt without a separate fetch.
+	type enrollCompleteResp struct {
+		Session         contract.SessionView `json:"session"`
+		NewCredentialID int32                `json:"newCredentialId"`
+	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(sessionView(&account))
+	_ = json.NewEncoder(w).Encode(enrollCompleteResp{
+		Session:         sessionView(&account),
+		NewCredentialID: credID,
+	})
 }
 
 // insertCredentialForTx persists a webauthn.Credential into webauthn_credential

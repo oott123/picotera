@@ -1,17 +1,21 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
+import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import {
   fetchEnrollment,
   beginEnrollmentRegistration,
   completeEnrollmentRegistration,
-  ApiRequestError,
+  renameMyCredential,
 } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
-import { webauthnCreate, WebAuthnUserCancelled } from '@/api/webauthn'
-import { Button, Input, Field } from '@/ui'
+import { usePasskeyCeremony } from '@/composables/usePasskeyCeremony'
+import { Button, Input, Field, Icon } from '@/ui'
 import { fallbackFor } from '@/router/fallback'
+import type { components } from '@/openapi-types'
+
+type SessionView = components['schemas']['SessionView']
+type CeremonyResult = { session: SessionView; newCredentialId: number }
 
 const route = useRoute()
 const router = useRouter()
@@ -26,68 +30,56 @@ const preview = useQuery({
   staleTime: Infinity,
 })
 
-const bootstrapForm = reactive({ username: '', displayName: '', nickname: '' })
-const inviteForm = reactive({ username: '', displayName: '', nickname: '' })
-const resetForm = reactive({ nickname: '' })
+const bootstrapForm = reactive({ username: '', displayName: '' })
+const inviteForm = reactive({ username: '', displayName: '' })
 const resetConfirmed = ref(false)
-const errorMessage = ref<string | null>(null)
 
-const enroll = useMutation({
-  mutationFn: async () => {
+const ceremony = usePasskeyCeremony<CeremonyResult>({
+  begin: async () => {
     const intent = preview.data.value!.intent
     const body =
       intent === 'bootstrap'
-        ? {
-            username: bootstrapForm.username,
-            displayName: bootstrapForm.displayName,
-            nickname: bootstrapForm.nickname || undefined,
-          }
+        ? { username: bootstrapForm.username, displayName: bootstrapForm.displayName }
         : intent === 'invite'
-          ? {
-              username: inviteForm.username,
-              displayName: inviteForm.displayName,
-              nickname: inviteForm.nickname || undefined,
-            }
-          : { nickname: resetForm.nickname || undefined }
-    const options = await beginEnrollmentRegistration(token.value, body)
-    const attestation = await webauthnCreate(options as Parameters<typeof webauthnCreate>[0])
-    return completeEnrollmentRegistration(token.value, attestation)
+          ? { username: inviteForm.username, displayName: inviteForm.displayName }
+          : {}
+    return beginEnrollmentRegistration(token.value, body)
   },
-  onSuccess(session) {
-    qc.setQueryData(queryKeys.session.current, session)
-    // Route to the best page for this session — non-admins can't access /overview.
-    router.replace(fallbackFor(session))
-  },
-  onError(err: unknown) {
-    console.error('[enroll] registration failed', err)
-    if (err instanceof WebAuthnUserCancelled) {
-      errorMessage.value = '取消或超时，请重试。'
-      return
-    }
-    if (err instanceof ApiRequestError) {
-      errorMessage.value = err.message
-      return
-    }
-    if (err instanceof DOMException) {
-      errorMessage.value = `注册失败：${err.name}: ${err.message}`
-      return
-    }
-    if (err instanceof Error) {
-      errorMessage.value = `注册失败：${err.message}`
-      return
-    }
-    errorMessage.value = '注册失败，请重试。'
-  },
+  complete: (attestation) => completeEnrollmentRegistration(token.value, attestation),
 })
+
+const nickname = ref('')
+const renaming = ref(false)
 
 function onSubmit(e: Event) {
   e.preventDefault()
-  errorMessage.value = null
-  enroll.mutate()
+  void ceremony.run()
+}
+
+async function onNamingDone() {
+  const r = ceremony.result.value
+  if (!r) return
+  qc.setQueryData(queryKeys.session.current, r.session)
+  const trimmed = nickname.value.trim()
+  if (trimmed) {
+    renaming.value = true
+    try {
+      await renameMyCredential(r.newCredentialId, trimmed)
+    } catch {
+      // Rename failure is non-fatal; user can rename later from /me. Don't block navigation.
+    } finally {
+      renaming.value = false
+    }
+  }
+  router.replace(fallbackFor(r.session))
+}
+
+function onRetry() {
+  ceremony.reset()
 }
 
 const submitDisabled = computed(() => {
-  if (enroll.isPending.value) return true
+  if (ceremony.phase.value === 'waiting') return true
   if (preview.data.value?.intent === 'reset' && !resetConfirmed.value) return true
   return false
 })
@@ -102,104 +94,115 @@ const submitDisabled = computed(() => {
       <RouterLink to="/login" class="text-sm text-accent hover:underline">返回登录</RouterLink>
     </div>
 
-    <!-- bootstrap: operator creates the first admin account -->
-    <form
-      v-else-if="preview.data.value?.intent === 'bootstrap'"
-      class="flex flex-col gap-4"
-      @submit="onSubmit"
-    >
-      <h1 class="text-xl font-semibold text-ink">创建管理员用户</h1>
-      <Field label="用户名">
-        <Input
-          v-model="bootstrapForm.username"
-          mono
-          required
-          pattern="[a-z0-9_\-]{2,32}"
-          autocomplete="username"
-          placeholder="alice"
-        />
-      </Field>
-      <Field label="显示名">
-        <Input
-          v-model="bootstrapForm.displayName"
-          required
-          maxlength="80"
-          autocomplete="name"
-          placeholder="Alice"
-        />
-      </Field>
-      <Field label="昵称（可选）">
-        <Input
-          v-model.trim="bootstrapForm.nickname"
-          maxlength="60"
-          placeholder="例如 我的 MacBook"
-        />
-      </Field>
-      <Button type="submit" :disabled="submitDisabled">注册 Passkey</Button>
-      <p v-if="errorMessage" class="text-sm text-err">{{ errorMessage }}</p>
-    </form>
+    <!-- Form phase (idle): show the appropriate intent form -->
+    <template v-else-if="ceremony.phase.value === 'idle'">
+      <!-- bootstrap: operator creates the first admin account -->
+      <form
+        v-if="preview.data.value?.intent === 'bootstrap'"
+        class="flex flex-col gap-4"
+        @submit="onSubmit"
+      >
+        <h1 class="text-xl font-semibold text-ink">创建管理员用户</h1>
+        <Field label="用户名">
+          <Input
+            v-model="bootstrapForm.username"
+            mono
+            required
+            pattern="[a-z0-9_\-]{2,32}"
+            autocomplete="username"
+            placeholder="alice"
+          />
+        </Field>
+        <Field label="显示名">
+          <Input
+            v-model="bootstrapForm.displayName"
+            required
+            maxlength="80"
+            autocomplete="name"
+            placeholder="Alice"
+          />
+        </Field>
+        <Button type="submit" :disabled="submitDisabled">注册 Passkey</Button>
+      </form>
 
-    <!-- invite: invitee picks their own username/displayName (optionally prefilled from admin's template) -->
-    <form
-      v-else-if="preview.data.value?.intent === 'invite'"
-      class="flex flex-col gap-4"
-      @submit="onSubmit"
-    >
-      <h1 class="text-xl font-semibold text-ink">接受邀请</h1>
-      <Field label="用户名">
-        <Input
-          v-model.trim="inviteForm.username"
-          mono
-          required
-          pattern="[a-z0-9_\-]{2,32}"
-          autocomplete="username"
-        />
-      </Field>
-      <Field label="显示名">
-        <Input
-          v-model.trim="inviteForm.displayName"
-          required
-          maxlength="80"
-          autocomplete="name"
-        />
-      </Field>
-      <Field label="昵称（可选）">
-        <Input
-          v-model.trim="inviteForm.nickname"
-          maxlength="60"
-          placeholder="例如 我的 MacBook"
-        />
-      </Field>
-      <Button type="submit" :disabled="submitDisabled">注册 Passkey</Button>
-      <p v-if="errorMessage" class="text-sm text-err">{{ errorMessage }}</p>
-    </form>
+      <!-- invite: invitee picks their own username/displayName -->
+      <form
+        v-else-if="preview.data.value?.intent === 'invite'"
+        class="flex flex-col gap-4"
+        @submit="onSubmit"
+      >
+        <h1 class="text-xl font-semibold text-ink">接受邀请</h1>
+        <Field label="用户名">
+          <Input
+            v-model.trim="inviteForm.username"
+            mono
+            required
+            pattern="[a-z0-9_\-]{2,32}"
+            autocomplete="username"
+          />
+        </Field>
+        <Field label="显示名">
+          <Input
+            v-model.trim="inviteForm.displayName"
+            required
+            maxlength="80"
+            autocomplete="name"
+          />
+        </Field>
+        <Button type="submit" :disabled="submitDisabled">注册 Passkey</Button>
+      </form>
 
-    <!-- reset: replaces all existing passkeys; warn and require confirmation -->
-    <form
-      v-else-if="preview.data.value?.intent === 'reset'"
-      class="flex flex-col gap-4"
-      @submit="onSubmit"
-    >
-      <h1 class="text-xl font-semibold text-ink">重置 Passkey</h1>
-      <Field label="用户">
-        <Input :model-value="preview.data.value.target?.username" mono disabled />
-      </Field>
-      <div class="bg-err-faint text-err-ink text-sm rounded-md px-3 py-2">
-        此操作将删除该用户的所有现有 Passkey。
+      <!-- reset: replaces all existing passkeys; warn and require confirmation -->
+      <form
+        v-else-if="preview.data.value?.intent === 'reset'"
+        class="flex flex-col gap-4"
+        @submit="onSubmit"
+      >
+        <h1 class="text-xl font-semibold text-ink">重置 Passkey</h1>
+        <Field label="用户">
+          <Input :model-value="preview.data.value.target?.username" mono disabled />
+        </Field>
+        <div class="bg-err-faint text-err-ink text-sm rounded-md px-3 py-2">
+          此操作将删除该用户的所有现有 Passkey。
+        </div>
+        <label class="flex items-start gap-2 text-sm text-ink-muted cursor-pointer select-none">
+          <input v-model="resetConfirmed" type="checkbox" class="mt-0.5 accent-accent" />
+          <span>我已了解此操作将删除现有所有密钥。</span>
+        </label>
+        <Button type="submit" :disabled="submitDisabled">注册 Passkey</Button>
+      </form>
+    </template>
+
+    <!-- Waiting phase -->
+    <div v-else-if="ceremony.phase.value === 'waiting'" class="flex flex-col items-center gap-4 py-8">
+      <div class="w-12 h-12 rounded-full border-2 border-line border-t-accent animate-spin"></div>
+      <p class="text-sm text-ink-muted text-center">
+        请使用您的 Passkey 设备完成验证…<br />
+        <span class="text-xs text-ink-faint">浏览器或 Passkey 管理器将弹出确认窗口</span>
+      </p>
+    </div>
+
+    <!-- Success phase: name the new passkey -->
+    <div v-else-if="ceremony.phase.value === 'success'" class="flex flex-col gap-4">
+      <div class="flex items-center gap-2 text-success">
+        <Icon name="check" :size="16" />
+        <span class="text-sm font-medium">Passkey 创建成功</span>
       </div>
-      <label class="flex items-start gap-2 text-sm text-ink-muted cursor-pointer select-none">
-        <input v-model="resetConfirmed" type="checkbox" class="mt-0.5 accent-accent" />
-        <span>我已了解此操作将删除现有所有密钥。</span>
-      </label>
+      <p class="text-sm text-ink-muted">为这把 Passkey 起个名字（可选）：</p>
       <Field label="昵称（可选）">
-        <Input
-          v-model.trim="resetForm.nickname"
-          maxlength="60"
-          placeholder="例如 我的 MacBook"
-        />
+        <Input v-model="nickname" maxlength="60" placeholder="例如 我的 MacBook" autofocus />
       </Field>
-      <Button type="submit" :disabled="submitDisabled">注册 Passkey</Button>
-      <p v-if="errorMessage" class="text-sm text-err">{{ errorMessage }}</p>
-    </form>
+      <Button :disabled="renaming" @click="onNamingDone">完成</Button>
+    </div>
+
+    <!-- Error phase -->
+    <div v-else-if="ceremony.phase.value === 'error'" class="flex flex-col gap-4">
+      <div class="bg-err-faint text-err-ink rounded-md px-3 py-2 text-sm">
+        {{ ceremony.errorMessage.value }}
+      </div>
+      <div class="flex justify-end gap-2">
+        <Button @click="onRetry">重试</Button>
+      </div>
+    </div>
   </div>
 </template>

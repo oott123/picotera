@@ -527,7 +527,7 @@ export async function beginEnrollmentRegistration(
 export async function completeEnrollmentRegistration(
   token: string,
   attestation: unknown,
-): Promise<SessionView> {
+): Promise<{ session: SessionView; newCredentialId: number }> {
   const res = await fetch(
     `/api/picotera/enrollments/${encodeURIComponent(token)}/register/complete`,
     {
@@ -541,7 +541,7 @@ export async function completeEnrollmentRegistration(
     const errBody = await res.json().catch(() => ({}))
     throw new ApiRequestError(errBody)
   }
-  return res.json() as Promise<SessionView>
+  return res.json() as Promise<{ session: SessionView; newCredentialId: number }>
 }
 
 // --- /me/credentials ---

@@ -4,18 +4,16 @@ import { useRouter } from 'vue-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { useSession, useSignOut } from '@/composables/useSession'
 import { useConfirm } from '@/composables/useConfirm'
+import { useSidePanel } from '@/composables/useSidePanel'
 import {
   fetchMyCredentials,
-  addCredentialBegin,
-  addCredentialComplete,
   deleteMyCredential,
   renameMyCredential,
   invalidateOwnCredentials,
-  ApiRequestError,
 } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
-import { webauthnCreate, WebAuthnUserCancelled } from '@/api/webauthn'
-import { Button, IconButton, Input, Field, Badge, DataCard, DataTable, Th, Td, Tr, StateText, Icon } from '@/ui'
+import { Button, IconButton, Input, Badge, DataCard, DataTable, Th, Td, Tr, StateText, Icon } from '@/ui'
+import AddPasskeyDialog from '@/components/AddPasskeyDialog.vue'
 import type { components } from '@/openapi-types'
 
 type CredentialView = components['schemas']['CredentialView']
@@ -25,38 +23,16 @@ const qc = useQueryClient()
 const session = useSession()
 const signOut = useSignOut()
 const confirm = useConfirm()
+const sidePanel = useSidePanel()
 
 const credentialsQuery = useQuery({
   queryKey: queryKeys.credentials.mine,
   queryFn: fetchMyCredentials,
 })
 
-const newNickname = ref('')
-const errorMessage = ref<string | null>(null)
-
-const addMutation = useMutation({
-  mutationFn: async () => {
-    const options = await addCredentialBegin()
-    const attestation = await webauthnCreate(options as Parameters<typeof webauthnCreate>[0])
-    return addCredentialComplete(attestation, newNickname.value.trim() || undefined)
-  },
-  onSuccess() {
-    newNickname.value = ''
-    errorMessage.value = null
-    invalidateOwnCredentials(qc)
-  },
-  onError(err: unknown) {
-    if (err instanceof WebAuthnUserCancelled) {
-      errorMessage.value = '取消或超时'
-      return
-    }
-    if (err instanceof ApiRequestError) {
-      errorMessage.value = err.message
-      return
-    }
-    errorMessage.value = '添加 Passkey 失败'
-  },
-})
+function openAddDialog() {
+  sidePanel.open(AddPasskeyDialog, {}, { key: 'add-passkey', width: '480px' })
+}
 
 const deleteMutation = useMutation({
   mutationFn: (id: number) => deleteMyCredential(id),
@@ -191,30 +167,13 @@ function roleLabel(role: string): string {
       <DataCard>
         <div>
           <!-- Card header -->
-          <div class="px-6 pt-6 pb-2">
+          <div class="px-6 pt-6 pb-4 flex items-center justify-between gap-4">
             <h2 class="text-sm font-semibold text-ink">Passkey</h2>
-          </div>
-
-          <!-- Add-passkey row: labeled nickname input + add button -->
-          <div class="px-6 pb-4 flex items-end gap-3">
-            <Field label="昵称（可选）" class="flex-1 max-w-xs">
-              <Input
-                v-model="newNickname"
-                maxlength="60"
-                placeholder="例如 我的 MacBook"
-              />
-            </Field>
-            <Button
-              :disabled="addMutation.isPending.value"
-              @click="addMutation.mutate()"
-            >
+            <Button @click="openAddDialog">
               <Icon name="plus" :size="14" :stroke-width="2.2" />
-              <span>{{ addMutation.isPending.value ? '添加中…' : '添加 Passkey' }}</span>
+              <span>添加 Passkey</span>
             </Button>
           </div>
-
-          <!-- Error message from add mutation -->
-          <p v-if="errorMessage" class="px-6 pb-3 text-sm text-err">{{ errorMessage }}</p>
 
           <!-- Credentials table -->
           <StateText v-if="credentialsQuery.isPending.value" class="px-6 pb-6">加载中…</StateText>
