@@ -29,7 +29,7 @@ type Querier interface {
 	DeleteEndpoint(ctx context.Context, path string) error
 	DeleteExchangeRate(ctx context.Context, code string) error
 	DeleteModel(ctx context.Context, name string) error
-	DeleteProject(ctx context.Context, id int32) error
+	DeleteProject(ctx context.Context, arg DeleteProjectParams) (int64, error)
 	DeleteProvider(ctx context.Context, id int32) error
 	DeleteProviderEndpoint(ctx context.Context, arg DeleteProviderEndpointParams) error
 	DeleteScript(ctx context.Context, id string) error
@@ -50,8 +50,8 @@ type Querier interface {
 	GetModels(ctx context.Context) ([]Model, error)
 	GetOverviewTokenBreakdown(ctx context.Context, arg GetOverviewTokenBreakdownParams) (GetOverviewTokenBreakdownRow, error)
 	GetOverviewTotals(ctx context.Context, arg GetOverviewTotalsParams) (GetOverviewTotalsRow, error)
-	GetProject(ctx context.Context, id int32) (Project, error)
-	GetProjectByName(ctx context.Context, name string) (Project, error)
+	GetProjectByAccountAndName(ctx context.Context, arg GetProjectByAccountAndNameParams) (Project, error)
+	GetProjectForAccount(ctx context.Context, arg GetProjectForAccountParams) (Project, error)
 	GetProviderByID(ctx context.Context, id int32) (Provider, error)
 	GetProviderEndpoint(ctx context.Context, arg GetProviderEndpointParams) (ProviderEndpoint, error)
 	GetProviders(ctx context.Context) ([]Provider, error)
@@ -79,6 +79,11 @@ type Querier interface {
 	// as of P5.03 — the invite flow no longer pre-populates username/displayName.
 	InsertEnrollment(ctx context.Context, arg InsertEnrollmentParams) (Enrollment, error)
 	InsertProject(ctx context.Context, arg InsertProjectParams) (Project, error)
+	// Used by the gateway auto-create path. ON CONFLICT DO NOTHING means a
+	// concurrent insert by the same (account_id, name) leaves the prior row
+	// in place and RETURNING is empty; callers must follow up with
+	// GetProjectByAccountAndName to fetch the existing row.
+	InsertProjectIfNotExists(ctx context.Context, arg InsertProjectIfNotExistsParams) (Project, error)
 	InsertRequest(ctx context.Context, arg InsertRequestParams) (pgtype.Timestamp, error)
 	InsertScript(ctx context.Context, arg InsertScriptParams) (Script, error)
 	ListAccounts(ctx context.Context) ([]ListAccountsRow, error)
@@ -96,7 +101,7 @@ type Querier interface {
 	ListOverviewTraceCountsByDimension(ctx context.Context, arg ListOverviewTraceCountsByDimensionParams) ([]ListOverviewTraceCountsByDimensionRow, error)
 	ListPendingInvitations(ctx context.Context) ([]Enrollment, error)
 	ListProjectPaths(ctx context.Context) ([]ListProjectPathsRow, error)
-	ListProjects(ctx context.Context) ([]Project, error)
+	ListProjectsByAccount(ctx context.Context, accountID int32) ([]Project, error)
 	ListProviderEndpoints(ctx context.Context, providerID pgtype.Int4) ([]ProviderEndpoint, error)
 	ListRequestSpansOwnedBy(ctx context.Context, arg ListRequestSpansOwnedByParams) ([]ListRequestSpansOwnedByRow, error)
 	ListRequestTraces(ctx context.Context, arg ListRequestTracesParams) ([]ListRequestTracesRow, error)
@@ -124,6 +129,10 @@ type Querier interface {
 	UpdateRequestModel(ctx context.Context, arg UpdateRequestModelParams) error
 	UpdateRequestOnComplete(ctx context.Context, arg UpdateRequestOnCompleteParams) error
 	UpdateRequestOnHeader(ctx context.Context, arg UpdateRequestOnHeaderParams) error
+	// Backfills the meta request row's project_id after authentication completes.
+	// The meta InsertRequest fires before auth so audit rows always exist; the
+	// account-scoped project resolution then writes the matched id here.
+	UpdateRequestProjectID(ctx context.Context, arg UpdateRequestProjectIDParams) error
 	UpdateScript(ctx context.Context, arg UpdateScriptParams) (Script, error)
 	UpsertEndpoint(ctx context.Context, arg UpsertEndpointParams) (Endpoint, error)
 	UpsertExchangeRate(ctx context.Context, arg UpsertExchangeRateParams) (ExchangeRate, error)

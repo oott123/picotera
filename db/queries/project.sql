@@ -1,23 +1,35 @@
--- name: ListProjects :many
-SELECT * FROM project ORDER BY name ASC;
+-- name: ListProjectsByAccount :many
+SELECT * FROM project WHERE account_id = $1 ORDER BY name ASC;
 
--- name: GetProject :one
-SELECT * FROM project WHERE id = $1 LIMIT 1;
+-- name: GetProjectForAccount :one
+SELECT * FROM project WHERE id = $1 AND account_id = $2 LIMIT 1;
 
--- name: GetProjectByName :one
-SELECT * FROM project WHERE name = $1 LIMIT 1;
+-- name: GetProjectByAccountAndName :one
+SELECT * FROM project WHERE account_id = $1 AND name = $2 LIMIT 1;
 
 -- name: InsertProject :one
-INSERT INTO project (name, paths) VALUES ($1, $2) RETURNING *;
+INSERT INTO project (account_id, name, paths) VALUES ($1, $2, $3) RETURNING *;
+
+-- name: InsertProjectIfNotExists :one
+-- Used by the gateway auto-create path. ON CONFLICT DO NOTHING means a
+-- concurrent insert by the same (account_id, name) leaves the prior row
+-- in place and RETURNING is empty; callers must follow up with
+-- GetProjectByAccountAndName to fetch the existing row.
+INSERT INTO project (account_id, name, paths)
+VALUES ($1, $2, $3)
+ON CONFLICT (account_id, name) DO NOTHING
+RETURNING *;
 
 -- name: UpdateProject :one
-UPDATE project SET name = $2, paths = $3, updated_at = now() WHERE id = $1 RETURNING *;
+UPDATE project SET name = $2, paths = $3, updated_at = now()
+WHERE id = $1 AND account_id = $4
+RETURNING *;
 
--- name: DeleteProject :exec
-DELETE FROM project WHERE id = $1;
+-- name: DeleteProject :execrows
+DELETE FROM project WHERE id = $1 AND account_id = $2;
 
 -- name: ListProjectPaths :many
-SELECT id AS project_id, jsonb_array_elements_text(paths) AS path
+SELECT id AS project_id, account_id, jsonb_array_elements_text(paths) AS path
 FROM project
 WHERE jsonb_array_length(paths) > 0;
 

@@ -11,21 +11,34 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const deleteProject = `-- name: DeleteProject :exec
-DELETE FROM project WHERE id = $1
+const deleteProject = `-- name: DeleteProject :execrows
+DELETE FROM project WHERE id = $1 AND account_id = $2
 `
 
-func (q *Queries) DeleteProject(ctx context.Context, id int32) error {
-	_, err := q.db.Exec(ctx, deleteProject, id)
-	return err
+type DeleteProjectParams struct {
+	ID        int32 `json:"id"`
+	AccountID int32 `json:"accountId"`
 }
 
-const getProject = `-- name: GetProject :one
-SELECT id, name, paths, first_seen_at, last_seen_at, created_at, updated_at FROM project WHERE id = $1 LIMIT 1
+func (q *Queries) DeleteProject(ctx context.Context, arg DeleteProjectParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteProject, arg.ID, arg.AccountID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const getProjectByAccountAndName = `-- name: GetProjectByAccountAndName :one
+SELECT id, name, paths, first_seen_at, last_seen_at, created_at, updated_at, account_id FROM project WHERE account_id = $1 AND name = $2 LIMIT 1
 `
 
-func (q *Queries) GetProject(ctx context.Context, id int32) (Project, error) {
-	row := q.db.QueryRow(ctx, getProject, id)
+type GetProjectByAccountAndNameParams struct {
+	AccountID int32  `json:"accountId"`
+	Name      string `json:"name"`
+}
+
+func (q *Queries) GetProjectByAccountAndName(ctx context.Context, arg GetProjectByAccountAndNameParams) (Project, error) {
+	row := q.db.QueryRow(ctx, getProjectByAccountAndName, arg.AccountID, arg.Name)
 	var i Project
 	err := row.Scan(
 		&i.ID,
@@ -35,16 +48,22 @@ func (q *Queries) GetProject(ctx context.Context, id int32) (Project, error) {
 		&i.LastSeenAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AccountID,
 	)
 	return i, err
 }
 
-const getProjectByName = `-- name: GetProjectByName :one
-SELECT id, name, paths, first_seen_at, last_seen_at, created_at, updated_at FROM project WHERE name = $1 LIMIT 1
+const getProjectForAccount = `-- name: GetProjectForAccount :one
+SELECT id, name, paths, first_seen_at, last_seen_at, created_at, updated_at, account_id FROM project WHERE id = $1 AND account_id = $2 LIMIT 1
 `
 
-func (q *Queries) GetProjectByName(ctx context.Context, name string) (Project, error) {
-	row := q.db.QueryRow(ctx, getProjectByName, name)
+type GetProjectForAccountParams struct {
+	ID        int32 `json:"id"`
+	AccountID int32 `json:"accountId"`
+}
+
+func (q *Queries) GetProjectForAccount(ctx context.Context, arg GetProjectForAccountParams) (Project, error) {
+	row := q.db.QueryRow(ctx, getProjectForAccount, arg.ID, arg.AccountID)
 	var i Project
 	err := row.Scan(
 		&i.ID,
@@ -54,21 +73,23 @@ func (q *Queries) GetProjectByName(ctx context.Context, name string) (Project, e
 		&i.LastSeenAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AccountID,
 	)
 	return i, err
 }
 
 const insertProject = `-- name: InsertProject :one
-INSERT INTO project (name, paths) VALUES ($1, $2) RETURNING id, name, paths, first_seen_at, last_seen_at, created_at, updated_at
+INSERT INTO project (account_id, name, paths) VALUES ($1, $2, $3) RETURNING id, name, paths, first_seen_at, last_seen_at, created_at, updated_at, account_id
 `
 
 type InsertProjectParams struct {
-	Name  string `json:"name"`
-	Paths []byte `json:"paths"`
+	AccountID int32  `json:"accountId"`
+	Name      string `json:"name"`
+	Paths     []byte `json:"paths"`
 }
 
 func (q *Queries) InsertProject(ctx context.Context, arg InsertProjectParams) (Project, error) {
-	row := q.db.QueryRow(ctx, insertProject, arg.Name, arg.Paths)
+	row := q.db.QueryRow(ctx, insertProject, arg.AccountID, arg.Name, arg.Paths)
 	var i Project
 	err := row.Scan(
 		&i.ID,
@@ -78,18 +99,53 @@ func (q *Queries) InsertProject(ctx context.Context, arg InsertProjectParams) (P
 		&i.LastSeenAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AccountID,
+	)
+	return i, err
+}
+
+const insertProjectIfNotExists = `-- name: InsertProjectIfNotExists :one
+INSERT INTO project (account_id, name, paths)
+VALUES ($1, $2, $3)
+ON CONFLICT (account_id, name) DO NOTHING
+RETURNING id, name, paths, first_seen_at, last_seen_at, created_at, updated_at, account_id
+`
+
+type InsertProjectIfNotExistsParams struct {
+	AccountID int32  `json:"accountId"`
+	Name      string `json:"name"`
+	Paths     []byte `json:"paths"`
+}
+
+// Used by the gateway auto-create path. ON CONFLICT DO NOTHING means a
+// concurrent insert by the same (account_id, name) leaves the prior row
+// in place and RETURNING is empty; callers must follow up with
+// GetProjectByAccountAndName to fetch the existing row.
+func (q *Queries) InsertProjectIfNotExists(ctx context.Context, arg InsertProjectIfNotExistsParams) (Project, error) {
+	row := q.db.QueryRow(ctx, insertProjectIfNotExists, arg.AccountID, arg.Name, arg.Paths)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Paths,
+		&i.FirstSeenAt,
+		&i.LastSeenAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.AccountID,
 	)
 	return i, err
 }
 
 const listProjectPaths = `-- name: ListProjectPaths :many
-SELECT id AS project_id, jsonb_array_elements_text(paths) AS path
+SELECT id AS project_id, account_id, jsonb_array_elements_text(paths) AS path
 FROM project
 WHERE jsonb_array_length(paths) > 0
 `
 
 type ListProjectPathsRow struct {
 	ProjectID int32  `json:"projectId"`
+	AccountID int32  `json:"accountId"`
 	Path      string `json:"path"`
 }
 
@@ -102,7 +158,7 @@ func (q *Queries) ListProjectPaths(ctx context.Context) ([]ListProjectPathsRow, 
 	var items []ListProjectPathsRow
 	for rows.Next() {
 		var i ListProjectPathsRow
-		if err := rows.Scan(&i.ProjectID, &i.Path); err != nil {
+		if err := rows.Scan(&i.ProjectID, &i.AccountID, &i.Path); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -113,12 +169,12 @@ func (q *Queries) ListProjectPaths(ctx context.Context) ([]ListProjectPathsRow, 
 	return items, nil
 }
 
-const listProjects = `-- name: ListProjects :many
-SELECT id, name, paths, first_seen_at, last_seen_at, created_at, updated_at FROM project ORDER BY name ASC
+const listProjectsByAccount = `-- name: ListProjectsByAccount :many
+SELECT id, name, paths, first_seen_at, last_seen_at, created_at, updated_at, account_id FROM project WHERE account_id = $1 ORDER BY name ASC
 `
 
-func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
-	rows, err := q.db.Query(ctx, listProjects)
+func (q *Queries) ListProjectsByAccount(ctx context.Context, accountID int32) ([]Project, error) {
+	rows, err := q.db.Query(ctx, listProjectsByAccount, accountID)
 	if err != nil {
 		return nil, err
 	}
@@ -134,6 +190,7 @@ func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
 			&i.LastSeenAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.AccountID,
 		); err != nil {
 			return nil, err
 		}
@@ -146,17 +203,25 @@ func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
 }
 
 const updateProject = `-- name: UpdateProject :one
-UPDATE project SET name = $2, paths = $3, updated_at = now() WHERE id = $1 RETURNING id, name, paths, first_seen_at, last_seen_at, created_at, updated_at
+UPDATE project SET name = $2, paths = $3, updated_at = now()
+WHERE id = $1 AND account_id = $4
+RETURNING id, name, paths, first_seen_at, last_seen_at, created_at, updated_at, account_id
 `
 
 type UpdateProjectParams struct {
-	ID    int32  `json:"id"`
-	Name  string `json:"name"`
-	Paths []byte `json:"paths"`
+	ID        int32  `json:"id"`
+	Name      string `json:"name"`
+	Paths     []byte `json:"paths"`
+	AccountID int32  `json:"accountId"`
 }
 
 func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (Project, error) {
-	row := q.db.QueryRow(ctx, updateProject, arg.ID, arg.Name, arg.Paths)
+	row := q.db.QueryRow(ctx, updateProject,
+		arg.ID,
+		arg.Name,
+		arg.Paths,
+		arg.AccountID,
+	)
 	var i Project
 	err := row.Scan(
 		&i.ID,
@@ -166,6 +231,7 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		&i.LastSeenAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AccountID,
 	)
 	return i, err
 }

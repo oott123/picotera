@@ -269,6 +269,13 @@ WHERE id = $1 AND created_at = sqlc.arg('created_at')::timestamp;
 -- name: UpdateRequestModel :exec
 UPDATE request SET model = $2 WHERE id = $1 AND created_at = sqlc.arg('created_at')::timestamp;
 
+-- name: UpdateRequestProjectID :exec
+-- Backfills the meta request row's project_id after authentication completes.
+-- The meta InsertRequest fires before auth so audit rows always exist; the
+-- account-scoped project resolution then writes the matched id here.
+UPDATE request SET project_id = $2
+WHERE id = $1 AND created_at = sqlc.arg('created_at')::timestamp;
+
 -- name: UpdateRequestMetrics :exec
 UPDATE request
 SET ttft_ms = $2, input_tokens = $3, output_tokens = $4,

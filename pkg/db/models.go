@@ -80,6 +80,7 @@ type Project struct {
 	LastSeenAt  pgtype.Timestamp   `json:"lastSeenAt"`
 	CreatedAt   pgtype.Timestamptz `json:"createdAt"`
 	UpdatedAt   pgtype.Timestamptz `json:"updatedAt"`
+	AccountID   int32              `json:"accountId"`
 }
 
 type Provider struct {

@@ -938,3 +938,22 @@ func (q *Queries) UpdateRequestOnHeader(ctx context.Context, arg UpdateRequestOn
 	)
 	return err
 }
+
+const updateRequestProjectID = `-- name: UpdateRequestProjectID :exec
+UPDATE request SET project_id = $2
+WHERE id = $1 AND created_at = $3::timestamp
+`
+
+type UpdateRequestProjectIDParams struct {
+	ID        string           `json:"id"`
+	ProjectID pgtype.Int4      `json:"projectId"`
+	CreatedAt pgtype.Timestamp `json:"createdAt"`
+}
+
+// Backfills the meta request row's project_id after authentication completes.
+// The meta InsertRequest fires before auth so audit rows always exist; the
+// account-scoped project resolution then writes the matched id here.
+func (q *Queries) UpdateRequestProjectID(ctx context.Context, arg UpdateRequestProjectIDParams) error {
+	_, err := q.db.Exec(ctx, updateRequestProjectID, arg.ID, arg.ProjectID, arg.CreatedAt)
+	return err
+}
