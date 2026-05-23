@@ -261,8 +261,8 @@ Every existing `huma.Register(...)` call moves to `registerOp(...)` with an expl
 | `providers`, `provider-endpoints`, `endpoints`, `models` (writes) | `admin` | Provider/endpoint/model configuration is operator-only. |
 | `models` (reads), `endpoints` (reads) | `perm:view_models` | Non-admin users get read-only listings. |
 | `api-keys` (all operations) | `perm:manage_own_api_keys` | Admin sees all rows; user sees rows where `account_id = me`. New rows auto-stamp the caller's `account_id` for non-admin; admin's new rows leave `account_id` NULL (system-level keys). Admin does not currently have an API surface for provisioning a key on behalf of another user. |
-| `requests` list/detail | `perm:view_own_usage` (list) / `perm:view_own_traces` (detail / spans) | Scoped via `api_key.account_id`. |
-| `traces` | `perm:view_own_traces` | Same scoping. |
+| `requests` list/detail/spans | `perm:view_own_usage` | Scoped via `api_key.account_id`. Spans is part of the same page tree. |
+| `traces` | `perm:view_own_traces` | Standalone page; separate concept (cross-request span grouping). |
 | `overview` metrics | `perm:view_own_usage` | Per-account scoping for overview/distribution/series is not yet implemented because `request_overview_hourly` (Timescale continuous aggregate) lacks an `account_id` column. The handler explicitly returns 403 to non-admin callers despite their `view_own_usage` permission — those permissions remain for forward-compat with future scoped overview support. |
 | `scripts`, `kv`, `rates`, `projects`, `mappings`, `simulate`, `fetch-models`, `match-pricing` | `admin` | Operator-only surfaces. |
 
@@ -306,5 +306,22 @@ securitySchemes:
     in: cookie
     name: picotera_session
 ```
+
+---
+
+## Permission → page → endpoint mapping
+
+This table documents which user-facing pages each permission unlocks and which backend endpoints those pages call. New endpoints should pick a permission per the page they belong to; new pages should reuse an existing permission rather than introducing a new one without updating this table.
+
+| Permission              | Visible pages                       | API endpoints                                                       |
+|-------------------------|-------------------------------------|---------------------------------------------------------------------|
+| (admin)                 | All                                 | All                                                                 |
+| `view_own_usage`        | `/requests`, `/requests/{id}`       | `GET /requests`, `GET /requests/{id}`, `GET /requests/{id}/spans`   |
+| `view_own_traces`       | `/traces`                           | `GET /request-traces`                                               |
+| `manage_own_api_keys`   | `/api-keys`                         | All `/api-keys/*`                                                   |
+| `view_models`           | `/models` (read), `/endpoints` (r)  | `GET /models`, `GET /endpoints`, `GET /provider-endpoints`          |
+| (session — always)      | `/me`, `/me/credentials`            | All `/me/*` + `/me/credentials/*`                                   |
+
+Admin auto-passes every permission gate AND every admin-only endpoint. Non-admin behavior is defined per-permission.
 
 Huma's per-operation `Security` field carries this through `humachi`'s registration. The dashboard's `openapi-fetch` client picks it up; cookies are sent automatically by the browser thanks to same-origin defaults.

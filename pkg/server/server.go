@@ -273,7 +273,7 @@ func (s *Server) registerOperations() {
 	registerOp(mgmt, contract.OperationListRequests, s.handleListRequests, contract.RequirePermission(contract.PermViewOwnUsage))
 	registerOp(mgmt, contract.OperationListRequestTraces, s.handleListRequestTraces, contract.RequirePermission(contract.PermViewOwnTraces))
 	registerOp(mgmt, contract.OperationGetRequest, s.handleGetRequest, contract.RequirePermission(contract.PermViewOwnUsage))
-	registerOp(mgmt, contract.OperationListRequestSpans, s.handleListRequestSpans, contract.RequirePermission(contract.PermViewOwnTraces))
+	registerOp(mgmt, contract.OperationListRequestSpans, s.handleListRequestSpans, contract.RequirePermission(contract.PermViewOwnUsage))
 
 	// Exchange rates + pricing — admin
 	registerOp(mgmt, contract.OperationListExchangeRates, s.handleListExchangeRates, admin)
