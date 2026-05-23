@@ -8,7 +8,7 @@ type SessionView = components['schemas']['SessionView']
 
 function fallbackFor(me: SessionView): string {
   if (me.role === 'admin') return '/overview'
-  if (me.permissions.view_own_usage) return '/overview'
+  if (me.permissions.view_own_usage) return '/requests'
   if (me.permissions.manage_own_api_keys) return '/api-keys'
   return '/me'
 }

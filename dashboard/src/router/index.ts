@@ -10,7 +10,7 @@ const router = createRouter({
       path: '/overview',
       name: 'overview',
       component: () => import('@/views/OverviewView.vue'),
-      meta: { auth: { kind: 'permission', perm: 'view_own_usage' }, layout: 'app' },
+      meta: { auth: { kind: 'admin' }, layout: 'app' },
     },
     {
       path: '/providers',

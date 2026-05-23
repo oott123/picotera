@@ -22,7 +22,7 @@ type NavItem =
   | { name: string; label: string; icon: IconName; requires: { perm: Permission } }
 
 const nav: NavItem[] = [
-  { name: 'overview',   label: '概览', icon: 'chart-pie',       requires: { perm: 'view_own_usage' } },
+  { name: 'overview',   label: '概览', icon: 'chart-pie',       requires: 'admin' },
   { name: 'providers',  label: '渠道', icon: 'cloud-fog',        requires: 'admin' },
   { name: 'models',     label: '模型', icon: 'cpu',              requires: { perm: 'view_models' } },
   { name: 'endpoints',  label: '端点', icon: 'plug',             requires: { perm: 'view_models' } },
