@@ -33,6 +33,11 @@ import {
   type RequestsFilters,
 } from '@/api/queryKeys'
 
+type SessionView = components['schemas']['SessionView']
+type AuthStatus = components['schemas']['AuthStatus']
+type CredentialView = components['schemas']['CredentialView']
+type EnrollmentPreview = components['schemas']['EnrollmentPreview']
+
 type ApiErrorShape = Partial<components['schemas']['PicoTeraError']>
 
 export class ApiRequestError extends Error {
@@ -423,4 +428,194 @@ export async function simulateDispatch(
   const { data, error } = await api.POST('/api/picotera/simulate/dispatch', { body })
   if (error) fail(error, '模拟调度失败')
   return data
+}
+
+// --- Auth ---
+
+export async function fetchAuthStatus(): Promise<AuthStatus> {
+  const { data, error } = await api.GET('/api/picotera/auth/status')
+  if (error) fail(error, '加载认证状态失败')
+  return data
+}
+
+export async function fetchMe(): Promise<SessionView> {
+  const { data, error } = await api.GET('/api/picotera/me')
+  if (error) fail(error, '加载会话失败')
+  return data
+}
+
+/**
+ * Call /auth/logout — a raw chi route that returns 204 (not registered in the
+ * OpenAPI spec). Use raw fetch so we don't need a typed path entry.
+ */
+export async function logout(): Promise<void> {
+  await fetch('/api/picotera/auth/logout', {
+    method: 'POST',
+    credentials: 'include',
+  })
+}
+
+// --- WebAuthn ceremony endpoints (server returns raw protocol JSON) ---
+
+/**
+ * Begin a passkey login ceremony. Returns the raw WebAuthn PublicKeyCredentialRequestOptions
+ * JSON from the server (not reflected in the OpenAPI spec).
+ */
+export async function beginLogin(): Promise<unknown> {
+  const res = await fetch('/api/picotera/auth/login/begin', {
+    method: 'POST',
+    credentials: 'include',
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new ApiRequestError(body)
+  }
+  return res.json()
+}
+
+/**
+ * Complete a passkey login ceremony with the assertion from the browser.
+ */
+export async function completeLogin(body: unknown): Promise<SessionView> {
+  const res = await fetch('/api/picotera/auth/login/complete', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}))
+    throw new ApiRequestError(errBody)
+  }
+  return res.json() as Promise<SessionView>
+}
+
+// --- Enrollment ---
+
+export async function fetchEnrollment(token: string): Promise<EnrollmentPreview> {
+  const { data, error } = await api.GET('/api/picotera/enrollments/{token}', {
+    params: { path: { token } },
+  })
+  if (error) fail(error, '加载邀请失败')
+  return data
+}
+
+/**
+ * Begin a WebAuthn registration ceremony for an enrollment token. Returns raw
+ * PublicKeyCredentialCreationOptions JSON (not in OpenAPI spec).
+ */
+export async function beginEnrollmentRegistration(
+  token: string,
+  body: { username?: string; displayName?: string },
+): Promise<unknown> {
+  const res = await fetch(`/api/picotera/enrollments/${encodeURIComponent(token)}/register/begin`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}))
+    throw new ApiRequestError(errBody)
+  }
+  return res.json()
+}
+
+/**
+ * Complete a WebAuthn registration ceremony for an enrollment token.
+ */
+export async function completeEnrollmentRegistration(
+  token: string,
+  attestation: unknown,
+): Promise<SessionView> {
+  const res = await fetch(
+    `/api/picotera/enrollments/${encodeURIComponent(token)}/register/complete`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(attestation),
+    },
+  )
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}))
+    throw new ApiRequestError(errBody)
+  }
+  return res.json() as Promise<SessionView>
+}
+
+// --- /me/credentials ---
+
+export async function fetchMyCredentials(): Promise<CredentialView[]> {
+  const { data, error } = await api.GET('/api/picotera/me/credentials')
+  if (error) fail(error, '加载凭证失败')
+  return data ?? []
+}
+
+/**
+ * Begin a WebAuthn registration ceremony to add a new credential. Returns raw
+ * PublicKeyCredentialCreationOptions JSON (not in OpenAPI spec).
+ */
+export async function addCredentialBegin(): Promise<unknown> {
+  const res = await fetch('/api/picotera/me/credentials/register/begin', {
+    method: 'POST',
+    credentials: 'include',
+  })
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}))
+    throw new ApiRequestError(errBody)
+  }
+  return res.json()
+}
+
+/**
+ * Complete a WebAuthn registration ceremony to add a new credential.
+ * The optional nickname is passed as a query parameter.
+ */
+export async function addCredentialComplete(
+  attestation: unknown,
+  nickname?: string,
+): Promise<CredentialView> {
+  const url =
+    nickname && nickname.length > 0
+      ? `/api/picotera/me/credentials/register/complete?nickname=${encodeURIComponent(nickname)}`
+      : `/api/picotera/me/credentials/register/complete`
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(attestation),
+  })
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}))
+    throw new ApiRequestError(errBody)
+  }
+  return res.json() as Promise<CredentialView>
+}
+
+export async function deleteMyCredential(id: number): Promise<void> {
+  const { error } = await api.POST('/api/picotera/me/credentials/delete', { body: { id } })
+  if (error) fail(error, '删除凭证失败')
+}
+
+// --- Invalidation helpers ---
+
+export function invalidateSession(client: QueryClient) {
+  client.invalidateQueries({ queryKey: queryKeys.session.all })
+}
+
+export function invalidateAuthStatus(client: QueryClient) {
+  client.invalidateQueries({ queryKey: queryKeys.authStatus.all })
+}
+
+export function invalidateOwnCredentials(client: QueryClient) {
+  client.invalidateQueries({ queryKey: queryKeys.credentials.mine })
+}
+
+export function invalidateAccounts(client: QueryClient) {
+  client.invalidateQueries({ queryKey: queryKeys.accounts.all })
+}
+
+export function invalidateEnrollment(client: QueryClient, token: string) {
+  client.invalidateQueries({ queryKey: queryKeys.enrollments.detail(token) })
 }

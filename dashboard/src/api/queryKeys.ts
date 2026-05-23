@@ -98,4 +98,24 @@ export const queryKeys = {
     speed: (f: OverviewFilters, dim: OverviewSeriesDimension) =>
       ['overview', 'speed', dim, { ...f }] as const,
   },
+  session: {
+    all: ['session'] as const,
+    current: ['session', 'current'] as const,
+  },
+  authStatus: {
+    all: ['authStatus'] as const,
+  },
+  accounts: {
+    all: ['accounts'] as const,
+    list: ['accounts', 'list'] as const,
+    detail: (id: number) => ['accounts', 'detail', id] as const,
+  },
+  credentials: {
+    all: ['credentials'] as const,
+    mine: ['credentials', 'mine'] as const,
+  },
+  enrollments: {
+    all: ['enrollments'] as const,
+    detail: (token: string) => ['enrollments', 'detail', token] as const,
+  },
 }
