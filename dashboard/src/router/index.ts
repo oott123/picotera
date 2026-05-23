@@ -55,6 +55,12 @@ const router = createRouter({
       meta: { auth: { kind: 'permission', perm: 'manage_own_api_keys' }, layout: 'app' },
     },
     {
+      path: '/accounts',
+      name: 'accounts',
+      component: () => import('@/views/AccountsView.vue'),
+      meta: { auth: { kind: 'admin' }, layout: 'app' },
+    },
+    {
       path: '/projects',
       name: 'projects',
       component: () => import('@/views/ProjectsView.vue'),

@@ -34,6 +34,7 @@ import {
   IconSettings,
   IconTrash,
   IconUser,
+  IconUsers,
   IconX,
   IconCloudFog,
   IconGeometry,
@@ -78,6 +79,7 @@ export type IconName =
   | 'geometry'
   | 'cloud-fog'
   | 'user'
+  | 'users'
 
 export const iconComponents: Record<IconName, Component> = {
   plus: IconPlus,
@@ -118,4 +120,5 @@ export const iconComponents: Record<IconName, Component> = {
   'cloud-fog': IconCloudFog,
   geometry: IconGeometry,
   user: IconUser,
+  users: IconUsers,
 }

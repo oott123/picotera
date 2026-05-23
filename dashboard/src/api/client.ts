@@ -598,6 +598,81 @@ export async function deleteMyCredential(id: number): Promise<void> {
   if (error) fail(error, '删除凭证失败')
 }
 
+// --- Accounts ---
+
+type AccountView = components['schemas']['AccountView']
+type Permissions = components['schemas']['Permissions']
+type InvitationResponse = components['schemas']['InvitationResponse']
+type EnrollmentURLResponse = components['schemas']['EnrollmentURLResponse']
+
+export async function listAccounts(): Promise<AccountView[]> {
+  const { data, error } = await api.GET('/api/picotera/accounts')
+  if (error) fail(error, '加载账户失败')
+  return data ?? []
+}
+
+export async function getAccount(id: number): Promise<AccountView> {
+  const { data, error } = await api.GET('/api/picotera/accounts/{id}', {
+    params: { path: { id } },
+  })
+  if (error) fail(error, '加载账户失败')
+  return data
+}
+
+export async function updateAccount(
+  id: number,
+  body: { displayName: string; role: string; permissions: Permissions; disabled: boolean },
+): Promise<AccountView> {
+  const { data, error } = await api.PUT('/api/picotera/accounts/{id}', {
+    params: { path: { id } },
+    body,
+  })
+  if (error) fail(error, '保存账户失败')
+  return data
+}
+
+export async function deleteAccount(id: number): Promise<void> {
+  const { error } = await api.POST('/api/picotera/accounts/delete', { body: { id } })
+  if (error) fail(error, '删除账户失败')
+}
+
+export async function deleteAccountCredential(
+  accountId: number,
+  credentialId: number,
+): Promise<void> {
+  const { error } = await api.POST('/api/picotera/accounts/credentials/delete', {
+    body: { accountId, credentialId },
+  })
+  if (error) fail(error, '删除凭证失败')
+}
+
+export async function revokeAccountSessions(id: number): Promise<{ revoked: number }> {
+  const { data, error } = await api.POST('/api/picotera/accounts/revoke-sessions', {
+    body: { id },
+  })
+  if (error) fail(error, '吊销会话失败')
+  return data
+}
+
+export async function reissueEnrollment(id: number): Promise<EnrollmentURLResponse> {
+  const { data, error } = await api.POST('/api/picotera/accounts/reissue-enrollment', {
+    body: { id },
+  })
+  if (error) fail(error, '重新发送邀请失败')
+  return data
+}
+
+export async function createInvitation(body: {
+  username: string
+  displayName: string
+  role: string
+  permissions: Permissions
+}): Promise<InvitationResponse> {
+  const { data, error } = await api.POST('/api/picotera/invitations', { body })
+  if (error) fail(error, '创建邀请失败')
+  return data
+}
+
 // --- Invalidation helpers ---
 
 export function invalidateSession(client: QueryClient) {
