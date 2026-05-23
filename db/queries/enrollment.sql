@@ -15,11 +15,11 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 RETURNING *;
 
 -- name: ConsumeEnrollment :one
--- Atomic single-use consume. Returns the row only if it was unconsumed.
--- Callers detect the "already consumed" branch via pgx.ErrNoRows.
+-- Atomic single-use consume. Returns the row only if it was unconsumed and unexpired.
+-- Callers detect any "not consumable" branch via pgx.ErrNoRows.
 UPDATE enrollment
 SET consumed_at = now()
-WHERE token = $1 AND consumed_at IS NULL
+WHERE token = $1 AND consumed_at IS NULL AND expires_at > now()
 RETURNING *;
 
 -- name: ListPendingInvitations :many

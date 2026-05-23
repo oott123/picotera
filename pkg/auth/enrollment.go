@@ -127,8 +127,9 @@ func LoadEnrollment(ctx context.Context, q db.Querier, token string) (*db.Enroll
 }
 
 // ConsumeEnrollment atomically marks a token consumed and returns the row.
-// Returns ErrEnrollmentConsumed if the token was already consumed or missing,
-// ErrEnrollmentExpired if the row exists but is past expires_at.
+// Returns ErrEnrollmentConsumed if the token was already consumed, missing,
+// or expired — the SQL WHERE clause gates on both consumed_at IS NULL and
+// expires_at > now(), so pgx.ErrNoRows covers all "not consumable" cases.
 //
 // Must be called inside the same TX as the credential / account insert so a
 // crash between operations doesn't allow the same token to be reused, AND so
@@ -141,9 +142,6 @@ func ConsumeEnrollment(ctx context.Context, q db.Querier, token string) (*db.Enr
 			return nil, ErrEnrollmentConsumed()
 		}
 		return nil, fmt.Errorf("enrollment: consume: %w", err)
-	}
-	if !row.ExpiresAt.Valid || time.Now().After(row.ExpiresAt.Time) {
-		return nil, ErrEnrollmentExpired()
 	}
 	return &row, nil
 }

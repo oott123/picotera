@@ -14,12 +14,12 @@ import (
 const consumeEnrollment = `-- name: ConsumeEnrollment :one
 UPDATE enrollment
 SET consumed_at = now()
-WHERE token = $1 AND consumed_at IS NULL
+WHERE token = $1 AND consumed_at IS NULL AND expires_at > now()
 RETURNING token, intent, target_account_id, created_at, expires_at, consumed_at, template_role, template_can_view_own_usage, template_can_manage_own_api_keys, template_can_view_models, template_can_view_own_traces, template_username, template_display_name
 `
 
-// Atomic single-use consume. Returns the row only if it was unconsumed.
-// Callers detect the "already consumed" branch via pgx.ErrNoRows.
+// Atomic single-use consume. Returns the row only if it was unconsumed and unexpired.
+// Callers detect any "not consumable" branch via pgx.ErrNoRows.
 func (q *Queries) ConsumeEnrollment(ctx context.Context, token string) (Enrollment, error) {
 	row := q.db.QueryRow(ctx, consumeEnrollment, token)
 	var i Enrollment

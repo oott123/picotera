@@ -504,6 +504,7 @@ func (h *gatewayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			lastJSErr = &jsx.LastError{ProviderID: int(providerID), StatusCode: resp.StatusCode, Message: errMsg}
 			currentRetryCount++
 			totalAttemptCount++
+			cancel()
 			continue
 		}
 		respBody, rerr := io.ReadAll(decoded.Body)
@@ -515,6 +516,7 @@ func (h *gatewayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			lastJSErr = &jsx.LastError{ProviderID: int(providerID), StatusCode: resp.StatusCode, Message: errMsg}
 			currentRetryCount++
 			totalAttemptCount++
+			cancel()
 			continue
 		}
 		h.uploadResponseArtifact(bgCtx, upstreamID, upstreamCreatedAt, resp.StatusCode, resp.Header.Clone(), respBody)

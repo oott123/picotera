@@ -66,6 +66,12 @@ func registerOpHTTP(
 		sess := auth.SessionFromContext(r.Context())
 		if err := auth.Check(sess, req); err != nil {
 			ae := auth.AsAuthError(err)
+			if ae == nil {
+				// auth.Check should only return AuthErrors, but guard against
+				// unexpected error types to avoid a nil-deref on ae.Status.
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 			errResp := huma.NewError(ae.Status, ae.Message, errorx.ErrorCode(ae.Code))
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(errResp.GetStatus())

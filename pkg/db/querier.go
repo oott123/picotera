@@ -12,8 +12,8 @@ import (
 
 type Querier interface {
 	BackfillTrace(ctx context.Context, arg BackfillTraceParams) error
-	// Atomic single-use consume. Returns the row only if it was unconsumed.
-	// Callers detect the "already consumed" branch via pgx.ErrNoRows.
+	// Atomic single-use consume. Returns the row only if it was unconsumed and unexpired.
+	// Callers detect any "not consumable" branch via pgx.ErrNoRows.
 	ConsumeEnrollment(ctx context.Context, token string) (Enrollment, error)
 	CountActiveAdminsForUpdate(ctx context.Context) (int64, error)
 	CountCredentialsByAccount(ctx context.Context, accountID int32) (int64, error)

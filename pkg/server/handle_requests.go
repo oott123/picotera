@@ -377,7 +377,19 @@ func (s *Server) handleListRequestSpans(ctx context.Context, input *contract.Lis
 		return &contract.ListRequestSpansResponse{Body: items}, nil
 	}
 
-	// Non-admin: use ownership-scoped query. Empty CTE anchor means empty result (no leak).
+	// Non-admin: verify ownership before listing spans — matches handleGetRequest's
+	// non-admin path which also 404s on access denial rather than returning empty.
+	_, err = s.queries.GetRequestOwnedBy(ctx, db.GetRequestOwnedByParams{
+		ID:          input.ID,
+		IDCreatedAt: pgtype.Timestamp{Time: idCreatedAt, Valid: true},
+		AccountID:   pgtype.Int4{Int32: sess.Account.ID, Valid: true},
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, huma.Error404NotFound("request not found", errorx.RequestNotFound)
+		}
+		return nil, huma.Error500InternalServerError("failed to get request", err)
+	}
 	rows, err := s.queries.ListRequestSpansOwnedBy(ctx, db.ListRequestSpansOwnedByParams{
 		ID:          input.ID,
 		IDCreatedAt: pgtype.Timestamp{Time: idCreatedAt, Valid: true},
