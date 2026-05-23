@@ -17,3 +17,25 @@ RETURNING *;
 
 -- name: HasAnyActiveAdmin :one
 SELECT EXISTS(SELECT 1 FROM account WHERE role = 'admin' AND NOT disabled) AS has_admin;
+
+-- name: ListAccounts :many
+SELECT
+  a.*,
+  (SELECT MAX(c.last_used_at) FROM webauthn_credential c WHERE c.account_id = a.id) AS last_sign_in_at
+FROM account a
+ORDER BY a.created_at ASC, a.id ASC;
+
+-- name: UpdateAccount :one
+UPDATE account SET
+  display_name = $2, role = $3,
+  can_view_own_usage = $4, can_manage_own_api_keys = $5,
+  can_view_models = $6, can_view_own_traces = $7,
+  disabled = $8, updated_at = now()
+WHERE id = $1
+RETURNING *;
+
+-- name: DeleteAccountByID :exec
+DELETE FROM account WHERE id = $1;
+
+-- name: CountActiveAdminsForUpdate :one
+SELECT COUNT(*) FROM account WHERE role = 'admin' AND NOT disabled FOR UPDATE;

@@ -12,10 +12,12 @@ import (
 
 type Querier interface {
 	BackfillTrace(ctx context.Context, arg BackfillTraceParams) error
+	CountActiveAdminsForUpdate(ctx context.Context) (int64, error)
 	CountCredentialsByAccount(ctx context.Context, accountID int32) (int64, error)
 	CountTraces(ctx context.Context, arg CountTracesParams) (int64, error)
 	CountTracesFiltered(ctx context.Context, arg CountTracesFilteredParams) (int64, error)
 	CreateProvider(ctx context.Context, arg CreateProviderParams) (Provider, error)
+	DeleteAccountByID(ctx context.Context, id int32) error
 	DeleteAllCredentialsForAccount(ctx context.Context, accountID int32) error
 	DeleteApiKey(ctx context.Context, id int32) error
 	DeleteCredentialByID(ctx context.Context, arg DeleteCredentialByIDParams) error
@@ -70,6 +72,7 @@ type Querier interface {
 	InsertProject(ctx context.Context, arg InsertProjectParams) (Project, error)
 	InsertRequest(ctx context.Context, arg InsertRequestParams) (pgtype.Timestamp, error)
 	InsertScript(ctx context.Context, arg InsertScriptParams) (Script, error)
+	ListAccounts(ctx context.Context) ([]ListAccountsRow, error)
 	ListApiKeys(ctx context.Context) ([]ApiKey, error)
 	ListCredentialsByAccount(ctx context.Context, accountID int32) ([]WebauthnCredential, error)
 	ListEnabledScripts(ctx context.Context) ([]Script, error)
@@ -90,6 +93,7 @@ type Querier interface {
 	ListScripts(ctx context.Context) ([]Script, error)
 	ListTraceBackfillCandidates(ctx context.Context) ([]ListTraceBackfillCandidatesRow, error)
 	MarkEnrollmentConsumed(ctx context.Context, token string) error
+	UpdateAccount(ctx context.Context, arg UpdateAccountParams) (Account, error)
 	UpdateApiKey(ctx context.Context, arg UpdateApiKeyParams) (ApiKey, error)
 	UpdateCredentialUsage(ctx context.Context, arg UpdateCredentialUsageParams) error
 	UpdateProject(ctx context.Context, arg UpdateProjectParams) (Project, error)
