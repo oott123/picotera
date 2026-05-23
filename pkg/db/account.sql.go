@@ -168,7 +168,7 @@ func (q *Queries) InsertAccount(ctx context.Context, arg InsertAccountParams) (A
 const listAccounts = `-- name: ListAccounts :many
 SELECT
   a.id, a.username, a.display_name, a.webauthn_user_handle, a.role, a.can_view_own_usage, a.can_manage_own_api_keys, a.can_view_models, a.can_view_own_traces, a.disabled, a.created_at, a.updated_at,
-  (SELECT MAX(c.last_used_at) FROM webauthn_credential c WHERE c.account_id = a.id) AS last_sign_in_at
+  (SELECT MAX(c.last_used_at) FROM webauthn_credential c WHERE c.account_id = a.id)::timestamptz AS last_sign_in_at
 FROM account a
 ORDER BY a.created_at ASC, a.id ASC
 `
@@ -186,7 +186,7 @@ type ListAccountsRow struct {
 	Disabled            bool               `json:"disabled"`
 	CreatedAt           pgtype.Timestamptz `json:"createdAt"`
 	UpdatedAt           pgtype.Timestamptz `json:"updatedAt"`
-	LastSignInAt        interface{}        `json:"lastSignInAt"`
+	LastSignInAt        pgtype.Timestamptz `json:"lastSignInAt"`
 }
 
 func (q *Queries) ListAccounts(ctx context.Context) ([]ListAccountsRow, error) {

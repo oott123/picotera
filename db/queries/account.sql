@@ -21,7 +21,7 @@ SELECT EXISTS(SELECT 1 FROM account WHERE role = 'admin' AND NOT disabled) AS ha
 -- name: ListAccounts :many
 SELECT
   a.*,
-  (SELECT MAX(c.last_used_at) FROM webauthn_credential c WHERE c.account_id = a.id) AS last_sign_in_at
+  (SELECT MAX(c.last_used_at) FROM webauthn_credential c WHERE c.account_id = a.id)::timestamptz AS last_sign_in_at
 FROM account a
 ORDER BY a.created_at ASC, a.id ASC;
 
