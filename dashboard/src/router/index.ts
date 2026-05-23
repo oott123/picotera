@@ -64,7 +64,7 @@ const router = createRouter({
       path: '/projects',
       name: 'projects',
       component: () => import('@/views/ProjectsView.vue'),
-      meta: { auth: { kind: 'permission', perm: 'view_own_usage' }, layout: 'app' },
+      meta: { auth: { kind: 'permission', perm: 'manage_own_projects' }, layout: 'app' },
     },
     {
       path: '/scripts',
