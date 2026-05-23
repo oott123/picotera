@@ -7,7 +7,6 @@ import (
 	"sort"
 	"time"
 
-	"picotera/pkg/auth"
 	"picotera/pkg/contract"
 	"picotera/pkg/db"
 
@@ -105,9 +104,7 @@ func hasFilters(in contract.OverviewCommonRequest) bool {
 }
 
 func (s *Server) handleGetOverviewSummary(ctx context.Context, in *contract.GetOverviewSummaryRequest) (*contract.GetOverviewSummaryResponse, error) {
-	if sess := auth.SessionFromContext(ctx); sess.Account.Role != "admin" {
-		return nil, huma.Error403Forbidden("overview is currently admin-only")
-	}
+	// Admin-only enforced by the operation's auth requirement (see server.go).
 	start, end, err := overviewWindow(in.Range, time.Now())
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
@@ -213,9 +210,7 @@ func (s *Server) handleGetOverviewSummary(ctx context.Context, in *contract.GetO
 }
 
 func (s *Server) handleGetOverviewDistribution(ctx context.Context, in *contract.GetOverviewDistributionRequest) (*contract.GetOverviewDistributionResponse, error) {
-	if sess := auth.SessionFromContext(ctx); sess.Account.Role != "admin" {
-		return nil, huma.Error403Forbidden("overview is currently admin-only")
-	}
+	// Admin-only enforced by the operation's auth requirement (see server.go).
 	start, end, err := overviewWindow(in.Range, time.Now())
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
@@ -306,9 +301,7 @@ func emptyIfNil(in []contract.OverviewCostView) []contract.OverviewCostView {
 }
 
 func (s *Server) handleGetOverviewSeries(ctx context.Context, in *contract.GetOverviewSeriesRequest) (*contract.GetOverviewSeriesResponse, error) {
-	if sess := auth.SessionFromContext(ctx); sess.Account.Role != "admin" {
-		return nil, huma.Error403Forbidden("overview is currently admin-only")
-	}
+	// Admin-only enforced by the operation's auth requirement (see server.go).
 	start, end, err := overviewWindow(in.Range, time.Now())
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())

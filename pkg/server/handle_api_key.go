@@ -89,8 +89,14 @@ func (s *Server) handleCreateApiKey(ctx context.Context, in *contract.CreateApiK
 		AccountID:   sess.Account.ID,
 	})
 	if err != nil {
-		if isUniqueViolation(err) {
+		switch uniqueViolationConstraint(err) {
+		case "api_key_key_idx":
 			return nil, huma.Error409Conflict("key already exists")
+		case "api_key_account_id_name_key":
+			return nil, huma.Error409Conflict("name already in use")
+		}
+		if isUniqueViolation(err) {
+			return nil, huma.Error409Conflict("api key conflicts with an existing row")
 		}
 		return nil, huma.Error500InternalServerError("failed to create api key", err)
 	}
@@ -134,8 +140,14 @@ func (s *Server) handleUpdateApiKey(ctx context.Context, in *contract.UpdateApiK
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, huma.Error404NotFound("api key not found")
 		}
-		if isUniqueViolation(err) {
+		switch uniqueViolationConstraint(err) {
+		case "api_key_key_idx":
 			return nil, huma.Error409Conflict("key already exists")
+		case "api_key_account_id_name_key":
+			return nil, huma.Error409Conflict("name already in use")
+		}
+		if isUniqueViolation(err) {
+			return nil, huma.Error409Conflict("api key conflicts with an existing row")
 		}
 		return nil, huma.Error500InternalServerError("failed to update api key", err)
 	}

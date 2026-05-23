@@ -290,10 +290,13 @@ func (s *Server) registerOperations() {
 	registerOp(mgmt, contract.OperationUpdateApiKey, s.handleUpdateApiKey, contract.RequirePermission(contract.PermManageOwnAPIKeys))
 	registerOp(mgmt, contract.OperationDeleteApiKey, s.handleDeleteApiKey, contract.RequirePermission(contract.PermManageOwnAPIKeys))
 
-	// Overview metrics — view_own_usage
-	registerOp(mgmt, contract.OperationGetOverviewSummary, s.handleGetOverviewSummary, contract.RequirePermission(contract.PermViewOwnUsage))
-	registerOp(mgmt, contract.OperationGetOverviewDistribution, s.handleGetOverviewDistribution, contract.RequirePermission(contract.PermViewOwnUsage))
-	registerOp(mgmt, contract.OperationGetOverviewSeries, s.handleGetOverviewSeries, contract.RequirePermission(contract.PermViewOwnUsage))
+	// Overview metrics — admin-only. The aggregate queries hit the
+	// request_overview_hourly continuous aggregate which has no account_id
+	// dimension, so per-user scoping isn't available yet. Match the gate to
+	// what the handler enforces (it returned 403 to non-admins anyway).
+	registerOp(mgmt, contract.OperationGetOverviewSummary, s.handleGetOverviewSummary, admin)
+	registerOp(mgmt, contract.OperationGetOverviewDistribution, s.handleGetOverviewDistribution, admin)
+	registerOp(mgmt, contract.OperationGetOverviewSeries, s.handleGetOverviewSeries, admin)
 
 	// Projects — view_own_usage (per-user ownership; admin auto-passes but
 	// still sees only their own rows because the handlers always scope to
