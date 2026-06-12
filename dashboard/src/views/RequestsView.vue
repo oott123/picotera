@@ -8,7 +8,9 @@ import type { RequestView, EndpointView, ModelView } from '@/api'
 import { listEndpoints, listModels, listRequests } from '@/api/client'
 import { queryKeys, type RequestsFilters } from '@/api/queryKeys'
 import RequestDetailsPanel from '@/components/RequestDetailsPanel.vue'
+import AutoRefreshSelect from '@/components/AutoRefreshSelect.vue'
 import { useSidePanel } from '@/composables/useSidePanel'
+import { usePreferencesStore } from '@/stores/preferences'
 import {
   Button,
   IconButton,
@@ -30,11 +32,12 @@ const route = useRoute()
 const router = useRouter()
 const { providers, providerLabel } = useProvidersMap()
 const { projects, projectLabel } = useProjectsMap()
+const prefs = usePreferencesStore()
 
 // Track new rows for animation on refresh
 const previousRequestIds = ref(new Set<string | number>())
 const newRowKeys = ref(new Set<string | number>())
-const isRefreshing = ref(false)
+const lastContextKey = ref<string | null>(null)
 
 type RequestKind = 'meta' | 'upstream' | 'all'
 
@@ -96,6 +99,10 @@ const currentCursor = computed(() =>
   typeof route.query.cursor === 'string' ? route.query.cursor : '',
 )
 
+const contextKey = computed(() =>
+  JSON.stringify({ ...requestFilters.value, cursor: currentCursor.value }),
+)
+
 const requestsQuery = useQuery({
   queryKey: computed(() =>
     queryKeys.requests.list({
@@ -110,29 +117,39 @@ const requestsQuery = useQuery({
       limit: pageSize,
       cursor: currentCursor.value || undefined,
     }),
+  refetchInterval: computed(() => (prefs.requestsRefreshMs > 0 ? prefs.requestsRefreshMs : false)),
+  // Immediate refresh on return to a hidden/minimized tab, only while auto-refresh is on.
+  refetchOnWindowFocus: () => prefs.requestsRefreshMs > 0,
 })
 const requests = computed<RequestView[]>(() => requestsQuery.data.value?.items ?? [])
 
-// When requests change after refresh, compute which ones are new
-watch(requests, (newRequests) => {
-  if (!isRefreshing.value) return
-  isRefreshing.value = false
-  const currentIds = new Set(newRequests.map((r) => rowKey(r)))
-  const fresh = new Set<string | number>()
-  for (const id of currentIds) {
-    if (!previousRequestIds.value.has(id)) {
-      fresh.add(id)
-    }
-  }
-  newRowKeys.value = fresh
-  previousRequestIds.value = currentIds
-  if (fresh.size > 0) {
-    setTimeout(() => {
+watch(
+  requests,
+  (newRequests) => {
+    const currentIds = new Set(newRequests.map((r) => rowKey(r)))
+    // Navigation / filter change → new context: reset baseline, do not flash.
+    if (contextKey.value !== lastContextKey.value) {
+      lastContextKey.value = contextKey.value
+      previousRequestIds.value = currentIds
       newRowKeys.value = new Set()
-    }, 100)
-  }
-}, { flush: 'post' })
-const loading = computed(() => requestsQuery.isLoading.value || requestsQuery.isFetching.value)
+      return
+    }
+    // Same context (manual or auto refresh) → flash genuinely new rows.
+    const fresh = new Set<string | number>()
+    for (const id of currentIds) {
+      if (!previousRequestIds.value.has(id)) fresh.add(id)
+    }
+    previousRequestIds.value = currentIds
+    newRowKeys.value = fresh
+    if (fresh.size > 0) {
+      setTimeout(() => {
+        newRowKeys.value = new Set()
+      }, 100)
+    }
+  },
+  { flush: 'post' },
+)
+const loading = computed(() => requestsQuery.isLoading.value)
 const hasMore = computed(() => requestsQuery.data.value?.pagination.hasMore ?? false)
 const canGoHome = computed(() => !!currentCursor.value)
 const canGoPrevious = computed(
@@ -455,12 +472,6 @@ function cacheHitRate(r: RequestView): number | null {
   if (denominator <= 0 || !r.cacheReadTokens) return null
   return r.cacheReadTokens / denominator
 }
-
-function resetCursorAndReload() {
-  previousRequestIds.value = new Set(requests.value.map((r) => rowKey(r)))
-  isRefreshing.value = true
-  requestsQuery.refetch()
-}
 </script>
 
 <template>
@@ -482,9 +493,10 @@ function resetCursorAndReload() {
         <span class="text-xs text-ink-faint tabular-nums">
           {{ requests.length }} 条<span v-if="hasMore">（还有更多）</span>
         </span>
-        <IconButton title="刷新" aria-label="刷新" @click="resetCursorAndReload">
+        <IconButton title="刷新" aria-label="刷新" @click="requestsQuery.refetch()">
           <Icon name="refresh" :size="13" />
         </IconButton>
+        <AutoRefreshSelect v-model="prefs.requestsRefreshMs" />
       </div>
     </div>
 

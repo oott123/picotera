@@ -8,11 +8,14 @@ import { listRequestTraces } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
 import type { RequestTraceView, TraceCostView } from '@/api'
 import { AutoDataTable, Button, DataCard, Icon, IconButton, type AutoDataTableColumn } from '@/ui'
+import AutoRefreshSelect from '@/components/AutoRefreshSelect.vue'
+import { usePreferencesStore } from '@/stores/preferences'
 
 const router = useRouter()
 const route = useRoute()
 const currency = useCurrencyContext()
 const { projectLabel } = useProjectsMap()
+const prefs = usePreferencesStore()
 const pageSize = 30
 const initialCursor = typeof route.query.cursor === 'string' ? route.query.cursor : ''
 const cursorIndex = ref(initialCursor ? 1 : 0)
@@ -28,9 +31,42 @@ const tracesQuery = useQuery({
     queryKeys.requestTraces.list({ limit: pageSize, cursor: currentCursor.value }),
   ),
   queryFn: () => listRequestTraces({ limit: pageSize, cursor: currentCursor.value || undefined }),
+  refetchInterval: computed(() => (prefs.tracesRefreshMs > 0 ? prefs.tracesRefreshMs : false)),
+  // Immediate refresh on return to a hidden/minimized tab, only while auto-refresh is on.
+  refetchOnWindowFocus: () => prefs.tracesRefreshMs > 0,
 })
 const traces = computed<RequestTraceView[]>(() => tracesQuery.data.value?.items ?? [])
-const loading = computed(() => tracesQuery.isLoading.value || tracesQuery.isFetching.value)
+
+const previousTraceIds = ref(new Set<string | number>())
+const newRowKeys = ref(new Set<string | number>())
+const lastContextKey = ref<string | null>(null)
+const contextKey = computed(() => JSON.stringify({ cursor: currentCursor.value }))
+
+watch(
+  traces,
+  (newTraces) => {
+    const currentIds = new Set(newTraces.map((r) => rowKey(r)))
+    if (contextKey.value !== lastContextKey.value) {
+      lastContextKey.value = contextKey.value
+      previousTraceIds.value = currentIds
+      newRowKeys.value = new Set()
+      return
+    }
+    const fresh = new Set<string | number>()
+    for (const id of currentIds) {
+      if (!previousTraceIds.value.has(id)) fresh.add(id)
+    }
+    previousTraceIds.value = currentIds
+    newRowKeys.value = fresh
+    if (fresh.size > 0) {
+      setTimeout(() => {
+        newRowKeys.value = new Set()
+      }, 100)
+    }
+  },
+  { flush: 'post' },
+)
+const loading = computed(() => tracesQuery.isLoading.value)
 const hasMore = computed(() => tracesQuery.data.value?.pagination.hasMore ?? false)
 const canGoHome = computed(() => !!currentCursor.value)
 const canGoPrevious = computed(
@@ -185,11 +221,18 @@ function formatCosts(costs: TraceCostView[] | null): { text: string; title?: str
         >
           <Icon name="refresh" :size="13" />
         </IconButton>
+        <AutoRefreshSelect v-model="prefs.tracesRefreshMs" />
       </div>
     </div>
 
     <DataCard>
-      <AutoDataTable :columns="columns" :items="traces" :row-key="rowKey" :on-row-click="openTrace">
+      <AutoDataTable
+        :columns="columns"
+        :items="traces"
+        :row-key="rowKey"
+        :new-row-keys="newRowKeys"
+        :on-row-click="openTrace"
+      >
         <template #cell-lastRequestAt="{ row }">
           <div class="flex flex-col leading-tight">
             <span class="font-mono tabular-nums text-ink">{{
