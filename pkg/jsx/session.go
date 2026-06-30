@@ -192,6 +192,23 @@ func (s *qjsSession) timeout() time.Duration {
 	return 5 * time.Second
 }
 
+// evalVoid evaluates expr purely for its side effects on globalThis and discards
+// the result WITHOUT marshaling it. PatchContext and SetClientBody must use this
+// rather than the marshaling EvalFile: EvalFile JSON-stringifies the eval's
+// completion value, and `Object.assign(globalThis.ctx, ...)` evaluates to
+// globalThis.ctx — so EvalFile would serialize the entire ctx, walking the
+// enumerable lazy ctx.request.body getter and materializing a multi-MiB body into
+// QuickJS (OOM) even when no hook ever reads it. EvalValueFile returns the raw
+// value, which we free untouched.
+func (s *qjsSession) evalVoid(expr, name string) error {
+	v, err := s.vm.EvalValueFile(expr, internalFilename(name), quickjs.EvalGlobal)
+	if err != nil {
+		return err
+	}
+	v.Free()
+	return nil
+}
+
 // PatchContext shallow-merges patch's non-nil fields onto globalThis.ctx.
 // Assigning patch.Request replaces ctx.request with a fresh plain object, so
 // when a client body is registered we (re)install the lazy ctx.request.body
@@ -211,7 +228,7 @@ func (s *qjsSession) PatchContext(patch ContextPatch) error {
 	if patch.Request != nil && s.registry.request.hasBody {
 		expr += ";globalThis.__picotera_installRequestBody();"
 	}
-	if _, err := s.vm.EvalFile(expr, internalFilename("patch-context.js"), quickjs.EvalGlobal); err != nil {
+	if err := s.evalVoid(expr, "patch-context.js"); err != nil {
 		return fmt.Errorf("jsx: patch context: %w", err)
 	}
 	return nil
@@ -230,9 +247,9 @@ func (s *qjsSession) SetClientBody(body []byte) error {
 	if !s.registry.request.hasBody {
 		return nil
 	}
-	if _, err := s.vm.EvalFile(
+	if err := s.evalVoid(
 		"if (globalThis.ctx && globalThis.ctx.request && typeof globalThis.ctx.request === 'object') { globalThis.__picotera_installRequestBody(); }",
-		internalFilename("set-client-body.js"), quickjs.EvalGlobal); err != nil {
+		"set-client-body.js"); err != nil {
 		return fmt.Errorf("jsx: set client body: %w", err)
 	}
 	return nil
