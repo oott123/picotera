@@ -16,6 +16,8 @@ WHERE
   AND (sqlc.narg('model')::text IS NULL OR r.model = sqlc.narg('model'))
   AND (sqlc.narg('upstream_model')::text IS NULL OR r.upstream_model = sqlc.narg('upstream_model'))
   AND (sqlc.narg('project_id')::int IS NULL OR r.project_id = sqlc.narg('project_id'))
+  AND (sqlc.narg('start_at')::timestamp IS NULL OR r.created_at >= sqlc.narg('start_at')::timestamp)
+  AND (sqlc.narg('end_at')::timestamp IS NULL OR r.created_at <= sqlc.narg('end_at')::timestamp)
   AND (
     sqlc.narg('trace_id')::text IS NULL
     OR (
@@ -115,6 +117,8 @@ LEFT JOIN LATERAL (
 ) trace_project ON true
 WHERE
   traces.user_id = sqlc.arg('user_id')::bigint
+  AND (sqlc.narg('start_at')::timestamp IS NULL OR traces.last_request_at >= sqlc.narg('start_at')::timestamp)
+  AND (sqlc.narg('end_at')::timestamp IS NULL OR traces.last_request_at <= sqlc.narg('end_at')::timestamp)
   AND (
     sqlc.narg('cursor_last_request_at')::timestamp IS NULL
     OR (traces.last_request_at, traces.id) < (

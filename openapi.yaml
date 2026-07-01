@@ -3314,6 +3314,16 @@ paths:
           schema:
             example: eyJpZCI6MX0=
             type: string
+        - explode: false
+          in: query
+          name: startAt
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: endAt
+          schema:
+            type: string
       responses:
         "200":
           content:
@@ -3387,6 +3397,16 @@ paths:
           schema:
             format: int32
             type: integer
+        - explode: false
+          in: query
+          name: startAt
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: endAt
+          schema:
+            type: string
       responses:
         "200":
           content:

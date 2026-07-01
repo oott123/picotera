@@ -435,7 +435,9 @@ export async function interruptRequest(id: string): Promise<boolean> {
   return data?.interrupted ?? false
 }
 
-export async function listRequestTraces(filters: { limit: number; cursor?: string }) {
+export async function listRequestTraces(
+  filters: { limit: number; cursor?: string; startAt?: string; endAt?: string },
+) {
   const { data, error } = await api.GET('/api/picotera/request-traces', {
     params: { query: filters },
   })

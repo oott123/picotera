@@ -34,6 +34,8 @@ export type RequestsFilters = Readonly<{
   upstreamModel?: string
   traceId?: string
   projectId?: number
+  startAt?: string
+  endAt?: string
 }>
 
 export type KvListFilters = Readonly<{ pattern?: string; cursor?: number }>
@@ -93,7 +95,8 @@ export const queryKeys = {
   },
   requestTraces: {
     all: ['requestTraces'] as const,
-    list: (filters: CursorFilters) => ['requestTraces', { ...filters }] as const,
+    list: (filters: CursorFilters & { startAt?: string; endAt?: string }) =>
+      ['requestTraces', { ...filters }] as const,
   },
   requestSpans: {
     all: ['requestSpans'] as const,

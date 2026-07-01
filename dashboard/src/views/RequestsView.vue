@@ -24,6 +24,7 @@ import {
   Icon,
   SegmentedControl,
   ColumnFilter,
+  TimeRangeFilter,
   MoneyDisplay,
   type AutoDataTableColumn,
   type ColumnFilterOption,
@@ -51,6 +52,8 @@ const filters = reactive({
   upstreamModel: '',
   traceId: typeof route.query.traceId === 'string' ? route.query.traceId : '',
   projectId: typeof route.query.projectId === 'string' ? Number(route.query.projectId) || 0 : 0,
+  startAt: typeof route.query.startAt === 'string' ? route.query.startAt : '',
+  endAt: typeof route.query.endAt === 'string' ? route.query.endAt : '',
 })
 
 const typeOptions: { value: RequestKind; label: string }[] = [
@@ -90,6 +93,8 @@ const requestFilters = computed<RequestsFilters>(() => {
     upstreamModel?: string
     traceId?: string
     projectId?: number
+    startAt?: string
+    endAt?: string
   } = {}
   if (filters.type === 'meta') out.type = 0
   else if (filters.type === 'upstream') out.type = 1
@@ -99,6 +104,8 @@ const requestFilters = computed<RequestsFilters>(() => {
   if (filters.upstreamModel) out.upstreamModel = filters.upstreamModel
   if (filters.traceId) out.traceId = filters.traceId
   if (filters.projectId) out.projectId = filters.projectId
+  if (filters.startAt) out.startAt = filters.startAt
+  if (filters.endAt) out.endAt = filters.endAt
   return out
 })
 
@@ -166,6 +173,8 @@ watch(
     filters.upstreamModel,
     filters.traceId,
     filters.projectId,
+    filters.startAt,
+    filters.endAt,
   ],
   () => {
     resetPaginationMemory()
@@ -198,6 +207,26 @@ watch(
     const next = typeof value === 'string' ? Number(value) || 0 : 0
     if (filters.projectId !== next) {
       filters.projectId = next
+    }
+  },
+)
+
+watch(
+  () => route.query.startAt,
+  (value) => {
+    const next = typeof value === 'string' ? value : ''
+    if (filters.startAt !== next) {
+      filters.startAt = next
+    }
+  },
+)
+
+watch(
+  () => route.query.endAt,
+  (value) => {
+    const next = typeof value === 'string' ? value : ''
+    if (filters.endAt !== next) {
+      filters.endAt = next
     }
   },
 )
@@ -363,6 +392,7 @@ function activeFilterCount(): number {
   if (filters.upstreamModel) n++
   if (filters.traceId) n++
   if (filters.projectId) n++
+  if (filters.startAt || filters.endAt) n++
   return n
 }
 
@@ -373,6 +403,8 @@ function clearAllFilters() {
   filters.upstreamModel = ''
   filters.traceId = ''
   filters.projectId = 0
+  filters.startAt = ''
+  filters.endAt = ''
 }
 
 function clearTraceFilter() {
@@ -393,10 +425,24 @@ function syncFiltersToQuery() {
   } else {
     query.delete('projectId')
   }
+  if (filters.startAt) {
+    query.set('startAt', filters.startAt)
+  } else {
+    query.delete('startAt')
+  }
+  if (filters.endAt) {
+    query.set('endAt', filters.endAt)
+  } else {
+    query.delete('endAt')
+  }
   query.delete('cursor')
+  const currentStart = query.get('startAt') ?? ''
+  const currentEnd = query.get('endAt') ?? ''
   if (
     filters.traceId === currentTrace &&
     filters.projectId === currentProject &&
+    filters.startAt === currentStart &&
+    filters.endAt === currentEnd &&
     !currentCursor.value
   )
     return
@@ -492,9 +538,20 @@ function resetCursorAndReload() {
 <template>
   <div class="flex flex-col gap-3.5">
     <div class="flex items-end justify-between gap-3 flex-wrap">
-      <Field label="类型" as="div">
-        <SegmentedControl v-model="filters.type" :options="typeOptions" />
-      </Field>
+      <div class="flex items-end gap-3 flex-wrap">
+        <Field label="类型" as="div">
+          <SegmentedControl v-model="filters.type" :options="typeOptions" />
+        </Field>
+        <TimeRangeFilter
+          :model-value="{ startAt: filters.startAt, endAt: filters.endAt }"
+          @update:model-value="
+            (v) => {
+              filters.startAt = v.startAt
+              filters.endAt = v.endAt
+            }
+          "
+        />
+      </div>
       <div class="flex items-center gap-2">
         <button
           v-if="activeFilterCount() > 0"

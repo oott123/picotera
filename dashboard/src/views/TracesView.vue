@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
 import { useCurrencyContext } from '@/composables/useCurrencyContext'
@@ -7,7 +7,7 @@ import { useProjectsMap } from '@/composables/useProjectsMap'
 import { listRequestTraces } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
 import type { RequestTraceView, TraceCostView } from '@/api'
-import { AutoDataTable, Button, DataCard, Icon, IconButton, type AutoDataTableColumn } from '@/ui'
+import { AutoDataTable, Button, DataCard, Icon, IconButton, TimeRangeFilter, type AutoDataTableColumn } from '@/ui'
 import { formatDuration } from '@/utils/duration'
 
 const router = useRouter()
@@ -20,15 +20,31 @@ const cursorIndex = ref(initialCursor ? 1 : 0)
 const pageCursors = ref<string[]>(initialCursor ? ['', initialCursor] : [''])
 const hasPaginationHistory = ref(!initialCursor)
 
+const filters = reactive({
+  startAt: typeof route.query.startAt === 'string' ? route.query.startAt : '',
+  endAt: typeof route.query.endAt === 'string' ? route.query.endAt : '',
+})
+
 const currentCursor = computed(() =>
   typeof route.query.cursor === 'string' ? route.query.cursor : '',
 )
 
 const tracesQuery = useQuery({
   queryKey: computed(() =>
-    queryKeys.requestTraces.list({ limit: pageSize, cursor: currentCursor.value }),
+    queryKeys.requestTraces.list({
+      limit: pageSize,
+      cursor: currentCursor.value,
+      startAt: filters.startAt || undefined,
+      endAt: filters.endAt || undefined,
+    }),
   ),
-  queryFn: () => listRequestTraces({ limit: pageSize, cursor: currentCursor.value || undefined }),
+  queryFn: () =>
+    listRequestTraces({
+      limit: pageSize,
+      cursor: currentCursor.value || undefined,
+      startAt: filters.startAt || undefined,
+      endAt: filters.endAt || undefined,
+    }),
 })
 const traces = computed<RequestTraceView[]>(() => tracesQuery.data.value?.items ?? [])
 const loading = computed(() => tracesQuery.isLoading.value || tracesQuery.isFetching.value)
@@ -48,6 +64,65 @@ watch(
     const next = typeof value === 'string' ? value : ''
     const knownIndex = pageCursors.value.indexOf(next)
     cursorIndex.value = knownIndex >= 0 ? knownIndex : next ? 1 : 0
+  },
+)
+
+function syncFiltersToQuery() {
+  const query = new URLSearchParams(route.query.toString())
+  if (filters.startAt) {
+    query.set('startAt', filters.startAt)
+  } else {
+    query.delete('startAt')
+  }
+  if (filters.endAt) {
+    query.set('endAt', filters.endAt)
+  } else {
+    query.delete('endAt')
+  }
+  query.delete('cursor')
+  const currentStart = route.query.startAt ?? ''
+  const currentEnd = route.query.endAt ?? ''
+  if (filters.startAt === currentStart && filters.endAt === currentEnd && !route.query.cursor) {
+    return
+  }
+  router.replace({ query: parseQueryEntries(query) })
+}
+
+function parseQueryEntries(query: URLSearchParams) {
+  const entries: Record<string, string> = {}
+  query.forEach((value, key) => {
+    entries[key] = value
+  })
+  return entries
+}
+
+watch(
+  () => [filters.startAt, filters.endAt],
+  () => {
+    cursorIndex.value = 0
+    pageCursors.value = ['']
+    hasPaginationHistory.value = false
+    syncFiltersToQuery()
+  },
+)
+
+watch(
+  () => route.query.startAt,
+  (value) => {
+    const next = typeof value === 'string' ? value : ''
+    if (filters.startAt !== next) {
+      filters.startAt = next
+    }
+  },
+)
+
+watch(
+  () => route.query.endAt,
+  (value) => {
+    const next = typeof value === 'string' ? value : ''
+    if (filters.endAt !== next) {
+      filters.endAt = next
+    }
   },
 )
 
@@ -178,10 +253,21 @@ function formatCosts(costs: TraceCostView[] | null): { text: string; title?: str
 <template>
   <div class="flex flex-col gap-3.5">
     <div class="flex items-center justify-between gap-3 flex-wrap">
-      <span class="text-xs text-ink-faint tabular-nums">
-        {{ traces.length }} 条追踪<span v-if="hasMore">（还有更多）</span>
-      </span>
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-3 flex-wrap">
+        <TimeRangeFilter
+          :model-value="{ startAt: filters.startAt, endAt: filters.endAt }"
+          @update:model-value="
+            (v) => {
+              filters.startAt = v.startAt
+              filters.endAt = v.endAt
+            }
+          "
+        />
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="text-xs text-ink-faint tabular-nums">
+          {{ traces.length }} 条追踪<span v-if="hasMore">（还有更多）</span>
+        </span>
         <IconButton
           title="刷新"
           aria-label="刷新"

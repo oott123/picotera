@@ -17,6 +17,30 @@ import (
 
 const artifactPresignTTL = time.Hour
 
+// parseTimeWindow strictly parses optional RFC3339/RFC3339Nano start/end timestamps.
+// Empty strings yield invalid (NULL) timestamps. The server does not trim,
+// case-fold, infer timezones, or otherwise normalize the input.
+func parseTimeWindow(startAt, endAt string) (start pgtype.Timestamp, end pgtype.Timestamp, err error) {
+	if startAt != "" {
+		t, parseErr := time.Parse(time.RFC3339Nano, startAt)
+		if parseErr != nil {
+			return pgtype.Timestamp{}, pgtype.Timestamp{}, huma.Error400BadRequest("invalid startAt")
+		}
+		start = pgtype.Timestamp{Time: t.UTC(), Valid: true}
+	}
+	if endAt != "" {
+		t, parseErr := time.Parse(time.RFC3339Nano, endAt)
+		if parseErr != nil {
+			return pgtype.Timestamp{}, pgtype.Timestamp{}, huma.Error400BadRequest("invalid endAt")
+		}
+		end = pgtype.Timestamp{Time: t.UTC(), Valid: true}
+	}
+	if start.Valid && end.Valid && start.Time.After(end.Time) {
+		return pgtype.Timestamp{}, pgtype.Timestamp{}, huma.Error400BadRequest("invalid time range")
+	}
+	return start, end, nil
+}
+
 // attachArtifactUrls fills in presigned URLs for the given view using id+createdAt.
 // Errors are logged and silently dropped (URL fields stay empty).
 func (s *Server) attachArtifactUrls(ctx context.Context, v *contract.RequestView, createdAt pgtype.Timestamp) {
@@ -92,6 +116,11 @@ func (s *Server) handleListRequests(ctx context.Context, input *contract.ListReq
 		filterTraceID = pgtype.Text{String: input.TraceID, Valid: true}
 	}
 
+	startAt, endAt, err := parseTimeWindow(input.StartAt, input.EndAt)
+	if err != nil {
+		return nil, err
+	}
+
 	rows, err := s.queries.ListRequests(ctx, db.ListRequestsParams{
 		UserID:          u.ID,
 		TraceID:         filterTraceID,
@@ -100,6 +129,8 @@ func (s *Server) handleListRequests(ctx context.Context, input *contract.ListReq
 		EndpointPath:    filterEndpointPath,
 		Model:           filterModel,
 		UpstreamModel:   filterUpstreamModel,
+		StartAt:         startAt,
+		EndAt:           endAt,
 		CursorCreatedAt: cursorCreatedAt,
 		CursorID:        cursorID,
 		Limit:           pgtype.Int4{Int32: fetchLimit, Valid: true},
@@ -166,8 +197,15 @@ func (s *Server) handleListRequestTraces(ctx context.Context, input *contract.Li
 		cursorTraceID = pgtype.Text{String: traceID, Valid: true}
 	}
 
+	startAt, endAt, err := parseTimeWindow(input.StartAt, input.EndAt)
+	if err != nil {
+		return nil, err
+	}
+
 	rows, err := s.queries.ListRequestTraces(ctx, db.ListRequestTracesParams{
 		UserID:              u.ID,
+		StartAt:             startAt,
+		EndAt:               endAt,
 		CursorLastRequestAt: cursorLastRequestAt,
 		CursorTraceID:       cursorTraceID,
 		Limit:               pgtype.Int4{Int32: fetchLimit, Valid: true},

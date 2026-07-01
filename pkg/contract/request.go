@@ -358,12 +358,16 @@ type ListRequestsRequest struct {
 	UpstreamModel string `query:"upstreamModel,omitempty"`
 	TraceID       string `query:"traceId,omitempty"`
 	ProjectID     int32  `query:"projectId,omitempty"`
+	StartAt       string `query:"startAt,omitempty"`
+	EndAt         string `query:"endAt,omitempty"`
 }
 
 type ListRequestsResponse = PaginatedResponse[RequestView]
 
 type ListRequestTracesRequest struct {
 	PaginationRequest
+	StartAt string `query:"startAt,omitempty"`
+	EndAt   string `query:"endAt,omitempty"`
 }
 
 type ListRequestTracesResponse = PaginatedResponse[RequestTraceView]

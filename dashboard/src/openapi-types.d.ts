@@ -3547,6 +3547,8 @@ export interface operations {
             query?: {
                 limit?: number;
                 cursor?: string;
+                startAt?: string;
+                endAt?: string;
             };
             header?: never;
             path?: never;
@@ -3586,6 +3588,8 @@ export interface operations {
                 upstreamModel?: string;
                 traceId?: string;
                 projectId?: number;
+                startAt?: string;
+                endAt?: string;
             };
             header?: never;
             path?: never;
