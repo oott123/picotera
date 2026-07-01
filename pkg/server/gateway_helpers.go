@@ -343,6 +343,9 @@ func extractParentSpanID(h http.Header) string {
 	if v := strings.TrimSpace(h.Get("x-session-id")); v != "" {
 		return v
 	}
+	if v := strings.TrimSpace(h.Get("session-id")); v != "" {
+		return v
+	}
 	return ""
 }
 
