@@ -47,6 +47,7 @@ var projectExtractRegexps = []*regexp.Regexp{
 	regexp.MustCompile(`Current working directory: (.*?)(?:\\n|\n|$|")`),
 	regexp.MustCompile(`<cwd>(.*?)</cwd>`),
 	regexp.MustCompile(`<env>(?:\\n|\n)Working directory: (.*?)(?:\\n|\n|$|")`),
+	regexp.MustCompile(`Today is [0-9-]+, and the current working directory is '(.*?)'.(?:\\n|\n|$|")`), // omp
 }
 
 type projectExtractor struct {
