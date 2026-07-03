@@ -134,4 +134,17 @@ func TestRedactUpstreamCredentials(t *testing.T) {
 			t.Errorf("URL altered: %q", gotURL)
 		}
 	})
+
+	t.Run("cf access headers replaced wholesale", func(t *testing.T) {
+		h := http.Header{}
+		h.Set("Cf-Access-Client-Id", "client-id-secret")
+		h.Set("Cf-Access-Client-Secret", "client-secret-value")
+		got, _ := redactUpstreamCredentials(h, "http://upstream.example/v1")
+		if v := got.Get("Cf-Access-Client-Id"); v != "[REDACTED]" {
+			t.Errorf("Cf-Access-Client-Id = %q, want %q", v, "[REDACTED]")
+		}
+		if v := got.Get("Cf-Access-Client-Secret"); v != "[REDACTED]" {
+			t.Errorf("Cf-Access-Client-Secret = %q, want %q", v, "[REDACTED]")
+		}
+	})
 }
