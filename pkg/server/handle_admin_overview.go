@@ -24,7 +24,7 @@ func hasAdminFilters(in contract.AdminOverviewCommonRequest) bool {
 }
 
 func (s *Server) handleGetAdminOverviewSummary(ctx context.Context, in *contract.GetAdminOverviewSummaryRequest) (*contract.GetAdminOverviewSummaryResponse, error) {
-	start, end, err := overviewWindow(in.Range, time.Now())
+	start, end, err := overviewWindow(in.Range, in.StartAt, in.EndAt, time.Now(), time.Hour)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
@@ -125,7 +125,7 @@ func (s *Server) handleGetAdminOverviewSummary(ctx context.Context, in *contract
 }
 
 func (s *Server) handleGetAdminOverviewDistribution(ctx context.Context, in *contract.GetAdminOverviewDistributionRequest) (*contract.GetAdminOverviewDistributionResponse, error) {
-	start, end, err := overviewWindow(in.Range, time.Now())
+	start, end, err := overviewWindow(in.Range, in.StartAt, in.EndAt, time.Now(), time.Hour)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
@@ -205,15 +205,7 @@ func (s *Server) handleGetAdminOverviewDistribution(ctx context.Context, in *con
 }
 
 func (s *Server) handleGetAdminOverviewSeries(ctx context.Context, in *contract.GetAdminOverviewSeriesRequest) (*contract.GetAdminOverviewSeriesResponse, error) {
-	bucketInterval, err := overviewSeriesBucketIntervalFor(in.Range, in.Bucket)
-	if err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
-	}
-	align := bucketInterval
-	if align > time.Hour {
-		align = time.Hour
-	}
-	start, end, err := overviewWindowAligned(in.Range, time.Now(), align)
+	start, end, bucketInterval, err := resolveOverviewSeriesWindow(in.Range, in.StartAt, in.EndAt, in.Bucket, time.Now())
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
@@ -478,7 +470,7 @@ func (s *Server) handleGetAdminOverviewSeries(ctx context.Context, in *contract.
 }
 
 func (s *Server) handleGetAdminOverviewSpeedBoxplot(ctx context.Context, in *contract.GetAdminOverviewSpeedBoxplotRequest) (*contract.GetAdminOverviewSpeedBoxplotResponse, error) {
-	start, end, err := overviewWindow(in.Range, time.Now())
+	start, end, err := overviewWindow(in.Range, in.StartAt, in.EndAt, time.Now(), time.Hour)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}

@@ -1,5 +1,6 @@
 import type {
   OverviewDimension,
+  OverviewRange,
   OverviewSeriesDimension,
   AdminOverviewDimension,
   AdminOverviewSeriesDimension,
@@ -10,20 +11,23 @@ export type ProviderEndpointFilters = Readonly<{ providerId?: number }>
 export type OverviewGranularity = 'auto' | '10m' | '1h' | '6h' | '12h' | '24h'
 
 export type OverviewFilters = Readonly<{
-  range: '1d' | '7d' | '1m'
+  range: OverviewRange
   apiKeyId?: number
   model?: string
   upstreamModel?: string
   providerId?: number
   projectId?: number
+  startAt?: string
+  endAt?: string
 }>
-
 export type AdminOverviewFilters = Readonly<{
-  range: '1d' | '7d' | '1m'
+  range: OverviewRange
   userId?: number
   model?: string
   upstreamModel?: string
   providerId?: number
+  startAt?: string
+  endAt?: string
 }>
 
 export type RequestsFilters = Readonly<{

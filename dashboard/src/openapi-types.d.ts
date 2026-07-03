@@ -1911,7 +1911,9 @@ export interface operations {
     getAdminOverviewDistribution: {
         parameters: {
             query: {
-                range: "1d" | "7d" | "1m";
+                range: "1d" | "7d" | "1m" | "custom";
+                startAt?: string;
+                endAt?: string;
                 userId?: number;
                 model?: string;
                 upstreamModel?: string;
@@ -1947,7 +1949,9 @@ export interface operations {
     getAdminOverviewSeries: {
         parameters: {
             query: {
-                range: "1d" | "7d" | "1m";
+                range: "1d" | "7d" | "1m" | "custom";
+                startAt?: string;
+                endAt?: string;
                 userId?: number;
                 model?: string;
                 upstreamModel?: string;
@@ -1984,7 +1988,9 @@ export interface operations {
     getAdminOverviewSpeedBoxplot: {
         parameters: {
             query: {
-                range: "1d" | "7d" | "1m";
+                range: "1d" | "7d" | "1m" | "custom";
+                startAt?: string;
+                endAt?: string;
                 userId?: number;
                 model?: string;
                 upstreamModel?: string;
@@ -2020,7 +2026,9 @@ export interface operations {
     getAdminOverviewSummary: {
         parameters: {
             query: {
-                range: "1d" | "7d" | "1m";
+                range: "1d" | "7d" | "1m" | "custom";
+                startAt?: string;
+                endAt?: string;
                 userId?: number;
                 model?: string;
                 upstreamModel?: string;
@@ -2887,7 +2895,9 @@ export interface operations {
     getOverviewDistribution: {
         parameters: {
             query: {
-                range: "1d" | "7d" | "1m";
+                range: "1d" | "7d" | "1m" | "custom";
+                startAt?: string;
+                endAt?: string;
                 apiKeyId?: number;
                 model?: string;
                 upstreamModel?: string;
@@ -2924,7 +2934,9 @@ export interface operations {
     getOverviewSeries: {
         parameters: {
             query: {
-                range: "1d" | "7d" | "1m";
+                range: "1d" | "7d" | "1m" | "custom";
+                startAt?: string;
+                endAt?: string;
                 apiKeyId?: number;
                 model?: string;
                 upstreamModel?: string;
@@ -2962,7 +2974,9 @@ export interface operations {
     getOverviewSpeedBoxplot: {
         parameters: {
             query: {
-                range: "1d" | "7d" | "1m";
+                range: "1d" | "7d" | "1m" | "custom";
+                startAt?: string;
+                endAt?: string;
                 apiKeyId?: number;
                 model?: string;
                 upstreamModel?: string;
@@ -2999,7 +3013,9 @@ export interface operations {
     getOverviewSummary: {
         parameters: {
             query: {
-                range: "1d" | "7d" | "1m";
+                range: "1d" | "7d" | "1m" | "custom";
+                startAt?: string;
+                endAt?: string;
                 apiKeyId?: number;
                 model?: string;
                 upstreamModel?: string;

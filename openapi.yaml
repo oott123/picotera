@@ -1795,6 +1795,17 @@ paths:
               - 1d
               - 7d
               - 1m
+              - custom
+            type: string
+        - explode: false
+          in: query
+          name: startAt
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: endAt
+          schema:
             type: string
         - explode: false
           in: query
@@ -1860,6 +1871,17 @@ paths:
               - 1d
               - 7d
               - 1m
+              - custom
+            type: string
+        - explode: false
+          in: query
+          name: startAt
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: endAt
+          schema:
             type: string
         - explode: false
           in: query
@@ -1939,6 +1961,17 @@ paths:
               - 1d
               - 7d
               - 1m
+              - custom
+            type: string
+        - explode: false
+          in: query
+          name: startAt
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: endAt
+          schema:
             type: string
         - explode: false
           in: query
@@ -2005,6 +2038,17 @@ paths:
               - 1d
               - 7d
               - 1m
+              - custom
+            type: string
+        - explode: false
+          in: query
+          name: startAt
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: endAt
+          schema:
             type: string
         - explode: false
           in: query
@@ -2651,6 +2695,17 @@ paths:
               - 1d
               - 7d
               - 1m
+              - custom
+            type: string
+        - explode: false
+          in: query
+          name: startAt
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: endAt
+          schema:
             type: string
         - explode: false
           in: query
@@ -2724,6 +2779,17 @@ paths:
               - 1d
               - 7d
               - 1m
+              - custom
+            type: string
+        - explode: false
+          in: query
+          name: startAt
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: endAt
+          schema:
             type: string
         - explode: false
           in: query
@@ -2811,6 +2877,17 @@ paths:
               - 1d
               - 7d
               - 1m
+              - custom
+            type: string
+        - explode: false
+          in: query
+          name: startAt
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: endAt
+          schema:
             type: string
         - explode: false
           in: query
@@ -2885,6 +2962,17 @@ paths:
               - 1d
               - 7d
               - 1m
+              - custom
+            type: string
+        - explode: false
+          in: query
+          name: startAt
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: endAt
+          schema:
             type: string
         - explode: false
           in: query

@@ -50,7 +50,7 @@ export type ModelLabel = components['schemas']['ModelLabel']
 export type EndpointLabel = components['schemas']['EndpointLabel']
 export type ProjectLabel = components['schemas']['ProjectLabel']
 
-export type OverviewRange = '1d' | '7d' | '1m'
+export type OverviewRange = '1d' | '7d' | '1m' | 'custom'
 export type OverviewDimension = 'apiKey' | 'model' | 'upstreamModel' | 'provider' | 'project'
 export type OverviewSeriesDimension = 'none' | OverviewDimension
 export type OverviewMetric = 'tokens' | 'cost' | 'requests' | 'traces'

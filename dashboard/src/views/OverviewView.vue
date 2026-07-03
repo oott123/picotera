@@ -22,7 +22,16 @@ import type {
   OverviewSeriesDimension,
   OverviewSeriesPointView,
 } from '@/api'
-import { Button, DataCard, Icon, MoneyDisplay, SegmentedControl, Select, StateText } from '@/ui'
+import {
+  Button,
+  DataCard,
+  Icon,
+  MoneyDisplay,
+  SegmentedControl,
+  Select,
+  StateText,
+  TimeRangeFilter,
+} from '@/ui'
 import { provideCurrencyContext, useCurrencyContext } from '@/composables/useCurrencyContext'
 import { usePreferencesStore } from '@/stores/preferences'
 import OverviewDonut from '@/components/charts/OverviewDonut.vue'
@@ -37,6 +46,8 @@ import OverviewSankey, {
 const prefs = usePreferencesStore()
 const filters = reactive({
   range: '1d' as OverviewRange,
+  startAt: '',
+  endAt: '',
   apiKeyId: 0,
   model: '',
   upstreamModel: '',
@@ -160,11 +171,28 @@ const rangeOptions: { value: OverviewRange; label: string }[] = [
   { value: '1d', label: '24 小时' },
   { value: '7d', label: '7 天' },
   { value: '1m', label: '30 天' },
+  { value: 'custom', label: '自定义' },
 ]
-// 10m 桶在 30 天范围下数据点过多（4320 个），仅在 24 小时 / 7 天范围提供。
+
+// 自定义窗口跨度；未填齐两端时返回 0（视作允许 10m，避免选时间过程中选项闪烁）。
+const customSpanMs = computed(() => {
+  if (filters.range !== 'custom') return 0
+  if (!filters.startAt || !filters.endAt) return 0
+  const s = Date.parse(filters.startAt)
+  const e = Date.parse(filters.endAt)
+  if (Number.isNaN(s) || Number.isNaN(e) || e <= s) return 0
+  return e - s
+})
+
+// 10m 桶仅在窗口跨度 ≤ 7 天时提供；预设 1m 与自定义超 7 天均禁用。
 const granularityOptions = computed<{ value: OverviewGranularity; label: string }[]>(() => {
   const opts: { value: OverviewGranularity; label: string }[] = [{ value: 'auto', label: '自动' }]
-  if (filters.range !== '1m') opts.push({ value: '10m', label: '10m' })
+  if (filters.range === 'custom') {
+    const span = customSpanMs.value
+    if (span === 0 || span <= 7 * 24 * 60 * 60 * 1000) opts.push({ value: '10m', label: '10m' })
+  } else if (filters.range !== '1m') {
+    opts.push({ value: '10m', label: '10m' })
+  }
   opts.push(
     { value: '1h', label: '1h' },
     { value: '6h', label: '6h' },
@@ -174,11 +202,13 @@ const granularityOptions = computed<{ value: OverviewGranularity; label: string 
   return opts
 })
 
-// 切到 30 天且当前为 10m 时回落到自动，避免向后端发送非法组合。
+// 当前 10m 不再可用时回落到自动（覆盖切 1m 预设与自定义超跨度）。
 watch(
-  () => filters.range,
-  (range) => {
-    if (range === '1m' && granularity.value === '10m') granularity.value = 'auto'
+  () => granularityOptions.value,
+  (opts) => {
+    if (granularity.value === '10m' && !opts.some((o) => o.value === '10m')) {
+      granularity.value = 'auto'
+    }
   },
 )
 const distributionDimensionOptions: { value: OverviewDimension; label: string }[] = [
@@ -205,8 +235,14 @@ const overviewFilters = computed<OverviewFilters>(() => {
     upstreamModel?: string
     providerId?: number
     projectId?: number
+    startAt?: string
+    endAt?: string
   } = {
     range: filters.range,
+  }
+  if (filters.range === 'custom') {
+    if (filters.startAt) out.startAt = filters.startAt
+    if (filters.endAt) out.endAt = filters.endAt
   }
   if (filters.apiKeyId) out.apiKeyId = filters.apiKeyId
   if (filters.model) out.model = filters.model
@@ -926,6 +962,17 @@ function formatCurrencyCompact(v: number, code: string) {
           >时间范围</span
         >
         <SegmentedControl v-model="filters.range" :options="rangeOptions" />
+      </div>
+      <div v-if="filters.range === 'custom'" class="flex flex-col gap-1">
+        <TimeRangeFilter
+          :model-value="{ startAt: filters.startAt, endAt: filters.endAt }"
+          @update:model-value="
+            (v) => {
+              filters.startAt = v.startAt
+              filters.endAt = v.endAt
+            }
+          "
+        />
       </div>
       <div class="flex flex-col gap-1">
         <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.03em]"

@@ -26,7 +26,9 @@ type AdminOverviewSummaryView struct {
 }
 
 type AdminOverviewCommonRequest struct {
-	Range         string `query:"range" enum:"1d,7d,1m" required:"true"`
+	Range         string `query:"range" enum:"1d,7d,1m,custom" required:"true"`
+	StartAt       string `query:"startAt,omitempty"`
+	EndAt         string `query:"endAt,omitempty"`
 	UserID        int32  `query:"userId,omitempty" minimum:"1"`
 	Model         string `query:"model,omitempty" minLength:"1"`
 	UpstreamModel string `query:"upstreamModel,omitempty" minLength:"1"`

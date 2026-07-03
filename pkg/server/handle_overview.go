@@ -16,26 +16,42 @@ import (
 
 const overviewBucket = "hour"
 
-func overviewSeriesBucketInterval(rangeKey string) (time.Duration, error) {
+// overviewPresetLookback returns the fixed lookback duration for a preset range key.
+func overviewPresetLookback(rangeKey string) (time.Duration, error) {
 	switch rangeKey {
 	case "1d":
-		return time.Hour, nil
+		return 24 * time.Hour, nil
 	case "7d":
-		return 4 * time.Hour, nil
+		return 7 * 24 * time.Hour, nil
 	case "1m":
-		return 8 * time.Hour, nil
+		return 30 * 24 * time.Hour, nil
 	default:
 		return 0, fmt.Errorf("invalid range %q", rangeKey)
 	}
 }
 
-func overviewSeriesBucketIntervalFor(rangeKey, bucketKey string) (time.Duration, error) {
+// overviewAutoBucket selects the automatic bucket width based on the window
+// span, mirroring the prior preset defaults: <=36h -> 1h, <=8d -> 4h, else 8h.
+func overviewAutoBucket(span time.Duration) time.Duration {
+	switch {
+	case span <= 36*time.Hour:
+		return time.Hour
+	case span <= 8*24*time.Hour:
+		return 4 * time.Hour
+	default:
+		return 8 * time.Hour
+	}
+}
+
+// overviewSeriesBucketIntervalFor selects the bucket interval for a bucket key
+// given the window span. "10m" is rejected when span exceeds 7 days.
+func overviewSeriesBucketIntervalFor(bucketKey string, span time.Duration) (time.Duration, error) {
 	switch bucketKey {
 	case "", "auto":
-		return overviewSeriesBucketInterval(rangeKey)
+		return overviewAutoBucket(span), nil
 	case "10m":
-		if rangeKey == "1m" {
-			return 0, fmt.Errorf("bucket 10m is not allowed for range %q", rangeKey)
+		if span > 7*24*time.Hour {
+			return 0, fmt.Errorf("bucket 10m is not allowed for windows exceeding 7 days")
 		}
 		return 10 * time.Minute, nil
 	case "1h":
@@ -57,32 +73,80 @@ func overviewBucketWidthPG(interval time.Duration) string {
 	return fmt.Sprintf("%d seconds", int64(interval.Seconds()))
 }
 
-func overviewWindow(rangeKey string, now time.Time) (start, end time.Time, err error) {
-	return overviewWindowAligned(rangeKey, now, time.Hour)
+// parseOverviewCustomWindow parses the startAt/endAt pair for range=custom.
+// Both endpoints are required and must be strict RFC3339Nano; start must be
+// strictly before end. No trimming, timezone guessing, or format fallback.
+func parseOverviewCustomWindow(startAt, endAt string) (start, end time.Time, err error) {
+	if startAt == "" || endAt == "" {
+		return time.Time{}, time.Time{}, fmt.Errorf("startAt and endAt are required for range=custom")
+	}
+	start, err = time.Parse(time.RFC3339Nano, startAt)
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("invalid startAt: %w", err)
+	}
+	end, err = time.Parse(time.RFC3339Nano, endAt)
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("invalid endAt: %w", err)
+	}
+	if !start.Before(end) {
+		return time.Time{}, time.Time{}, fmt.Errorf("startAt must be strictly before endAt")
+	}
+	return start.UTC(), end.UTC(), nil
 }
 
-// overviewWindowAligned computes the analytics window, aligning the (exclusive)
-// end to the given boundary. Sub-hour buckets align to the bucket width so the
-// most recent partial hour is surfaced; hourly and coarser buckets keep hourly
-// alignment (the existing behavior shared by summary/distribution).
-func overviewWindowAligned(rangeKey string, now time.Time, align time.Duration) (start, end time.Time, err error) {
-	var lookback time.Duration
-	switch rangeKey {
-	case "1d":
-		lookback = 24 * time.Hour
-	case "7d":
-		lookback = 7 * 24 * time.Hour
-	case "1m":
-		lookback = 30 * 24 * time.Hour
-	default:
-		return time.Time{}, time.Time{}, fmt.Errorf("invalid range %q", rangeKey)
+// overviewWindow resolves the analytics window [start, end).
+// Preset ranges align the exclusive end to align (>= 1h) and look back the
+// fixed preset duration. Custom ranges use the caller-supplied boundaries verbatim.
+func overviewWindow(rangeKey, startAt, endAt string, now time.Time, align time.Duration) (start, end time.Time, err error) {
+	if rangeKey == "custom" {
+		return parseOverviewCustomWindow(startAt, endAt)
 	}
-	if align <= 0 {
+	lookback, err := overviewPresetLookback(rangeKey)
+	if err != nil {
+		return time.Time{}, time.Time{}, err
+	}
+	if align < time.Hour {
 		align = time.Hour
 	}
 	end = now.UTC().Truncate(align).Add(align)
 	start = end.Add(-lookback)
 	return start, end, nil
+}
+
+// resolveOverviewSeriesWindow resolves the series handler's window and bucket
+// interval in one pass. For preset ranges the bucket width decides the sub-hour
+// alignment (preserving prior behavior); for custom ranges alignment is moot
+// since the caller supplies exact boundaries (bucket_origin = start).
+func resolveOverviewSeriesWindow(rangeKey, startAt, endAt, bucketKey string, now time.Time) (start, end time.Time, bucketInterval time.Duration, err error) {
+	var span time.Duration
+	if rangeKey == "custom" {
+		start, end, err = parseOverviewCustomWindow(startAt, endAt)
+		if err != nil {
+			return time.Time{}, time.Time{}, 0, err
+		}
+		span = end.Sub(start)
+		bucketInterval, err = overviewSeriesBucketIntervalFor(bucketKey, span)
+		if err != nil {
+			return time.Time{}, time.Time{}, 0, err
+		}
+		return start, end, bucketInterval, nil
+	}
+	lookback, err := overviewPresetLookback(rangeKey)
+	if err != nil {
+		return time.Time{}, time.Time{}, 0, err
+	}
+	span = lookback
+	bucketInterval, err = overviewSeriesBucketIntervalFor(bucketKey, span)
+	if err != nil {
+		return time.Time{}, time.Time{}, 0, err
+	}
+	align := bucketInterval
+	if align > time.Hour {
+		align = time.Hour
+	}
+	end = now.UTC().Truncate(align).Add(align)
+	start = end.Add(-lookback)
+	return start, end, bucketInterval, nil
 }
 
 func overviewBuckets(start, end time.Time, interval time.Duration) []time.Time {
@@ -147,7 +211,7 @@ func (s *Server) handleGetOverviewSummary(ctx context.Context, in *contract.GetO
 	if err != nil {
 		return nil, err
 	}
-	start, end, err := overviewWindow(in.Range, time.Now())
+	start, end, err := overviewWindow(in.Range, in.StartAt, in.EndAt, time.Now(), time.Hour)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
@@ -262,7 +326,7 @@ func (s *Server) handleGetOverviewDistribution(ctx context.Context, in *contract
 	if err != nil {
 		return nil, err
 	}
-	start, end, err := overviewWindow(in.Range, time.Now())
+	start, end, err := overviewWindow(in.Range, in.StartAt, in.EndAt, time.Now(), time.Hour)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
@@ -359,15 +423,7 @@ func (s *Server) handleGetOverviewSeries(ctx context.Context, in *contract.GetOv
 	if err != nil {
 		return nil, err
 	}
-	bucketInterval, err := overviewSeriesBucketIntervalFor(in.Range, in.Bucket)
-	if err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
-	}
-	align := bucketInterval
-	if align > time.Hour {
-		align = time.Hour
-	}
-	start, end, err := overviewWindowAligned(in.Range, time.Now(), align)
+	start, end, bucketInterval, err := resolveOverviewSeriesWindow(in.Range, in.StartAt, in.EndAt, in.Bucket, time.Now())
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
@@ -656,7 +712,7 @@ func (s *Server) handleGetOverviewSpeedBoxplot(ctx context.Context, in *contract
 	if err != nil {
 		return nil, err
 	}
-	start, end, err := overviewWindow(in.Range, time.Now())
+	start, end, err := overviewWindow(in.Range, in.StartAt, in.EndAt, time.Now(), time.Hour)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}

@@ -575,6 +575,10 @@ export async function listUpstreamModelLabels(): Promise<string[]> {
 
 function overviewQuery(filters: OverviewFilters) {
   const query: Record<string, unknown> = { range: filters.range }
+  if (filters.range === 'custom') {
+    if (filters.startAt !== undefined) query.startAt = filters.startAt
+    if (filters.endAt !== undefined) query.endAt = filters.endAt
+  }
   if (filters.apiKeyId !== undefined) query.apiKeyId = filters.apiKeyId
   if (filters.model !== undefined) query.model = filters.model
   if (filters.upstreamModel !== undefined) query.upstreamModel = filters.upstreamModel
@@ -631,6 +635,10 @@ export function invalidateOverview(client: QueryClient) {
 
 function adminOverviewQuery(filters: AdminOverviewFilters) {
   const query: Record<string, unknown> = { range: filters.range }
+  if (filters.range === 'custom') {
+    if (filters.startAt !== undefined) query.startAt = filters.startAt
+    if (filters.endAt !== undefined) query.endAt = filters.endAt
+  }
   if (filters.userId !== undefined) query.userId = filters.userId
   if (filters.model !== undefined) query.model = filters.model
   if (filters.upstreamModel !== undefined) query.upstreamModel = filters.upstreamModel
