@@ -463,7 +463,7 @@ watch(detailTabs, (tabs) => {
                   >{{ selected.statusCode }}</span
                 >
               </Field>
-              <Field label="停止原因" as="div">
+              <Field label="完成原因" as="div">
                 <Tag :variant="finishReasonVariant(selected.finishReason)">
                   {{ finishReasonLabel(selected.finishReason) }}
                 </Tag>

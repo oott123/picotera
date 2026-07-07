@@ -55,6 +55,7 @@ const filters = reactive({
   startAt: typeof route.query.startAt === 'string' ? route.query.startAt : '',
   endAt: typeof route.query.endAt === 'string' ? route.query.endAt : '',
   emptyResponse: 0,
+  finishReason: 0,
 })
 
 const typeOptions: { value: RequestKind; label: string }[] = [
@@ -97,6 +98,7 @@ const requestFilters = computed<RequestsFilters>(() => {
     startAt?: string
     endAt?: string
     emptyResponse?: boolean
+    finishReason?: number
   } = {}
   if (filters.type === 'meta') out.type = 0
   else if (filters.type === 'upstream') out.type = 1
@@ -109,6 +111,7 @@ const requestFilters = computed<RequestsFilters>(() => {
   if (filters.startAt) out.startAt = filters.startAt
   if (filters.endAt) out.endAt = filters.endAt
   if (filters.emptyResponse) out.emptyResponse = true
+  if (filters.finishReason) out.finishReason = filters.finishReason
   return out
 })
 
@@ -179,6 +182,7 @@ watch(
     filters.startAt,
     filters.endAt,
     filters.emptyResponse,
+    filters.finishReason,
   ],
   () => {
     resetPaginationMemory()
@@ -335,7 +339,7 @@ const columns = computed<AutoDataTableColumn<RequestView>[]>(() => {
       headerClass:
         filters.model || filters.upstreamModel ? 'shadow-[inset_0_-2px_0_var(--color-accent)]' : '',
     },
-    { key: 'status', header: '状态' },
+    { key: 'status', header: '完成原因', headerClass: filters.finishReason ? 'shadow-[inset_0_-2px_0_var(--color-accent)]' : '' },
     { key: 'tokens', header: 'Token', headerClass: filters.emptyResponse ? 'shadow-[inset_0_-2px_0_var(--color-accent)]' : '' },
     { key: 'cost', header: '成本', align: 'right' },
     { key: 'timeSpentMs', header: '耗时', align: 'right' },
@@ -388,6 +392,21 @@ const upstreamModelOptions = computed<ColumnFilterOption<string>[]>(() => {
   return opts
 })
 
+// Finish-reason filter options: the 7 fixed finish reasons (1..7) plus a
+// "失败" catch-all (sentinel -1 = all reasons except 正常结束/3). "Pending"
+// (NULL finish_reason) is intentionally excluded — in-flight rows still show
+// but are not a filter value. Labels mirror finishReasonLabel's fixed cases.
+const finishReasonOptions: ColumnFilterOption<number>[] = [
+  { value: -1, label: '非正常结束' },
+  { value: 3, label: '正常结束' },
+  { value: 1, label: '内部错误' },
+  { value: 2, label: '已取消' },
+  { value: 4, label: '请求头超时' },
+  { value: 5, label: '读取超时' },
+  { value: 6, label: '流式错误' },
+  { value: 7, label: '控制台打断' },
+]
+
 function activeFilterCount(): number {
   let n = 0
   if (filters.providerId) n++
@@ -398,6 +417,7 @@ function activeFilterCount(): number {
   if (filters.projectId) n++
   if (filters.startAt || filters.endAt) n++
   if (filters.emptyResponse) n++
+  if (filters.finishReason) n++
   return n
 }
 
@@ -411,6 +431,7 @@ function clearAllFilters() {
   filters.startAt = ''
   filters.endAt = ''
   filters.emptyResponse = 0
+  filters.finishReason = 0
 }
 
 function clearTraceFilter() {
@@ -656,6 +677,15 @@ function resetCursorAndReload() {
             :searchable="false"
           />
         </template>
+        <template #header-status>
+          <ColumnFilter
+            v-model.number="filters.finishReason"
+            label="完成原因"
+            :options="finishReasonOptions"
+            :empty-value="0"
+            :searchable="false"
+          />
+        </template>
         <template #cell-createdAt="{ row }">
           <div class="flex flex-col leading-tight">
             <span class="font-mono tabular-nums text-ink">{{
@@ -712,12 +742,12 @@ function resetCursorAndReload() {
             <span
               v-if="requestState(row) === 'pending'"
               class="inline-flex items-center px-1.5 py-0.5 rounded-[5px] font-mono text-2xs leading-[1.2] bg-surface-100 text-ink-muted border border-line-soft"
-              >...</span
+              >处理中</span
             >
             <span
               v-else-if="requestState(row) === 'ok'"
               class="inline-flex items-center px-1.5 py-0.5 rounded-[5px] text-2xs leading-[1.2] bg-ok-faint text-ok-ink border border-transparent"
-              >成功</span
+              >{{ finishReasonLabel(row.finishReason) }}</span
             >
             <span
               v-else

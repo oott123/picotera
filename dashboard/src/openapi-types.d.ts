@@ -3607,6 +3607,7 @@ export interface operations {
                 startAt?: string;
                 endAt?: string;
                 emptyResponse?: boolean;
+                finishReason?: number;
             };
             header?: never;
             path?: never;

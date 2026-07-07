@@ -49,6 +49,14 @@ WHERE
       )
     )
   )
+  -- finishReason filter: exact match on finish-reason values 1..7, or sentinel -1
+  -- for "失败" (all failures = finish_reason IS NOT NULL AND <> 3 正常结束).
+  -- NULL narg = no filter; "pending" (NULL finish_reason) is never a filter value.
+  AND (
+    sqlc.narg('finish_reason')::int IS NULL
+    OR (sqlc.narg('finish_reason')::int = -1 AND r.finish_reason IS NOT NULL AND r.finish_reason <> 3)
+    OR r.finish_reason = sqlc.narg('finish_reason')::int
+  )
   AND (
     sqlc.narg('cursor_created_at')::timestamp IS NULL
     OR (r.created_at, r.id) < (sqlc.narg('cursor_created_at')::timestamp, sqlc.narg('cursor_id')::text)

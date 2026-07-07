@@ -108,6 +108,10 @@ func (s *Server) handleListRequests(ctx context.Context, input *contract.ListReq
 	if input.UpstreamModel != "" {
 		filterUpstreamModel = pgtype.Text{String: input.UpstreamModel, Valid: true}
 	}
+	var filterFinishReason pgtype.Int4
+	if input.FinishReason != 0 {
+		filterFinishReason = pgtype.Int4{Int32: input.FinishReason, Valid: true}
+	}
 	var filterTraceID pgtype.Text
 	if input.TraceID != "" {
 		if err := validateTraceID(input.TraceID); err != nil {
@@ -132,6 +136,7 @@ func (s *Server) handleListRequests(ctx context.Context, input *contract.ListReq
 		StartAt:         startAt,
 		EndAt:           endAt,
 		EmptyResponse:   pgtype.Bool{Bool: input.EmptyResponse, Valid: true},
+		FinishReason:    filterFinishReason,
 		CursorCreatedAt: cursorCreatedAt,
 		CursorID:        cursorID,
 		Limit:           pgtype.Int4{Int32: fetchLimit, Valid: true},

@@ -279,12 +279,20 @@ WHERE
       )
     )
   )
+  -- finishReason filter: exact match on finish-reason values 1..7, or sentinel -1
+  -- for "失败" (all failures = finish_reason IS NOT NULL AND <> 3 正常结束).
+  -- NULL narg = no filter; "pending" (NULL finish_reason) is never a filter value.
   AND (
-    $12::timestamp IS NULL
-    OR (r.created_at, r.id) < ($12::timestamp, $13::text)
+    $12::int IS NULL
+    OR ($12::int = -1 AND r.finish_reason IS NOT NULL AND r.finish_reason <> 3)
+    OR r.finish_reason = $12::int
+  )
+  AND (
+    $13::timestamp IS NULL
+    OR (r.created_at, r.id) < ($13::timestamp, $14::text)
   )
 ORDER BY r.created_at DESC, r.id DESC
-LIMIT $14::int
+LIMIT $15::int
 `
 
 type ListRequestsParams struct {
@@ -299,6 +307,7 @@ type ListRequestsParams struct {
 	StartAt         pgtype.Timestamp `json:"startAt"`
 	EndAt           pgtype.Timestamp `json:"endAt"`
 	EmptyResponse   pgtype.Bool      `json:"emptyResponse"`
+	FinishReason    pgtype.Int4      `json:"finishReason"`
 	CursorCreatedAt pgtype.Timestamp `json:"cursorCreatedAt"`
 	CursorID        pgtype.Text      `json:"cursorId"`
 	Limit           pgtype.Int4      `json:"limit"`
@@ -349,6 +358,7 @@ func (q *Queries) ListRequests(ctx context.Context, arg ListRequestsParams) ([]L
 		arg.StartAt,
 		arg.EndAt,
 		arg.EmptyResponse,
+		arg.FinishReason,
 		arg.CursorCreatedAt,
 		arg.CursorID,
 		arg.Limit,

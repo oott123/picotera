@@ -361,6 +361,7 @@ type ListRequestsRequest struct {
 	StartAt       string `query:"startAt,omitempty"`
 	EndAt         string `query:"endAt,omitempty"`
 	EmptyResponse bool   `query:"emptyResponse,omitempty"`
+	FinishReason  int32  `query:"finishReason,omitempty"`
 }
 
 type ListRequestsResponse = PaginatedResponse[RequestView]
