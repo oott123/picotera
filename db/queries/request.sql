@@ -1,5 +1,5 @@
 -- name: ListRequests :many
-SELECT r.id, r.span_id, r.parent_span_id, r.type, r.status, r.provider_id, r.endpoint_path, r.api_key_id, r.model,
+SELECT r.id, r.span_id, r.parent_span_id, r.type, r.provider_id, r.endpoint_path, r.api_key_id, r.model,
        r.upstream_model, r.input_tokens, r.cache_read_tokens, r.output_tokens, r.cache_write_tokens, r.cache_write_1h_tokens,
        r.status_code, r.error_message, r.ttft_ms, r.time_spent_ms, r.created_at,
        r.model_cost, r.model_cost_currency,
@@ -174,7 +174,7 @@ WITH anchor AS (
     AND request.created_at = sqlc.arg('id_created_at')::timestamp
     AND request.user_id = sqlc.arg('user_id')::bigint
 )
-SELECT r.id, r.span_id, r.parent_span_id, r.type, r.status, r.provider_id, r.endpoint_path,
+SELECT r.id, r.span_id, r.parent_span_id, r.type, r.provider_id, r.endpoint_path,
        r.api_key_id, r.model, r.upstream_model, r.input_tokens, r.cache_read_tokens, r.output_tokens,
        r.cache_write_tokens, r.cache_write_1h_tokens, r.status_code, r.error_message, r.ttft_ms, r.time_spent_ms,
        r.created_at,
@@ -196,7 +196,6 @@ UPDATE request SET
   api_key_id = CASE WHEN sqlc.arg('set_api_key_id')::bool THEN sqlc.narg('api_key_id')::int ELSE api_key_id END,
   user_id = CASE WHEN sqlc.arg('set_user_id')::bool THEN sqlc.narg('user_id')::bigint ELSE user_id END,
   project_id = CASE WHEN sqlc.arg('set_project_id')::bool THEN sqlc.narg('project_id')::int ELSE project_id END,
-  status = CASE WHEN sqlc.arg('set_status')::bool THEN sqlc.arg('status')::int ELSE status END,
   status_code = CASE WHEN sqlc.arg('set_status_code')::bool THEN sqlc.narg('status_code')::int ELSE status_code END,
   error_message = CASE WHEN sqlc.arg('set_error_message')::bool THEN sqlc.narg('error_message')::text ELSE error_message END,
   time_spent_ms = CASE WHEN sqlc.arg('set_time_spent_ms')::bool THEN sqlc.narg('time_spent_ms')::int ELSE time_spent_ms END,

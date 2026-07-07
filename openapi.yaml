@@ -1458,9 +1458,6 @@ components:
           type: string
         spanId:
           type: string
-        status:
-          format: int32
-          type: integer
         statusCode:
           format: int32
           type: integer
@@ -1483,7 +1480,6 @@ components:
       required:
         - id
         - type
-        - status
       type: object
     ScriptMutateBody:
       additionalProperties: false

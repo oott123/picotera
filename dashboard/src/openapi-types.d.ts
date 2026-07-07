@@ -1732,8 +1732,6 @@ export interface components {
             responseArtifactUrl?: string;
             spanId?: string;
             /** Format: int32 */
-            status: number;
-            /** Format: int32 */
             statusCode?: number;
             /** Format: int32 */
             timeSpentMs?: number;

@@ -223,7 +223,6 @@ func (f *gatewayFlow) insertMetaRequest() bool {
 		SpanID:        pgtype.Text{String: metaID, Valid: true},
 		ParentSpanID:  parentSpanIDPg,
 		Type:          db.RequestTypeMeta,
-		Status:        db.RequestStatusPending,
 		ProviderID:    pgtype.Int4{Valid: false},
 		EndpointPath:  pgtype.Text{String: f.config.Endpoint.Path, Valid: true},
 		ApiKeyID:      pgtype.Int4{Valid: false},

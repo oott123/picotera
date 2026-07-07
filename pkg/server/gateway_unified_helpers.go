@@ -344,15 +344,13 @@ func (h *gatewayHandler) unifiedStreamSuccess(input successInput) {
 		Model(pgtype.Text{String: a.routedModel, Valid: a.routedModel != ""}).
 		UpstreamModel(pgtype.Text{String: a.upstreamModel, Valid: a.upstreamModel != ""}).
 		EndpointPath(pgtype.Text{String: a.metaEndpointPath, Valid: a.metaEndpointPath != ""}).
-		ApiKeyID(a.apiKeyID).
-		Status(db.RequestStatusHeaderReceived))
+		ApiKeyID(a.apiKeyID))
 	h.updateRequest(hdrCtx, newRequestUpdate(a.upstreamID, a.upstreamCreatedAt).
 		ProviderID(pgtype.Int4{Int32: a.providerID, Valid: true}).
 		Model(pgtype.Text{String: a.routedModel, Valid: a.routedModel != ""}).
 		UpstreamModel(pgtype.Text{String: a.upstreamModel, Valid: a.upstreamModel != ""}).
 		EndpointPath(pgtype.Text{String: a.upstreamPath, Valid: a.upstreamPath != ""}).
-		ApiKeyID(a.apiKeyID).
-		Status(db.RequestStatusHeaderReceived))
+		ApiKeyID(a.apiKeyID))
 
 	// Live records, one per row and each the single source for that row's live
 	// view and persisted artifact. The upstream row records the upstream-format
@@ -579,11 +577,9 @@ func (h *gatewayHandler) unifiedStreamSuccess(input successInput) {
 	// The extractor wraps the upstream's native bytes, so the error is detected
 	// in the upstream format (the true source of the failure).
 	streamErr := extractor.StreamError()
-	status := int32(db.RequestStatusCompleted)
 	errMsg := pgtype.Text{Valid: false}
 	fr := finishReason
 	if streamErr != "" {
-		status = int32(db.RequestStatusFailed)
 		errMsg = pgtype.Text{String: streamErr, Valid: true}
 		fr = int32(db.FinishReasonStreamError)
 		input.Flow.runStreamErrorHook(a.providerID, input.CurrentRetryCount, input.TotalAttemptCount, resp.StatusCode, streamErr)
@@ -596,7 +592,6 @@ func (h *gatewayHandler) unifiedStreamSuccess(input successInput) {
 		StatusCode(pgtype.Int4{Int32: int32(resp.StatusCode), Valid: true}).
 		ErrorMessage(errMsg).
 		TimeSpentMs(pgtype.Int4{Int32: upstreamTimeSpent, Valid: true}).
-		Status(status).
 		TtftMs(ttftMs).
 		InputTokens(inputTokens).
 		OutputTokens(outputTokens).
@@ -614,7 +609,6 @@ func (h *gatewayHandler) unifiedStreamSuccess(input successInput) {
 		StatusCode(pgtype.Int4{Int32: int32(resp.StatusCode), Valid: true}).
 		ErrorMessage(errMsg).
 		TimeSpentMs(pgtype.Int4{Int32: metaTimeSpent, Valid: true}).
-		Status(status).
 		TtftMs(ttftMs).
 		InputTokens(inputTokens).
 		OutputTokens(outputTokens).
@@ -639,14 +633,12 @@ func (h *gatewayHandler) failUnifiedSuccess(ctx context.Context, a unifiedStream
 		StatusCode(pgtype.Int4{Int32: int32(a.resp.StatusCode), Valid: true}).
 		ErrorMessage(pgtype.Text{String: errMsg, Valid: true}).
 		TimeSpentMs(pgtype.Int4{Int32: int32(time.Since(a.attemptStart).Milliseconds()), Valid: true}).
-		Status(db.RequestStatusFailed).
 		FinishReason(pgtype.Int4{Int32: db.FinishReasonInternal, Valid: true}))
 	respBody := writeGatewayError(a.w, http.StatusBadGateway, "bridge failed: "+errMsg, errorx.UpstreamError.Error())
 	h.updateRequest(ctx, newRequestUpdate(a.metaID, a.metaCreatedAt).
 		StatusCode(pgtype.Int4{Int32: http.StatusBadGateway, Valid: true}).
 		ErrorMessage(pgtype.Text{String: errMsg, Valid: true}).
 		TimeSpentMs(pgtype.Int4{Int32: int32(time.Since(a.gatewayStart).Milliseconds()), Valid: true}).
-		Status(db.RequestStatusFailed).
 		FinishReason(pgtype.Int4{Int32: db.FinishReasonInternal, Valid: true}))
 	artifactBody := respBody
 	if !a.recordBody {

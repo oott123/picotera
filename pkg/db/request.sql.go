@@ -12,7 +12,7 @@ import (
 )
 
 const getRequest = `-- name: GetRequest :one
-SELECT id, span_id, parent_span_id, provider_id, endpoint_path, api_key_id, model, input_tokens, cache_read_tokens, output_tokens, cache_write_tokens, status_code, error_message, ttft_ms, time_spent_ms, created_at, type, status, upstream_model, model_cost, model_cost_currency, user_message_preview, cache_write_1h_tokens, project_id, finish_reason, inferred_provider, inferred_model, inferred_model_source, user_id FROM request
+SELECT id, span_id, parent_span_id, provider_id, endpoint_path, api_key_id, model, input_tokens, cache_read_tokens, output_tokens, cache_write_tokens, status_code, error_message, ttft_ms, time_spent_ms, created_at, type, upstream_model, model_cost, model_cost_currency, user_message_preview, cache_write_1h_tokens, project_id, finish_reason, inferred_provider, inferred_model, inferred_model_source, user_id FROM request
 WHERE id = $1
   AND created_at = $2::timestamp
   AND user_id = $3::bigint
@@ -45,7 +45,6 @@ func (q *Queries) GetRequest(ctx context.Context, arg GetRequestParams) (Request
 		&i.TimeSpentMs,
 		&i.CreatedAt,
 		&i.Type,
-		&i.Status,
 		&i.UpstreamModel,
 		&i.ModelCost,
 		&i.ModelCostCurrency,
@@ -229,7 +228,7 @@ func (q *Queries) ListRequestTraces(ctx context.Context, arg ListRequestTracesPa
 }
 
 const listRequests = `-- name: ListRequests :many
-SELECT r.id, r.span_id, r.parent_span_id, r.type, r.status, r.provider_id, r.endpoint_path, r.api_key_id, r.model,
+SELECT r.id, r.span_id, r.parent_span_id, r.type, r.provider_id, r.endpoint_path, r.api_key_id, r.model,
        r.upstream_model, r.input_tokens, r.cache_read_tokens, r.output_tokens, r.cache_write_tokens, r.cache_write_1h_tokens,
        r.status_code, r.error_message, r.ttft_ms, r.time_spent_ms, r.created_at,
        r.model_cost, r.model_cost_currency,
@@ -318,7 +317,6 @@ type ListRequestsRow struct {
 	SpanID              pgtype.Text      `json:"spanId"`
 	ParentSpanID        pgtype.Text      `json:"parentSpanId"`
 	Type                int32            `json:"type"`
-	Status              int32            `json:"status"`
 	ProviderID          pgtype.Int4      `json:"providerId"`
 	EndpointPath        pgtype.Text      `json:"endpointPath"`
 	ApiKeyID            pgtype.Int4      `json:"apiKeyId"`
@@ -375,7 +373,6 @@ func (q *Queries) ListRequests(ctx context.Context, arg ListRequestsParams) ([]L
 			&i.SpanID,
 			&i.ParentSpanID,
 			&i.Type,
-			&i.Status,
 			&i.ProviderID,
 			&i.EndpointPath,
 			&i.ApiKeyID,
@@ -419,7 +416,7 @@ WITH anchor AS (
     AND request.created_at = $3::timestamp
     AND request.user_id = $1::bigint
 )
-SELECT r.id, r.span_id, r.parent_span_id, r.type, r.status, r.provider_id, r.endpoint_path,
+SELECT r.id, r.span_id, r.parent_span_id, r.type, r.provider_id, r.endpoint_path,
        r.api_key_id, r.model, r.upstream_model, r.input_tokens, r.cache_read_tokens, r.output_tokens,
        r.cache_write_tokens, r.cache_write_1h_tokens, r.status_code, r.error_message, r.ttft_ms, r.time_spent_ms,
        r.created_at,
@@ -444,7 +441,6 @@ type ListRequestsBySpanRow struct {
 	SpanID              pgtype.Text      `json:"spanId"`
 	ParentSpanID        pgtype.Text      `json:"parentSpanId"`
 	Type                int32            `json:"type"`
-	Status              int32            `json:"status"`
 	ProviderID          pgtype.Int4      `json:"providerId"`
 	EndpointPath        pgtype.Text      `json:"endpointPath"`
 	ApiKeyID            pgtype.Int4      `json:"apiKeyId"`
@@ -485,7 +481,6 @@ func (q *Queries) ListRequestsBySpan(ctx context.Context, arg ListRequestsBySpan
 			&i.SpanID,
 			&i.ParentSpanID,
 			&i.Type,
-			&i.Status,
 			&i.ProviderID,
 			&i.EndpointPath,
 			&i.ApiKeyID,
@@ -530,24 +525,23 @@ UPDATE request SET
   api_key_id = CASE WHEN $9::bool THEN $10::int ELSE api_key_id END,
   user_id = CASE WHEN $11::bool THEN $12::bigint ELSE user_id END,
   project_id = CASE WHEN $13::bool THEN $14::int ELSE project_id END,
-  status = CASE WHEN $15::bool THEN $16::int ELSE status END,
-  status_code = CASE WHEN $17::bool THEN $18::int ELSE status_code END,
-  error_message = CASE WHEN $19::bool THEN $20::text ELSE error_message END,
-  time_spent_ms = CASE WHEN $21::bool THEN $22::int ELSE time_spent_ms END,
-  ttft_ms = CASE WHEN $23::bool THEN $24::int ELSE ttft_ms END,
-  input_tokens = CASE WHEN $25::bool THEN $26::int ELSE input_tokens END,
-  output_tokens = CASE WHEN $27::bool THEN $28::int ELSE output_tokens END,
-  cache_read_tokens = CASE WHEN $29::bool THEN $30::int ELSE cache_read_tokens END,
-  cache_write_tokens = CASE WHEN $31::bool THEN $32::int ELSE cache_write_tokens END,
-  cache_write_1h_tokens = CASE WHEN $33::bool THEN $34::int ELSE cache_write_1h_tokens END,
-  model_cost = CASE WHEN $35::bool THEN $36::numeric ELSE model_cost END,
-  model_cost_currency = CASE WHEN $37::bool THEN $38::text ELSE model_cost_currency END,
-  finish_reason = CASE WHEN $39::bool THEN $40::int ELSE finish_reason END,
-  inferred_provider = CASE WHEN $41::bool THEN $42::text ELSE inferred_provider END,
-  inferred_model = CASE WHEN $43::bool THEN $44::text ELSE inferred_model END,
-  inferred_model_source = CASE WHEN $45::bool THEN $46::smallint ELSE inferred_model_source END,
-  user_message_preview = CASE WHEN $47::bool THEN $48::text ELSE user_message_preview END
-WHERE id = $49::text AND created_at = $50::timestamp
+  status_code = CASE WHEN $15::bool THEN $16::int ELSE status_code END,
+  error_message = CASE WHEN $17::bool THEN $18::text ELSE error_message END,
+  time_spent_ms = CASE WHEN $19::bool THEN $20::int ELSE time_spent_ms END,
+  ttft_ms = CASE WHEN $21::bool THEN $22::int ELSE ttft_ms END,
+  input_tokens = CASE WHEN $23::bool THEN $24::int ELSE input_tokens END,
+  output_tokens = CASE WHEN $25::bool THEN $26::int ELSE output_tokens END,
+  cache_read_tokens = CASE WHEN $27::bool THEN $28::int ELSE cache_read_tokens END,
+  cache_write_tokens = CASE WHEN $29::bool THEN $30::int ELSE cache_write_tokens END,
+  cache_write_1h_tokens = CASE WHEN $31::bool THEN $32::int ELSE cache_write_1h_tokens END,
+  model_cost = CASE WHEN $33::bool THEN $34::numeric ELSE model_cost END,
+  model_cost_currency = CASE WHEN $35::bool THEN $36::text ELSE model_cost_currency END,
+  finish_reason = CASE WHEN $37::bool THEN $38::int ELSE finish_reason END,
+  inferred_provider = CASE WHEN $39::bool THEN $40::text ELSE inferred_provider END,
+  inferred_model = CASE WHEN $41::bool THEN $42::text ELSE inferred_model END,
+  inferred_model_source = CASE WHEN $43::bool THEN $44::smallint ELSE inferred_model_source END,
+  user_message_preview = CASE WHEN $45::bool THEN $46::text ELSE user_message_preview END
+WHERE id = $47::text AND created_at = $48::timestamp
 `
 
 type UpdateRequestParams struct {
@@ -565,8 +559,6 @@ type UpdateRequestParams struct {
 	UserID                 pgtype.Int8      `json:"userId"`
 	SetProjectID           bool             `json:"setProjectId"`
 	ProjectID              pgtype.Int4      `json:"projectId"`
-	SetStatus              bool             `json:"setStatus"`
-	Status                 int32            `json:"status"`
 	SetStatusCode          bool             `json:"setStatusCode"`
 	StatusCode             pgtype.Int4      `json:"statusCode"`
 	SetErrorMessage        bool             `json:"setErrorMessage"`
@@ -619,8 +611,6 @@ func (q *Queries) UpdateRequest(ctx context.Context, arg UpdateRequestParams) er
 		arg.UserID,
 		arg.SetProjectID,
 		arg.ProjectID,
-		arg.SetStatus,
-		arg.Status,
 		arg.SetStatusCode,
 		arg.StatusCode,
 		arg.SetErrorMessage,

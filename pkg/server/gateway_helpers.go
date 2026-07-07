@@ -889,7 +889,6 @@ func (s *Server) completeFailedAttemptWithReason(ctx context.Context, upstreamID
 		StatusCode(pgtype.Int4{Int32: statusCode, Valid: true}).
 		ErrorMessage(pgtype.Text{String: errMsg, Valid: true}).
 		TimeSpentMs(pgtype.Int4{Int32: int32(time.Since(attemptStart).Milliseconds()), Valid: true}).
-		Status(db.RequestStatusFailed).
 		FinishReason(pgtype.Int4{Int32: finishReason, Valid: true}))
 }
 

@@ -16,7 +16,6 @@ type RequestView struct {
 	SpanID              string   `json:"spanId,omitempty"`
 	ParentSpanID        string   `json:"parentSpanId,omitempty"`
 	Type                int32    `json:"type"`
-	Status              int32    `json:"status"`
 	FinishReason        *int32   `json:"finishReason,omitempty"`
 	ProviderID          *int32   `json:"providerId,omitempty"`
 	EndpointPath        string   `json:"endpointPath,omitempty"`
@@ -73,7 +72,6 @@ type requestLike struct {
 	SpanID              pgtype.Text
 	ParentSpanID        pgtype.Text
 	Type                int32
-	Status              int32
 	FinishReason        pgtype.Int4
 	ProviderID          pgtype.Int4
 	EndpointPath        pgtype.Text
@@ -104,7 +102,6 @@ func toRequestView(r requestLike) *RequestView {
 	view := &RequestView{
 		ID:     r.ID,
 		Type:   r.Type,
-		Status: r.Status,
 	}
 	if r.SpanID.Valid {
 		view.SpanID = r.SpanID.String
@@ -208,7 +205,6 @@ func ToRequestView(r *db.Request) *RequestView {
 		SpanID:              r.SpanID,
 		ParentSpanID:        r.ParentSpanID,
 		Type:                r.Type,
-		Status:              r.Status,
 		FinishReason:        r.FinishReason,
 		ProviderID:          r.ProviderID,
 		EndpointPath:        r.EndpointPath,
@@ -242,7 +238,6 @@ func ToListRequestRowView(r *db.ListRequestsRow) *RequestView {
 		SpanID:              r.SpanID,
 		ParentSpanID:        r.ParentSpanID,
 		Type:                r.Type,
-		Status:              r.Status,
 		FinishReason:        r.FinishReason,
 		ProviderID:          r.ProviderID,
 		EndpointPath:        r.EndpointPath,
@@ -276,7 +271,6 @@ func ToListRequestsBySpanRowView(r *db.ListRequestsBySpanRow) *RequestView {
 		SpanID:              r.SpanID,
 		ParentSpanID:        r.ParentSpanID,
 		Type:                r.Type,
-		Status:              r.Status,
 		FinishReason:        r.FinishReason,
 		ProviderID:          r.ProviderID,
 		EndpointPath:        r.EndpointPath,

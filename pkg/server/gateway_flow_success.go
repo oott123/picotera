@@ -118,15 +118,13 @@ func (h *gatewayHandler) markPathHeadersReceived(input successInput) {
 		Model(pgtype.Text{String: input.RoutedModel, Valid: input.RoutedModel != ""}).
 		UpstreamModel(pgtype.Text{String: input.UpstreamModel, Valid: input.UpstreamModel != ""}).
 		EndpointPath(pgtype.Text{String: endpointPath, Valid: true}).
-		ApiKeyID(apiKeyID).
-		Status(db.RequestStatusHeaderReceived))
+		ApiKeyID(apiKeyID))
 	h.updateRequest(bgCtx, newRequestUpdate(input.UpstreamID, input.UpstreamCreatedAt).
 		ProviderID(pgtype.Int4{Int32: input.ProviderID, Valid: true}).
 		Model(pgtype.Text{String: input.RoutedModel, Valid: input.RoutedModel != ""}).
 		UpstreamModel(pgtype.Text{String: input.UpstreamModel, Valid: input.UpstreamModel != ""}).
 		EndpointPath(pgtype.Text{String: endpointPath, Valid: true}).
-		ApiKeyID(apiKeyID).
-		Status(db.RequestStatusHeaderReceived))
+		ApiKeyID(apiKeyID))
 }
 
 func copyPathSuccessHeaders(w http.ResponseWriter, resp *http.Response) {
@@ -155,7 +153,6 @@ func (h *gatewayHandler) openPathInternalReader(input successInput) (*lockedResp
 			StatusCode(pgtype.Int4{Int32: http.StatusBadGateway, Valid: true}).
 			ErrorMessage(pgtype.Text{String: "decode upstream response: " + derr.Error(), Valid: true}).
 			TimeSpentMs(pgtype.Int4{Int32: int32(time.Since(input.Flow.startedAt).Milliseconds()), Valid: true}).
-			Status(db.RequestStatusFailed).
 			FinishReason(pgtype.Int4{Int32: db.FinishReasonInternal, Valid: true}))
 		h.uploadMetaResponseArtifact(bgCtx, metaID, metaCreatedAt, http.StatusBadGateway, w.Header().Clone(), input.Flow.artifactBody(respBody), input.Flow.collectLogs(), nil)
 		_ = resp.Body.Close()
@@ -244,11 +241,9 @@ func (h *gatewayHandler) completeGatewaySuccess(input successInput, m ResponseMe
 
 	// An in-stream error event (HTTP 200 with an error.message payload) marks
 	// both rows failed while keeping the real upstream status code and metrics.
-	status := int32(db.RequestStatusCompleted)
 	errMsg := pgtype.Text{Valid: false}
 	fr := finishReason
 	if streamErr != "" {
-		status = int32(db.RequestStatusFailed)
 		errMsg = pgtype.Text{String: streamErr, Valid: true}
 		fr = int32(db.FinishReasonStreamError)
 		input.Flow.runStreamErrorHook(input.ProviderID, input.CurrentRetryCount, input.TotalAttemptCount, statusCode, streamErr)
@@ -261,7 +256,6 @@ func (h *gatewayHandler) completeGatewaySuccess(input successInput, m ResponseMe
 		StatusCode(pgtype.Int4{Int32: int32(statusCode), Valid: true}).
 		ErrorMessage(errMsg).
 		TimeSpentMs(pgtype.Int4{Int32: upstreamTimeSpent, Valid: true}).
-		Status(status).
 		TtftMs(ttftMs).
 		InputTokens(inputTokens).
 		OutputTokens(outputTokens).
@@ -279,7 +273,6 @@ func (h *gatewayHandler) completeGatewaySuccess(input successInput, m ResponseMe
 		StatusCode(pgtype.Int4{Int32: int32(statusCode), Valid: true}).
 		ErrorMessage(errMsg).
 		TimeSpentMs(pgtype.Int4{Int32: metaTimeSpent, Valid: true}).
-		Status(status).
 		TtftMs(ttftMs).
 		InputTokens(inputTokens).
 		OutputTokens(outputTokens).

@@ -43,10 +43,10 @@ const meta = computed(() => spans.value.find((s) => s.id === s.spanId) ?? null)
 const upstreams = computed(() => spans.value.filter((s) => s.id !== s.spanId))
 const selected = computed(() => spans.value.find((s) => s.id === selectedId.value) ?? null)
 
-// In-flight = pending (0) or header-received (1); these rows have live status
+// In-flight = pending (finishReason not yet set); these rows have live status
 // in process memory and can be interrupted from the dashboard.
 function isInFlight(r: RequestView | null | undefined): boolean {
-  return !!r && (r.status === 0 || r.status === 1)
+  return !!r && (r.finishReason === undefined || r.finishReason === null)
 }
 const selectedInFlight = computed(() => isInFlight(selected.value))
 
@@ -154,12 +154,6 @@ function inferredModelSourceLabel(source: number | undefined | null): string {
   }
 }
 
-function statusVariantTag(code: number | undefined | null): 'ok' | 'default' | 'muted' | 'accent' {
-  if (!code) return 'muted'
-  if (code >= 200 && code < 300) return 'ok'
-  return 'default'
-}
-
 function statusCodeClass(code: number | undefined | null) {
   const c = code ?? 0
   if (c >= 200 && c < 300) return 'bg-ok-faint text-ok-ink'
@@ -169,8 +163,8 @@ function statusCodeClass(code: number | undefined | null) {
 
 type RequestState = 'pending' | 'ok' | 'warn' | 'err'
 function requestState(r: RequestView): RequestState {
-  // status: 0=Pending 1=HeaderReceived 2=Completed 3=Failed
-  if (r.status === 0 || r.status === 1) return 'pending'
+  // pending ⟺ finishReason is null; otherwise classify by statusCode.
+  if (r.finishReason === undefined || r.finishReason === null) return 'pending'
   if (r.statusCode === undefined || r.statusCode === null) return 'err'
   if (r.statusCode >= 200 && r.statusCode < 300) return 'ok'
   if (r.statusCode >= 400 && r.statusCode < 500) return 'warn'
@@ -179,21 +173,6 @@ function requestState(r: RequestView): RequestState {
 
 function typeLabel(t: number) {
   return t === 0 ? 'META' : 'UPSTREAM'
-}
-
-function statusLabel(s: number) {
-  switch (s) {
-    case 0:
-      return 'pending'
-    case 1:
-      return 'header'
-    case 2:
-      return 'completed'
-    case 3:
-      return 'failed'
-    default:
-      return String(s)
-  }
 }
 
 import { finishReasonLabel } from '@/utils/requestLabels'
@@ -400,15 +379,10 @@ watch(detailTabs, (tabs) => {
                   typeLabel(selected.type)
                 }}</Tag>
               </Field>
-              <Field label="状态" as="div">
-                <Tag
-                  :variant="
-                    requestState(selected) === 'pending'
-                      ? 'muted'
-                      : statusVariantTag(selected.statusCode)
-                  "
-                  >{{ statusLabel(selected.status) }}</Tag
-                >
+              <Field label="完成原因" as="div">
+                <Tag :variant="finishReasonVariant(selected.finishReason)">
+                  {{ finishReasonLabel(selected.finishReason) }}
+                </Tag>
               </Field>
               <Field v-if="selected.spanId" label="Span" as="div">
                 <span class="font-mono text-xs text-ink break-all">{{ selected.spanId }}</span>
@@ -462,11 +436,6 @@ watch(detailTabs, (tabs) => {
                   :class="statusCodeClass(selected.statusCode)"
                   >{{ selected.statusCode }}</span
                 >
-              </Field>
-              <Field label="完成原因" as="div">
-                <Tag :variant="finishReasonVariant(selected.finishReason)">
-                  {{ finishReasonLabel(selected.finishReason) }}
-                </Tag>
               </Field>
               <Field label="时间" as="div">
                 <span class="font-mono text-xs">{{ formatTime(selected.createdAt) }}</span>

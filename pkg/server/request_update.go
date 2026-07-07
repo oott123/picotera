@@ -66,12 +66,6 @@ func (u *requestUpdate) ProjectID(v pgtype.Int4) *requestUpdate {
 	return u
 }
 
-func (u *requestUpdate) Status(v int32) *requestUpdate {
-	u.p.SetStatus = true
-	u.p.Status = v
-	return u
-}
-
 func (u *requestUpdate) StatusCode(v pgtype.Int4) *requestUpdate {
 	u.p.SetStatusCode = true
 	u.p.StatusCode = v

@@ -58,7 +58,6 @@ func (f *gatewayFlow) failMeta(status int32, errMsg string, finishReason int32) 
 		StatusCode(pgtype.Int4{Int32: status, Valid: true}).
 		ErrorMessage(pgtype.Text{String: errMsg, Valid: true}).
 		TimeSpentMs(pgtype.Int4{Int32: int32(time.Since(f.startedAt).Milliseconds()), Valid: true}).
-		Status(db.RequestStatusFailed).
 		FinishReason(pgtype.Int4{Int32: finishReason, Valid: true}))
 }
 

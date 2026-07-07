@@ -303,17 +303,17 @@ func (q *Queries) GetProvidersByEndpointTypesAndModel(ctx context.Context, arg G
 
 const insertRequest = `-- name: InsertRequest :one
 INSERT INTO request (
-  id, span_id, parent_span_id, type, status,
+  id, span_id, parent_span_id, type,
   provider_id, endpoint_path, api_key_id, model, upstream_model,
   input_tokens, cache_read_tokens, output_tokens, cache_write_tokens, cache_write_1h_tokens,
   status_code, error_message, ttft_ms, time_spent_ms,
   user_message_preview, project_id, created_at, user_id
 ) VALUES (
-  $1, $2, $3, $4, $5,
-  $6, $7, $8, $9, $10,
-  $11, $12, $13, $14, $15,
-  $16, $17, $18, $19,
-  $20, $21, $22, $23
+  $1, $2, $3, $4,
+  $5, $6, $7, $8, $9,
+  $10, $11, $12, $13, $14,
+  $15, $16, $17, $18,
+  $19, $20, $21, $22
 )
 RETURNING created_at
 `
@@ -323,7 +323,6 @@ type InsertRequestParams struct {
 	SpanID             pgtype.Text      `json:"spanId"`
 	ParentSpanID       pgtype.Text      `json:"parentSpanId"`
 	Type               int32            `json:"type"`
-	Status             int32            `json:"status"`
 	ProviderID         pgtype.Int4      `json:"providerId"`
 	EndpointPath       pgtype.Text      `json:"endpointPath"`
 	ApiKeyID           pgtype.Int4      `json:"apiKeyId"`
@@ -350,7 +349,6 @@ func (q *Queries) InsertRequest(ctx context.Context, arg InsertRequestParams) (p
 		arg.SpanID,
 		arg.ParentSpanID,
 		arg.Type,
-		arg.Status,
 		arg.ProviderID,
 		arg.EndpointPath,
 		arg.ApiKeyID,

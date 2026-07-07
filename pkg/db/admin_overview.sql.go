@@ -88,7 +88,7 @@ WITH speeds AS (
     output_tokens::float8 / ((time_spent_ms - ttft_ms)::float8 / 1000.0) AS decode_speed
   FROM request
   WHERE type = 1
-    AND status = 2
+    AND status_code = 200 AND finish_reason IN (2, 3, 5)
     AND created_at >= $2::timestamp
     AND created_at < $3::timestamp
     AND ($4::bigint IS NULL OR user_id = $4::bigint)

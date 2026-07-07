@@ -6,14 +6,6 @@ const (
 	RequestTypeUpstream = 1
 )
 
-// Request status tracks the lifecycle of a request record.
-const (
-	RequestStatusPending        = 0
-	RequestStatusHeaderReceived = 1
-	RequestStatusCompleted      = 2
-	RequestStatusFailed         = 3
-)
-
 const (
 	FinishReasonInternal       = 1
 	FinishReasonCancelled      = 2

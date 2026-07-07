@@ -517,9 +517,11 @@ function formatTimeParts(iso: string | undefined): { time: string; date: string 
 
 type RequestState = 'pending' | 'ok' | 'err'
 function requestState(r: RequestView): RequestState {
-  // status: 0=Pending 1=HeaderReceived 2=Completed 3=Failed
-  if (r.status === 0 || r.status === 1) return 'pending'
-  if (r.status === 2) return 'ok'
+  // pending ⟺ finishReason null; ok ⟺ 2xx with finishReason in {2,3,5}.
+  if (r.finishReason === undefined || r.finishReason === null) return 'pending'
+  if (r.statusCode !== undefined && r.statusCode !== null
+      && r.statusCode >= 200 && r.statusCode < 300
+      && [2, 3, 5].includes(r.finishReason)) return 'ok'
   return 'err'
 }
 

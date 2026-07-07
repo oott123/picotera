@@ -228,7 +228,6 @@ func (f *gatewayFlow) insertUpstreamAttempt(cand jsx.CandidateView, side gateway
 		SpanID:             pgtype.Text{String: f.meta.ID, Valid: true},
 		ParentSpanID:       f.meta.ParentSpanIDPg,
 		Type:               db.RequestTypeUpstream,
-		Status:             db.RequestStatusPending,
 		ProviderID:         pgtype.Int4{Int32: side.ProviderID, Valid: true},
 		EndpointPath:       pgtype.Text{String: side.EndpointPath, Valid: side.EndpointPath != ""},
 		ApiKeyID:           f.auth.APIKeyID,
@@ -334,7 +333,6 @@ func (f *gatewayFlow) handleUpstreamNonOK(state *attemptState, input attemptInpu
 		StatusCode(pgtype.Int4{Int32: int32(resp.StatusCode), Valid: true}).
 		ErrorMessage(pgtype.Text{String: errMsg, Valid: true}).
 		TimeSpentMs(pgtype.Int4{Int32: int32(time.Since(input.AttemptStart).Milliseconds()), Valid: true}).
-		Status(db.RequestStatusFailed).
 		FinishReason(pgtype.Int4{Int32: db.FinishReasonInternal, Valid: true}))
 	updateAttemptState(state, providerID, resp.StatusCode, errMsg, fmt.Errorf("upstream returned %d: %s", resp.StatusCode, errMsg))
 	if hookDec, brk := f.runAfterUpstreamError(state, false); brk {

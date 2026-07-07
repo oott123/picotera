@@ -127,16 +127,16 @@ WHERE pe.endpoint_path = sqlc.arg('endpoint_path')::text
 
 -- name: InsertRequest :one
 INSERT INTO request (
-  id, span_id, parent_span_id, type, status,
+  id, span_id, parent_span_id, type,
   provider_id, endpoint_path, api_key_id, model, upstream_model,
   input_tokens, cache_read_tokens, output_tokens, cache_write_tokens, cache_write_1h_tokens,
   status_code, error_message, ttft_ms, time_spent_ms,
   user_message_preview, project_id, created_at, user_id
 ) VALUES (
-  $1, $2, $3, $4, $5,
-  $6, $7, $8, $9, $10,
-  $11, $12, $13, $14, $15,
-  $16, $17, $18, $19,
-  $20, $21, $22, $23
+  $1, $2, $3, $4,
+  $5, $6, $7, $8, $9,
+  $10, $11, $12, $13, $14,
+  $15, $16, $17, $18,
+  $19, $20, $21, $22
 )
 RETURNING created_at;

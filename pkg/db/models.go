@@ -102,7 +102,6 @@ type Request struct {
 	TimeSpentMs         pgtype.Int4      `json:"timeSpentMs"`
 	CreatedAt           pgtype.Timestamp `json:"createdAt"`
 	Type                int32            `json:"type"`
-	Status              int32            `json:"status"`
 	UpstreamModel       pgtype.Text      `json:"upstreamModel"`
 	ModelCost           pgtype.Numeric   `json:"modelCost"`
 	ModelCostCurrency   pgtype.Text      `json:"modelCostCurrency"`

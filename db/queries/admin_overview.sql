@@ -303,7 +303,7 @@ WITH speeds AS (
     output_tokens::float8 / ((time_spent_ms - ttft_ms)::float8 / 1000.0) AS decode_speed
   FROM request
   WHERE type = 1
-    AND status = 2
+    AND status_code = 200 AND finish_reason IN (2, 3, 5)
     AND created_at >= sqlc.arg('start_at')::timestamp
     AND created_at < sqlc.arg('end_at')::timestamp
     AND (sqlc.narg('user_id')::bigint IS NULL OR user_id = sqlc.narg('user_id')::bigint)
