@@ -42,6 +42,8 @@ type RequestView struct {
 	InferredProvider    string   `json:"inferredProvider,omitempty"`
 	InferredModel       string   `json:"inferredModel,omitempty"`
 	InferredModelSource *int32   `json:"inferredModelSource,omitempty"`
+	ExternalRequestID   string   `json:"externalRequestId,omitempty"`
+	ExternalResponseID  string   `json:"externalResponseId,omitempty"`
 	UserID              int64    `json:"userId,omitempty"`
 }
 
@@ -96,14 +98,16 @@ type requestLike struct {
 	InferredProvider    pgtype.Text
 	InferredModel       pgtype.Text
 	InferredModelSource int16
+	ExternalRequestID   pgtype.Text
+	ExternalResponseID  pgtype.Text
 	UserID              pgtype.Int8
 	TraceID             pgtype.Text
 }
 
 func toRequestView(r requestLike) *RequestView {
 	view := &RequestView{
-		ID:     r.ID,
-		Type:   r.Type,
+		ID:   r.ID,
+		Type: r.Type,
 	}
 	if r.SpanID.Valid {
 		view.SpanID = r.SpanID.String
@@ -195,6 +199,12 @@ func toRequestView(r requestLike) *RequestView {
 		v := int32(r.InferredModelSource)
 		view.InferredModelSource = &v
 	}
+	if r.ExternalRequestID.Valid {
+		view.ExternalRequestID = r.ExternalRequestID.String
+	}
+	if r.ExternalResponseID.Valid {
+		view.ExternalResponseID = r.ExternalResponseID.String
+	}
 	if r.UserID.Valid {
 		view.UserID = r.UserID.Int64
 	}
@@ -233,6 +243,8 @@ func ToRequestView(r *db.GetRequestRow) *RequestView {
 		InferredProvider:    r.InferredProvider,
 		InferredModel:       r.InferredModel,
 		InferredModelSource: r.InferredModelSource,
+		ExternalRequestID:   r.ExternalRequestID,
+		ExternalResponseID:  r.ExternalResponseID,
 		UserID:              r.UserID,
 		TraceID:             r.TraceID,
 	})
@@ -267,6 +279,8 @@ func ToListRequestRowView(r *db.ListRequestsRow) *RequestView {
 		InferredProvider:    r.InferredProvider,
 		InferredModel:       r.InferredModel,
 		InferredModelSource: r.InferredModelSource,
+		ExternalRequestID:   r.ExternalRequestID,
+		ExternalResponseID:  r.ExternalResponseID,
 		UserID:              r.UserID,
 	})
 }
@@ -300,6 +314,8 @@ func ToListRequestsBySpanRowView(r *db.ListRequestsBySpanRow) *RequestView {
 		InferredProvider:    r.InferredProvider,
 		InferredModel:       r.InferredModel,
 		InferredModelSource: r.InferredModelSource,
+		ExternalRequestID:   r.ExternalRequestID,
+		ExternalResponseID:  r.ExternalResponseID,
 		UserID:              r.UserID,
 		TraceID:             r.TraceID,
 	})

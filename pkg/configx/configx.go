@@ -11,29 +11,31 @@ import (
 )
 
 type Config struct {
-	DatabaseURL                  string        `mapstructure:"database_url"`
-	Host                         string        `mapstructure:"host"`
-	Port                         int           `mapstructure:"port"`
-	GatewayReadTimeout           time.Duration `mapstructure:"gateway_read_timeout"`
-	GatewayIdleConnTimeout       time.Duration `mapstructure:"gateway_idle_conn_timeout"`
-	GatewayTLSHandshakeTimeout   time.Duration `mapstructure:"gateway_tls_handshake_timeout"`
-	GatewayExpectContinueTimeout time.Duration `mapstructure:"gateway_expect_continue_timeout"`
-	GatewayResponseHeaderTimeout time.Duration `mapstructure:"gateway_response_header_timeout"`
-	GatewayDialTimeout           time.Duration `mapstructure:"gateway_dial_timeout"`
-	GatewayDialKeepAlive         time.Duration `mapstructure:"gateway_dial_keep_alive"`
-	GatewayHTTP2ReadIdleTimeout  time.Duration `mapstructure:"gateway_http2_read_idle_timeout"`
-	GatewayHTTP2PingTimeout      time.Duration `mapstructure:"gateway_http2_ping_timeout"`
-	S3                           S3Config      `mapstructure:"s3"`
-	KV                           KVConfig      `mapstructure:"kv"`
-	JSHookTimeout                time.Duration `mapstructure:"js_hook_timeout"`
-	JSMemoryLimit                int64         `mapstructure:"js_memory_limit"`
-	JSMaxTotalAttempts           int           `mapstructure:"js_max_total_attempts"`
-	JSMaxDelay                   time.Duration `mapstructure:"js_max_delay"`
-	LLMBridgePluginPath          string        `mapstructure:"llmbridge_plugin_path"`
-	LLMBridgePluginStartTimeout  time.Duration `mapstructure:"llmbridge_plugin_start_timeout"`
-	HeapDumpDir                  string        `mapstructure:"heap_dump_dir"`
-	AppTitle                     string        `mapstructure:"app_title"`
-	Auth                         AuthConfig    `mapstructure:"auth"`
+	DatabaseURL                      string        `mapstructure:"database_url"`
+	Host                             string        `mapstructure:"host"`
+	Port                             int           `mapstructure:"port"`
+	GatewayReadTimeout               time.Duration `mapstructure:"gateway_read_timeout"`
+	GatewayIdleConnTimeout           time.Duration `mapstructure:"gateway_idle_conn_timeout"`
+	GatewayTLSHandshakeTimeout       time.Duration `mapstructure:"gateway_tls_handshake_timeout"`
+	GatewayExpectContinueTimeout     time.Duration `mapstructure:"gateway_expect_continue_timeout"`
+	GatewayResponseHeaderTimeout     time.Duration `mapstructure:"gateway_response_header_timeout"`
+	GatewayDialTimeout               time.Duration `mapstructure:"gateway_dial_timeout"`
+	GatewayDialKeepAlive             time.Duration `mapstructure:"gateway_dial_keep_alive"`
+	GatewayHTTP2ReadIdleTimeout      time.Duration `mapstructure:"gateway_http2_read_idle_timeout"`
+	GatewayHTTP2PingTimeout          time.Duration `mapstructure:"gateway_http2_ping_timeout"`
+	GatewayExternalRequestIDHeaders  string        `mapstructure:"gateway_external_request_id_headers"`
+	GatewayExternalResponseIDHeaders string        `mapstructure:"gateway_external_response_id_headers"`
+	S3                               S3Config      `mapstructure:"s3"`
+	KV                               KVConfig      `mapstructure:"kv"`
+	JSHookTimeout                    time.Duration `mapstructure:"js_hook_timeout"`
+	JSMemoryLimit                    int64         `mapstructure:"js_memory_limit"`
+	JSMaxTotalAttempts               int           `mapstructure:"js_max_total_attempts"`
+	JSMaxDelay                       time.Duration `mapstructure:"js_max_delay"`
+	LLMBridgePluginPath              string        `mapstructure:"llmbridge_plugin_path"`
+	LLMBridgePluginStartTimeout      time.Duration `mapstructure:"llmbridge_plugin_start_timeout"`
+	HeapDumpDir                      string        `mapstructure:"heap_dump_dir"`
+	AppTitle                         string        `mapstructure:"app_title"`
+	Auth                             AuthConfig    `mapstructure:"auth"`
 }
 
 type AuthConfig struct {
@@ -86,6 +88,8 @@ func Parse() (*Config, error) {
 	viper.SetDefault("gateway_response_header_timeout", 91*time.Second)
 	viper.SetDefault("gateway_http2_read_idle_timeout", 13*time.Second)
 	viper.SetDefault("gateway_http2_ping_timeout", 6*time.Second)
+	viper.SetDefault("gateway_external_request_id_headers", "X-PicoTera-Request-Id,X-Request-Id,X-Ot-Span-Context,X-DataDog-Trace-Id,X-Amzn-Trace-Id,X-Client-Trace-Id,X-Log-Id,Cf-Ray")
+	viper.SetDefault("gateway_external_response_id_headers", "X-Request-Id,X-Trace-Id,X-Kong-Request-Id,X-Oneapi-Request-Id,X-Zenmux-RequestId,X-Log-Id,Cf-Ray")
 	viper.SetDefault("s3.region", "us-east-1")
 	viper.SetDefault("s3.use_ssl", false)
 	viper.SetDefault("js_hook_timeout", 5*time.Second)

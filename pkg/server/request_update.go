@@ -162,6 +162,12 @@ func (u *requestUpdate) UserMessagePreview(v pgtype.Text) *requestUpdate {
 	return u
 }
 
+func (u *requestUpdate) ExternalResponseID(v pgtype.Text) *requestUpdate {
+	u.p.SetExternalResponseID = true
+	u.p.ExternalResponseID = v
+	return u
+}
+
 // updateRequest executes the built partial update. Following the existing
 // recording convention, an error is logged but does not affect the response.
 func (s *Server) updateRequest(ctx context.Context, u *requestUpdate) {

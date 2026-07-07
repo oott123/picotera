@@ -1419,6 +1419,10 @@ components:
           type: string
         errorMessage:
           type: string
+        externalRequestId:
+          type: string
+        externalResponseId:
+          type: string
         finishReason:
           format: int32
           type: integer

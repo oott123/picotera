@@ -1708,6 +1708,8 @@ export interface components {
             createdAt?: string;
             endpointPath?: string;
             errorMessage?: string;
+            externalRequestId?: string;
+            externalResponseId?: string;
             /** Format: int32 */
             finishReason?: number;
             id: string;

@@ -31,22 +31,24 @@ import (
 )
 
 type Server struct {
-	queries          *db.Queries
-	db               *pgxpool.Pool
-	router           *chi.Mux
-	mgmtRouter       chi.Router
-	api              huma.API
-	config           *configx.Config
-	httpClient       *http.Client
-	proxyCache       *proxyTransportCache
-	artifacts        artifacts.Sink
-	jsxEngine        jsx.Engine
-	kvStore          kv.Store
-	staticHandler    http.Handler
-	endpointRouter   *endpointRouter
-	projectExtractor *projectExtractor
-	llmBridge        llmbridge.Bridge
-	liveRequests     *liveRequestRegistry
+	queries                   *db.Queries
+	db                        *pgxpool.Pool
+	router                    *chi.Mux
+	mgmtRouter                chi.Router
+	api                       huma.API
+	config                    *configx.Config
+	httpClient                *http.Client
+	proxyCache                *proxyTransportCache
+	artifacts                 artifacts.Sink
+	jsxEngine                 jsx.Engine
+	kvStore                   kv.Store
+	staticHandler             http.Handler
+	endpointRouter            *endpointRouter
+	projectExtractor          *projectExtractor
+	llmBridge                 llmbridge.Bridge
+	liveRequests              *liveRequestRegistry
+	externalRequestIDHeaders  []string
+	externalResponseIDHeaders []string
 }
 
 // newGatewayTransport builds an HTTP transport for upstream gateway requests
@@ -174,23 +176,33 @@ func NewServer(ctx context.Context) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize llmbridge: %w", err)
 	}
+	reqHeaders, err := parseExternalIDHeaderNames(config.GatewayExternalRequestIDHeaders)
+	if err != nil {
+		return nil, fmt.Errorf("invalid gateway_external_request_id_headers: %w", err)
+	}
+	respHeaders, err := parseExternalIDHeaderNames(config.GatewayExternalResponseIDHeaders)
+	if err != nil {
+		return nil, fmt.Errorf("invalid gateway_external_response_id_headers: %w", err)
+	}
 	server := &Server{
-		config:           config,
-		queries:          queries,
-		db:               conn,
-		router:           router,
-		mgmtRouter:       mgmtRouter,
-		api:              api,
-		httpClient:       httpClient,
-		proxyCache:       proxyCache,
-		artifacts:        sink,
-		jsxEngine:        jsxEngine,
-		kvStore:          kvStore,
-		staticHandler:    static.Handler(),
-		endpointRouter:   newEndpointRouter(queries),
-		projectExtractor: newProjectExtractor(queries),
-		llmBridge:        llmBridge,
-		liveRequests:     newLiveRequestRegistry(),
+		config:                    config,
+		queries:                   queries,
+		db:                        conn,
+		router:                    router,
+		mgmtRouter:                mgmtRouter,
+		api:                       api,
+		httpClient:                httpClient,
+		proxyCache:                proxyCache,
+		artifacts:                 sink,
+		jsxEngine:                 jsxEngine,
+		kvStore:                   kvStore,
+		staticHandler:             static.Handler(),
+		endpointRouter:            newEndpointRouter(queries),
+		projectExtractor:          newProjectExtractor(queries),
+		llmBridge:                 llmBridge,
+		liveRequests:              newLiveRequestRegistry(),
+		externalRequestIDHeaders:  reqHeaders,
+		externalResponseIDHeaders: respHeaders,
 	}
 	server.registerOperations()
 	server.registerEndpoints()

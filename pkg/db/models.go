@@ -113,6 +113,8 @@ type Request struct {
 	InferredModel       pgtype.Text      `json:"inferredModel"`
 	InferredModelSource int16            `json:"inferredModelSource"`
 	UserID              pgtype.Int8      `json:"userId"`
+	ExternalRequestID   pgtype.Text      `json:"externalRequestId"`
+	ExternalResponseID  pgtype.Text      `json:"externalResponseId"`
 }
 
 type RequestOverviewBucketed struct {

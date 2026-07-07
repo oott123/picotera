@@ -12,7 +12,7 @@ import (
 )
 
 const getRequest = `-- name: GetRequest :one
-SELECT r.id, r.span_id, r.parent_span_id, r.provider_id, r.endpoint_path, r.api_key_id, r.model, r.input_tokens, r.cache_read_tokens, r.output_tokens, r.cache_write_tokens, r.status_code, r.error_message, r.ttft_ms, r.time_spent_ms, r.created_at, r.type, r.upstream_model, r.model_cost, r.model_cost_currency, r.user_message_preview, r.cache_write_1h_tokens, r.project_id, r.finish_reason, r.inferred_provider, r.inferred_model, r.inferred_model_source, r.user_id, t.id AS trace_id
+SELECT r.id, r.span_id, r.parent_span_id, r.provider_id, r.endpoint_path, r.api_key_id, r.model, r.input_tokens, r.cache_read_tokens, r.output_tokens, r.cache_write_tokens, r.status_code, r.error_message, r.ttft_ms, r.time_spent_ms, r.created_at, r.type, r.upstream_model, r.model_cost, r.model_cost_currency, r.user_message_preview, r.cache_write_1h_tokens, r.project_id, r.finish_reason, r.inferred_provider, r.inferred_model, r.inferred_model_source, r.user_id, r.external_request_id, r.external_response_id, t.id AS trace_id
 FROM request r
 LEFT JOIN traces t ON t.parent_span_id = r.parent_span_id AND t.user_id = r.user_id
 WHERE r.id = $1
@@ -55,6 +55,8 @@ type GetRequestRow struct {
 	InferredModel       pgtype.Text      `json:"inferredModel"`
 	InferredModelSource int16            `json:"inferredModelSource"`
 	UserID              pgtype.Int8      `json:"userId"`
+	ExternalRequestID   pgtype.Text      `json:"externalRequestId"`
+	ExternalResponseID  pgtype.Text      `json:"externalResponseId"`
 	TraceID             pgtype.Text      `json:"traceId"`
 }
 
@@ -90,6 +92,8 @@ func (q *Queries) GetRequest(ctx context.Context, arg GetRequestParams) (GetRequ
 		&i.InferredModel,
 		&i.InferredModelSource,
 		&i.UserID,
+		&i.ExternalRequestID,
+		&i.ExternalResponseID,
 		&i.TraceID,
 	)
 	return i, err
@@ -269,7 +273,8 @@ SELECT r.id, r.span_id, r.parent_span_id, r.type, r.provider_id, r.endpoint_path
        r.model_cost, r.model_cost_currency,
        r.user_message_preview, r.project_id, r.finish_reason,
        r.inferred_provider, r.inferred_model, r.inferred_model_source,
-       r.user_id
+       r.user_id,
+       r.external_request_id, r.external_response_id
 FROM request r
 LEFT JOIN traces selected_trace ON selected_trace.id = $1::text
 WHERE
@@ -376,6 +381,8 @@ type ListRequestsRow struct {
 	InferredModel       pgtype.Text      `json:"inferredModel"`
 	InferredModelSource int16            `json:"inferredModelSource"`
 	UserID              pgtype.Int8      `json:"userId"`
+	ExternalRequestID   pgtype.Text      `json:"externalRequestId"`
+	ExternalResponseID  pgtype.Text      `json:"externalResponseId"`
 }
 
 func (q *Queries) ListRequests(ctx context.Context, arg ListRequestsParams) ([]ListRequestsRow, error) {
@@ -432,6 +439,8 @@ func (q *Queries) ListRequests(ctx context.Context, arg ListRequestsParams) ([]L
 			&i.InferredModel,
 			&i.InferredModelSource,
 			&i.UserID,
+			&i.ExternalRequestID,
+			&i.ExternalResponseID,
 		); err != nil {
 			return nil, err
 		}
@@ -459,6 +468,7 @@ SELECT r.id, r.span_id, r.parent_span_id, r.type, r.provider_id, r.endpoint_path
        r.user_message_preview, r.project_id, r.finish_reason,
        r.inferred_provider, r.inferred_model, r.inferred_model_source,
        r.user_id,
+       r.external_request_id, r.external_response_id,
        t.id AS trace_id
 FROM request r CROSS JOIN anchor
 LEFT JOIN traces t ON t.parent_span_id = r.parent_span_id AND t.user_id = r.user_id
@@ -502,6 +512,8 @@ type ListRequestsBySpanRow struct {
 	InferredModel       pgtype.Text      `json:"inferredModel"`
 	InferredModelSource int16            `json:"inferredModelSource"`
 	UserID              pgtype.Int8      `json:"userId"`
+	ExternalRequestID   pgtype.Text      `json:"externalRequestId"`
+	ExternalResponseID  pgtype.Text      `json:"externalResponseId"`
 	TraceID             pgtype.Text      `json:"traceId"`
 }
 
@@ -543,6 +555,8 @@ func (q *Queries) ListRequestsBySpan(ctx context.Context, arg ListRequestsBySpan
 			&i.InferredModel,
 			&i.InferredModelSource,
 			&i.UserID,
+			&i.ExternalRequestID,
+			&i.ExternalResponseID,
 			&i.TraceID,
 		); err != nil {
 			return nil, err
@@ -579,8 +593,9 @@ UPDATE request SET
   inferred_provider = CASE WHEN $39::bool THEN $40::text ELSE inferred_provider END,
   inferred_model = CASE WHEN $41::bool THEN $42::text ELSE inferred_model END,
   inferred_model_source = CASE WHEN $43::bool THEN $44::smallint ELSE inferred_model_source END,
-  user_message_preview = CASE WHEN $45::bool THEN $46::text ELSE user_message_preview END
-WHERE id = $47::text AND created_at = $48::timestamp
+  user_message_preview = CASE WHEN $45::bool THEN $46::text ELSE user_message_preview END,
+  external_response_id = CASE WHEN $47::bool THEN $48::text ELSE external_response_id END
+WHERE id = $49::text AND created_at = $50::timestamp
 `
 
 type UpdateRequestParams struct {
@@ -630,6 +645,8 @@ type UpdateRequestParams struct {
 	InferredModelSource    int16            `json:"inferredModelSource"`
 	SetUserMessagePreview  bool             `json:"setUserMessagePreview"`
 	UserMessagePreview     pgtype.Text      `json:"userMessagePreview"`
+	SetExternalResponseID  bool             `json:"setExternalResponseId"`
+	ExternalResponseID     pgtype.Text      `json:"externalResponseId"`
 	ID                     string           `json:"id"`
 	CreatedAt              pgtype.Timestamp `json:"createdAt"`
 }
@@ -682,6 +699,8 @@ func (q *Queries) UpdateRequest(ctx context.Context, arg UpdateRequestParams) er
 		arg.InferredModelSource,
 		arg.SetUserMessagePreview,
 		arg.UserMessagePreview,
+		arg.SetExternalResponseID,
+		arg.ExternalResponseID,
 		arg.ID,
 		arg.CreatedAt,
 	)

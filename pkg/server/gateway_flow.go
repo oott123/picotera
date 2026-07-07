@@ -239,7 +239,9 @@ func (f *gatewayFlow) insertMetaRequest() bool {
 		// User is unknown until authentication; the trace is created (with the
 		// real user_id) in authenticateAndBackfill, so insertRequest's upsertTrace
 		// is skipped for the meta row.
-		UserID: pgtype.Int8{Valid: false},
+		UserID:             pgtype.Int8{Valid: false},
+		ExternalRequestID:  matchExternalIDHeader(f.r.Header, f.h.externalRequestIDHeaders),
+		ExternalResponseID: pgtype.Text{Valid: false},
 	})
 	f.meta = gatewayMetaState{
 		ID:             metaID,
@@ -263,9 +265,9 @@ func (f *gatewayFlow) authenticateAndBackfill() bool {
 	if err != nil {
 		var gwErr *gatewayError
 		if errors.As(err, &gwErr) {
-			f.failMeta(int32(gwErr.status), gwErr.message, db.FinishReasonInternal)
+			f.failMeta(int32(gwErr.status), gwErr.message, db.FinishReasonInternal, nil)
 		} else {
-			f.failMeta(http.StatusInternalServerError, "auth validation failed", db.FinishReasonInternal)
+			f.failMeta(http.StatusInternalServerError, "auth validation failed", db.FinishReasonInternal, nil)
 		}
 		f.failGatewayError(err)
 		return false

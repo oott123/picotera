@@ -884,12 +884,17 @@ func buildRequestFromPending(ctx context.Context, p jsx.PendingRequestShape, fal
 
 // completeFailedAttemptWithReason closes out an upstream attempt in the retry
 // loop's error path.
-func (s *Server) completeFailedAttemptWithReason(ctx context.Context, upstreamID string, upstreamCreatedAt time.Time, attemptStart time.Time, statusCode int32, errMsg string, finishReason int32) {
+func (s *Server) completeFailedAttemptWithReason(ctx context.Context, upstreamID string, upstreamCreatedAt time.Time, attemptStart time.Time, statusCode int32, errMsg string, finishReason int32, respHeader http.Header) {
+	var extRespID pgtype.Text
+	if respHeader != nil {
+		extRespID = matchExternalIDHeader(respHeader, s.externalResponseIDHeaders)
+	}
 	s.updateRequest(ctx, newRequestUpdate(upstreamID, upstreamCreatedAt).
 		StatusCode(pgtype.Int4{Int32: statusCode, Valid: true}).
 		ErrorMessage(pgtype.Text{String: errMsg, Valid: true}).
 		TimeSpentMs(pgtype.Int4{Int32: int32(time.Since(attemptStart).Milliseconds()), Valid: true}).
-		FinishReason(pgtype.Int4{Int32: finishReason, Valid: true}))
+		FinishReason(pgtype.Int4{Int32: finishReason, Valid: true}).
+		ExternalResponseID(extRespID))
 }
 
 func classifyForwardError(err error, reqCtx context.Context) int32 {

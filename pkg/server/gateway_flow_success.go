@@ -147,13 +147,14 @@ func (h *gatewayHandler) openPathInternalReader(input successInput) (*lockedResp
 		bgCtx, cancel := input.Flow.ctxs.Persist()
 		defer cancel()
 		metaID, metaCreatedAt := input.Flow.meta.ID, input.Flow.meta.CreatedAt
-		h.completeFailedAttemptWithReason(bgCtx, input.UpstreamID, input.UpstreamCreatedAt, input.AttemptStart, int32(resp.StatusCode), "decode upstream response: "+derr.Error(), db.FinishReasonInternal)
+		h.completeFailedAttemptWithReason(bgCtx, input.UpstreamID, input.UpstreamCreatedAt, input.AttemptStart, int32(resp.StatusCode), "decode upstream response: "+derr.Error(), db.FinishReasonInternal, resp.Header)
 		respBody := writeGatewayError(w, http.StatusBadGateway, "decode upstream response: "+derr.Error(), errorx.UpstreamError.Error())
 		h.updateRequest(bgCtx, newRequestUpdate(metaID, metaCreatedAt).
 			StatusCode(pgtype.Int4{Int32: http.StatusBadGateway, Valid: true}).
 			ErrorMessage(pgtype.Text{String: "decode upstream response: " + derr.Error(), Valid: true}).
 			TimeSpentMs(pgtype.Int4{Int32: int32(time.Since(input.Flow.startedAt).Milliseconds()), Valid: true}).
-			FinishReason(pgtype.Int4{Int32: db.FinishReasonInternal, Valid: true}))
+			FinishReason(pgtype.Int4{Int32: db.FinishReasonInternal, Valid: true}).
+			ExternalResponseID(matchExternalIDHeader(resp.Header, h.externalResponseIDHeaders)))
 		h.uploadMetaResponseArtifact(bgCtx, metaID, metaCreatedAt, http.StatusBadGateway, w.Header().Clone(), input.Flow.artifactBody(respBody), input.Flow.collectLogs(), nil)
 		_ = resp.Body.Close()
 		return nil, nil, false
@@ -267,7 +268,8 @@ func (h *gatewayHandler) completeGatewaySuccess(input successInput, m ResponseMe
 		FinishReason(pgtype.Int4{Int32: upstreamFr, Valid: true}).
 		InferredProvider(pgtype.Text{String: m.InferredProvider, Valid: m.InferredProvider != ""}).
 		InferredModel(pgtype.Text{String: m.InferredModel, Valid: m.InferredModel != ""}).
-		InferredModelSource(int16(m.InferredModelSource)))
+		InferredModelSource(int16(m.InferredModelSource)).
+		ExternalResponseID(matchExternalIDHeader(input.Response.Header, h.externalResponseIDHeaders)))
 	metaTimeSpent := int32(time.Since(input.Flow.startedAt).Milliseconds())
 	h.updateRequest(bgCtx, newRequestUpdate(input.Flow.meta.ID, input.Flow.meta.CreatedAt).
 		StatusCode(pgtype.Int4{Int32: int32(statusCode), Valid: true}).
@@ -284,7 +286,8 @@ func (h *gatewayHandler) completeGatewaySuccess(input successInput, m ResponseMe
 		FinishReason(pgtype.Int4{Int32: metaFr, Valid: true}).
 		InferredProvider(pgtype.Text{String: m.InferredProvider, Valid: m.InferredProvider != ""}).
 		InferredModel(pgtype.Text{String: m.InferredModel, Valid: m.InferredModel != ""}).
-		InferredModelSource(int16(m.InferredModelSource)))
+		InferredModelSource(int16(m.InferredModelSource)).
+		ExternalResponseID(matchExternalIDHeader(input.Response.Header, h.externalResponseIDHeaders)))
 }
 
 func classifyStreamFinishReason(readErr error, reqCtx context.Context) int32 {

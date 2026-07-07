@@ -603,7 +603,8 @@ func (h *gatewayHandler) unifiedStreamSuccess(input successInput) {
 		FinishReason(pgtype.Int4{Int32: upstreamFr, Valid: true}).
 		InferredProvider(pgtype.Text{String: m.InferredProvider, Valid: m.InferredProvider != ""}).
 		InferredModel(pgtype.Text{String: m.InferredModel, Valid: m.InferredModel != ""}).
-		InferredModelSource(int16(m.InferredModelSource)))
+		InferredModelSource(int16(m.InferredModelSource)).
+		ExternalResponseID(matchExternalIDHeader(resp.Header, h.externalResponseIDHeaders)))
 	metaTimeSpent := int32(time.Since(a.gatewayStart).Milliseconds())
 	h.updateRequest(pctx, newRequestUpdate(a.metaID, a.metaCreatedAt).
 		StatusCode(pgtype.Int4{Int32: int32(resp.StatusCode), Valid: true}).
@@ -620,7 +621,8 @@ func (h *gatewayHandler) unifiedStreamSuccess(input successInput) {
 		FinishReason(pgtype.Int4{Int32: metaFr, Valid: true}).
 		InferredProvider(pgtype.Text{String: m.InferredProvider, Valid: m.InferredProvider != ""}).
 		InferredModel(pgtype.Text{String: m.InferredModel, Valid: m.InferredModel != ""}).
-		InferredModelSource(int16(m.InferredModelSource)))
+		InferredModelSource(int16(m.InferredModelSource)).
+		ExternalResponseID(matchExternalIDHeader(resp.Header, h.externalResponseIDHeaders)))
 	_ = r
 }
 
@@ -633,13 +635,15 @@ func (h *gatewayHandler) failUnifiedSuccess(ctx context.Context, a unifiedStream
 		StatusCode(pgtype.Int4{Int32: int32(a.resp.StatusCode), Valid: true}).
 		ErrorMessage(pgtype.Text{String: errMsg, Valid: true}).
 		TimeSpentMs(pgtype.Int4{Int32: int32(time.Since(a.attemptStart).Milliseconds()), Valid: true}).
-		FinishReason(pgtype.Int4{Int32: db.FinishReasonInternal, Valid: true}))
+		FinishReason(pgtype.Int4{Int32: db.FinishReasonInternal, Valid: true}).
+		ExternalResponseID(matchExternalIDHeader(a.resp.Header, h.externalResponseIDHeaders)))
 	respBody := writeGatewayError(a.w, http.StatusBadGateway, "bridge failed: "+errMsg, errorx.UpstreamError.Error())
 	h.updateRequest(ctx, newRequestUpdate(a.metaID, a.metaCreatedAt).
 		StatusCode(pgtype.Int4{Int32: http.StatusBadGateway, Valid: true}).
 		ErrorMessage(pgtype.Text{String: errMsg, Valid: true}).
 		TimeSpentMs(pgtype.Int4{Int32: int32(time.Since(a.gatewayStart).Milliseconds()), Valid: true}).
-		FinishReason(pgtype.Int4{Int32: db.FinishReasonInternal, Valid: true}))
+		FinishReason(pgtype.Int4{Int32: db.FinishReasonInternal, Valid: true}).
+		ExternalResponseID(matchExternalIDHeader(a.resp.Header, h.externalResponseIDHeaders)))
 	artifactBody := respBody
 	if !a.recordBody {
 		artifactBody = nil

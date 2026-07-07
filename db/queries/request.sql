@@ -5,7 +5,8 @@ SELECT r.id, r.span_id, r.parent_span_id, r.type, r.provider_id, r.endpoint_path
        r.model_cost, r.model_cost_currency,
        r.user_message_preview, r.project_id, r.finish_reason,
        r.inferred_provider, r.inferred_model, r.inferred_model_source,
-       r.user_id
+       r.user_id,
+       r.external_request_id, r.external_response_id
 FROM request r
 LEFT JOIN traces selected_trace ON selected_trace.id = sqlc.narg('trace_id')::text
 WHERE
@@ -184,6 +185,7 @@ SELECT r.id, r.span_id, r.parent_span_id, r.type, r.provider_id, r.endpoint_path
        r.user_message_preview, r.project_id, r.finish_reason,
        r.inferred_provider, r.inferred_model, r.inferred_model_source,
        r.user_id,
+       r.external_request_id, r.external_response_id,
        t.id AS trace_id
 FROM request r CROSS JOIN anchor
 LEFT JOIN traces t ON t.parent_span_id = r.parent_span_id AND t.user_id = r.user_id
@@ -215,5 +217,6 @@ UPDATE request SET
   inferred_provider = CASE WHEN sqlc.arg('set_inferred_provider')::bool THEN sqlc.narg('inferred_provider')::text ELSE inferred_provider END,
   inferred_model = CASE WHEN sqlc.arg('set_inferred_model')::bool THEN sqlc.narg('inferred_model')::text ELSE inferred_model END,
   inferred_model_source = CASE WHEN sqlc.arg('set_inferred_model_source')::bool THEN sqlc.arg('inferred_model_source')::smallint ELSE inferred_model_source END,
-  user_message_preview = CASE WHEN sqlc.arg('set_user_message_preview')::bool THEN sqlc.narg('user_message_preview')::text ELSE user_message_preview END
+  user_message_preview = CASE WHEN sqlc.arg('set_user_message_preview')::bool THEN sqlc.narg('user_message_preview')::text ELSE user_message_preview END,
+  external_response_id = CASE WHEN sqlc.arg('set_external_response_id')::bool THEN sqlc.narg('external_response_id')::text ELSE external_response_id END
 WHERE id = sqlc.arg('id')::text AND created_at = sqlc.arg('created_at')::timestamp;
