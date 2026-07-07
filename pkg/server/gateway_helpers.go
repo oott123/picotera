@@ -650,6 +650,64 @@ func redactUpstreamCredentials(header http.Header, rawURL string) (http.Header, 
 
 	return header, rawURL
 }
+// redactResponseHeaders redacts sensitive response headers in a cloned header
+// (the caller passes a clone), returning the redacted header. It mutates the
+// provided header in place and only touches fields that carry a secret:
+//   - Set-Cookie: replaces each cookie's value with [REDACTED], preserving the
+//     cookie name and all attributes (Path, Domain, HttpOnly, Secure, …).
+func redactResponseHeaders(header http.Header) http.Header {
+	values := header.Values("Set-Cookie")
+	if len(values) == 0 {
+		return header
+	}
+	redacted := make([]string, len(values))
+	for i, v := range values {
+		redacted[i] = redactSetCookieValue(v)
+	}
+	header.Del("Set-Cookie")
+	for _, v := range redacted {
+		header.Add("Set-Cookie", v)
+	}
+	return header
+}
+
+// redactSetCookieValue replaces the cookie value in a single Set-Cookie header
+// value with [REDACTED], keeping the cookie name and all attributes. A value
+// with no '=' (malformed) is replaced wholesale.
+func redactSetCookieValue(v string) string {
+	name, rest, ok := strings.Cut(v, "=")
+	if !ok {
+		return redactedPlaceholder
+	}
+	var attrs string
+	if strings.HasPrefix(rest, `"`) {
+		// Quoted value: ends at the closing quote (respecting \" escapes);
+		// the remainder is the attributes.
+		i := 1
+		for i < len(rest) {
+			if rest[i] == '\\' && i+1 < len(rest) {
+				i += 2
+				continue
+			}
+			if rest[i] == '"' {
+				break
+			}
+			i++
+		}
+		if i < len(rest) && rest[i] == '"' {
+			attrs = rest[i+1:]
+		} else {
+			// No closing quote — malformed; redact the whole tail.
+			return name + "=" + redactedPlaceholder
+		}
+	} else {
+		// Unquoted value: ends at the first ';'.
+		if _, tail, hasSemi := strings.Cut(rest, ";"); hasSemi {
+			attrs = ";" + tail
+		}
+	}
+	return name + "=" + redactedPlaceholder + attrs
+}
 
 // forwardRequest sends the request to the upstream provider using the
 // transport selected by proxyURL. Empty string uses environment proxy;

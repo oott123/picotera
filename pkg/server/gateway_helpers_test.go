@@ -148,3 +148,108 @@ func TestRedactUpstreamCredentials(t *testing.T) {
 		}
 	})
 }
+
+func TestRedactResponseHeaders(t *testing.T) {
+	t.Run("single cookie value redacted, attributes preserved", func(t *testing.T) {
+		h := http.Header{}
+		h.Add("Set-Cookie", "session=abc123; Path=/; HttpOnly")
+		got := redactResponseHeaders(h)
+		want := "session=[REDACTED]; Path=/; HttpOnly"
+		if vals := got.Values("Set-Cookie"); len(vals) != 1 || vals[0] != want {
+			t.Errorf("Set-Cookie = %v, want [%q]", vals, want)
+		}
+	})
+
+	t.Run("multiple set-cookie headers redacted independently", func(t *testing.T) {
+		h := http.Header{}
+		h.Add("Set-Cookie", "session=abc123; Path=/; HttpOnly")
+		h.Add("Set-Cookie", "token=xyz789; Path=/; Secure")
+		got := redactResponseHeaders(h)
+		want := []string{
+			"session=[REDACTED]; Path=/; HttpOnly",
+			"token=[REDACTED]; Path=/; Secure",
+		}
+		if vals := got.Values("Set-Cookie"); len(vals) != 2 || vals[0] != want[0] || vals[1] != want[1] {
+			t.Errorf("Set-Cookie = %v, want %v", vals, want)
+		}
+	})
+
+	t.Run("cookie without attributes", func(t *testing.T) {
+		h := http.Header{}
+		h.Add("Set-Cookie", "token=xyz")
+		got := redactResponseHeaders(h)
+		want := "token=[REDACTED]"
+		if vals := got.Values("Set-Cookie"); len(vals) != 1 || vals[0] != want {
+			t.Errorf("Set-Cookie = %v, want [%q]", vals, want)
+		}
+	})
+
+	t.Run("empty value redacted", func(t *testing.T) {
+		h := http.Header{}
+		h.Add("Set-Cookie", "session=; Path=/")
+		got := redactResponseHeaders(h)
+		want := "session=[REDACTED]; Path=/"
+		if vals := got.Values("Set-Cookie"); len(vals) != 1 || vals[0] != want {
+			t.Errorf("Set-Cookie = %v, want [%q]", vals, want)
+		}
+	})
+
+	t.Run("value with equals signs (base64)", func(t *testing.T) {
+		h := http.Header{}
+		h.Add("Set-Cookie", "s=a=b=c; Path=/")
+		got := redactResponseHeaders(h)
+		want := "s=[REDACTED]; Path=/"
+		if vals := got.Values("Set-Cookie"); len(vals) != 1 || vals[0] != want {
+			t.Errorf("Set-Cookie = %v, want [%q]", vals, want)
+		}
+	})
+
+	t.Run("quoted value with semicolon inside quotes", func(t *testing.T) {
+		h := http.Header{}
+		h.Add("Set-Cookie", `foo="a;b"; Path=/`)
+		got := redactResponseHeaders(h)
+		want := "foo=[REDACTED]; Path=/"
+		if vals := got.Values("Set-Cookie"); len(vals) != 1 || vals[0] != want {
+			t.Errorf("Set-Cookie = %v, want [%q]", vals, want)
+		}
+	})
+
+	t.Run("malformed header without equals replaced wholesale", func(t *testing.T) {
+		h := http.Header{}
+		h.Add("Set-Cookie", "justflags")
+		got := redactResponseHeaders(h)
+		want := "[REDACTED]"
+		if vals := got.Values("Set-Cookie"); len(vals) != 1 || vals[0] != want {
+			t.Errorf("Set-Cookie = %v, want [%q]", vals, want)
+		}
+	})
+
+	t.Run("no set-cookie leaves header unchanged", func(t *testing.T) {
+		h := http.Header{}
+		h.Set("Content-Type", "application/json")
+		got := redactResponseHeaders(h)
+		if vals := got.Values("Set-Cookie"); len(vals) != 0 {
+			t.Errorf("unexpected Set-Cookie: %v", vals)
+		}
+		if v := got.Get("Content-Type"); v != "application/json" {
+			t.Errorf("Content-Type altered: %q", v)
+		}
+	})
+
+	t.Run("non-cookie headers unaffected", func(t *testing.T) {
+		h := http.Header{}
+		h.Set("Content-Type", "application/json")
+		h.Set("X-Trace-Id", "trace-123")
+		h.Add("Set-Cookie", "session=abc123; Path=/")
+		got := redactResponseHeaders(h)
+		if v := got.Get("Content-Type"); v != "application/json" {
+			t.Errorf("Content-Type altered: %q", v)
+		}
+		if v := got.Get("X-Trace-Id"); v != "trace-123" {
+			t.Errorf("X-Trace-Id altered: %q", v)
+		}
+		if v := got.Values("Set-Cookie")[0]; v != "session=[REDACTED]; Path=/" {
+			t.Errorf("Set-Cookie = %q, want %q", v, "session=[REDACTED]; Path=/")
+		}
+	})
+}

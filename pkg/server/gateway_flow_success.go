@@ -34,6 +34,7 @@ func (h *gatewayHandler) uploadResponseArtifact(ctx context.Context, id string, 
 	if !h.artifacts.Enabled() {
 		return
 	}
+	header = redactResponseHeaders(header)
 	payload, err := artifacts.BuildResponse(statusCode, header, body, timings)
 	if err != nil {
 		logx.WithContext(ctx).WithError(err).WithField("id", id).Warn("artifact: build response failed")
@@ -46,6 +47,7 @@ func (h *gatewayHandler) uploadResponseArtifactWithAggregation(ctx context.Conte
 	if !h.artifacts.Enabled() {
 		return
 	}
+	header = redactResponseHeaders(header)
 	payload, err := artifacts.BuildResponseWithAggregated(statusCode, header, body, aggregated, timings)
 	if err != nil {
 		logx.WithContext(ctx).WithError(err).WithField("id", id).Warn("artifact: build response failed")
@@ -60,6 +62,7 @@ func (h *gatewayHandler) uploadMetaResponseArtifact(ctx context.Context, id stri
 	if !h.artifacts.Enabled() {
 		return
 	}
+	header = redactResponseHeaders(header)
 	payload, err := artifacts.BuildResponseWithLogs(statusCode, header, body, logs, timings)
 	if err != nil {
 		logx.WithContext(ctx).WithError(err).WithField("id", id).Warn("artifact: build meta response failed")
@@ -72,6 +75,7 @@ func (h *gatewayHandler) uploadMetaResponseArtifactWithAggregation(ctx context.C
 	if !h.artifacts.Enabled() {
 		return
 	}
+	header = redactResponseHeaders(header)
 	payload, err := artifacts.BuildResponseWithLogsAndAggregated(statusCode, header, body, logs, aggregated, timings)
 	if err != nil {
 		logx.WithContext(ctx).WithError(err).WithField("id", id).Warn("artifact: build meta response failed")
