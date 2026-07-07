@@ -386,7 +386,7 @@ func (h *gatewayHandler) unifiedStreamSuccess(input successInput) {
 	// bytes.
 	for key, values := range resp.Header {
 		lower := strings.ToLower(key)
-		if lower == "content-length" {
+		if lower == "content-length" || isUpstreamCORSHeader(lower) {
 			continue
 		}
 		if transforming && (lower == "content-encoding" || lower == "transfer-encoding") {

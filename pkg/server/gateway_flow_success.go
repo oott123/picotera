@@ -133,7 +133,8 @@ func (h *gatewayHandler) markPathHeadersReceived(input successInput) {
 
 func copyPathSuccessHeaders(w http.ResponseWriter, resp *http.Response) {
 	for key, values := range resp.Header {
-		if strings.ToLower(key) == "content-length" {
+		lower := strings.ToLower(key)
+		if lower == "content-length" || isUpstreamCORSHeader(lower) {
 			continue
 		}
 		for _, value := range values {
