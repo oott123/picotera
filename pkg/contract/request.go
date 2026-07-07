@@ -360,6 +360,7 @@ type ListRequestsRequest struct {
 	ProjectID     int32  `query:"projectId,omitempty"`
 	StartAt       string `query:"startAt,omitempty"`
 	EndAt         string `query:"endAt,omitempty"`
+	EmptyResponse bool   `query:"emptyResponse,omitempty"`
 }
 
 type ListRequestsResponse = PaginatedResponse[RequestView]

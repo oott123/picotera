@@ -54,6 +54,7 @@ const filters = reactive({
   projectId: typeof route.query.projectId === 'string' ? Number(route.query.projectId) || 0 : 0,
   startAt: typeof route.query.startAt === 'string' ? route.query.startAt : '',
   endAt: typeof route.query.endAt === 'string' ? route.query.endAt : '',
+  emptyResponse: 0,
 })
 
 const typeOptions: { value: RequestKind; label: string }[] = [
@@ -95,6 +96,7 @@ const requestFilters = computed<RequestsFilters>(() => {
     projectId?: number
     startAt?: string
     endAt?: string
+    emptyResponse?: boolean
   } = {}
   if (filters.type === 'meta') out.type = 0
   else if (filters.type === 'upstream') out.type = 1
@@ -106,6 +108,7 @@ const requestFilters = computed<RequestsFilters>(() => {
   if (filters.projectId) out.projectId = filters.projectId
   if (filters.startAt) out.startAt = filters.startAt
   if (filters.endAt) out.endAt = filters.endAt
+  if (filters.emptyResponse) out.emptyResponse = true
   return out
 })
 
@@ -175,6 +178,7 @@ watch(
     filters.projectId,
     filters.startAt,
     filters.endAt,
+    filters.emptyResponse,
   ],
   () => {
     resetPaginationMemory()
@@ -332,7 +336,7 @@ const columns = computed<AutoDataTableColumn<RequestView>[]>(() => {
         filters.model || filters.upstreamModel ? 'shadow-[inset_0_-2px_0_var(--color-accent)]' : '',
     },
     { key: 'status', header: '状态' },
-    { key: 'tokens', header: 'Token' },
+    { key: 'tokens', header: 'Token', headerClass: filters.emptyResponse ? 'shadow-[inset_0_-2px_0_var(--color-accent)]' : '' },
     { key: 'cost', header: '成本', align: 'right' },
     { key: 'timeSpentMs', header: '耗时', align: 'right' },
   )
@@ -393,6 +397,7 @@ function activeFilterCount(): number {
   if (filters.traceId) n++
   if (filters.projectId) n++
   if (filters.startAt || filters.endAt) n++
+  if (filters.emptyResponse) n++
   return n
 }
 
@@ -405,6 +410,7 @@ function clearAllFilters() {
   filters.projectId = 0
   filters.startAt = ''
   filters.endAt = ''
+  filters.emptyResponse = 0
 }
 
 function clearTraceFilter() {
@@ -639,6 +645,15 @@ function resetCursorAndReload() {
             label="上游"
             :options="upstreamModelOptions"
             placeholder="按实际发到上游的模型过滤"
+          />
+        </template>
+        <template #header-tokens>
+          <ColumnFilter
+            v-model.number="filters.emptyResponse"
+            label="Token"
+            :options="[{ value: 1, label: '空回' }]"
+            :empty-value="0"
+            :searchable="false"
           />
         </template>
         <template #cell-createdAt="{ row }">

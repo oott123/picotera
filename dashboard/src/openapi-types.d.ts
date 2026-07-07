@@ -3606,6 +3606,7 @@ export interface operations {
                 projectId?: number;
                 startAt?: string;
                 endAt?: string;
+                emptyResponse?: boolean;
             };
             header?: never;
             path?: never;

@@ -256,12 +256,35 @@ WHERE
       AND r.created_at <= selected_trace.last_request_at
     )
   )
+  -- emptyResponse filter: 'empty response' = completion endpoint with output_tokens 0/NULL.
+  -- completion endpoint types from pkg/contract/endpoint.go; unified routes from pkg/server/unified_routes.go.
   AND (
-    $11::timestamp IS NULL
-    OR (r.created_at, r.id) < ($11::timestamp, $12::text)
+    $11::bool IS NULL
+    OR NOT $11::bool
+    OR (
+      (r.output_tokens IS NULL OR r.output_tokens = 0)
+      AND (
+        r.endpoint_path = ANY(ARRAY[
+          '/api/unified/v1/messages',
+          '/api/unified/v1/responses',
+          '/api/unified/v1/chat/completions',
+          '/api/unified/v1beta/models/{model}:generateContent',
+          '/api/unified/v1beta/models/{model}:streamGenerateContent'
+        ]::text[])
+        OR EXISTS (
+          SELECT 1 FROM endpoint e
+          WHERE e.path = r.endpoint_path
+            AND e.endpoint_type = ANY(ARRAY[2,3,4,7,8]::int[])
+        )
+      )
+    )
+  )
+  AND (
+    $12::timestamp IS NULL
+    OR (r.created_at, r.id) < ($12::timestamp, $13::text)
   )
 ORDER BY r.created_at DESC, r.id DESC
-LIMIT $13::int
+LIMIT $14::int
 `
 
 type ListRequestsParams struct {
@@ -275,6 +298,7 @@ type ListRequestsParams struct {
 	ProjectID       pgtype.Int4      `json:"projectId"`
 	StartAt         pgtype.Timestamp `json:"startAt"`
 	EndAt           pgtype.Timestamp `json:"endAt"`
+	EmptyResponse   pgtype.Bool      `json:"emptyResponse"`
 	CursorCreatedAt pgtype.Timestamp `json:"cursorCreatedAt"`
 	CursorID        pgtype.Text      `json:"cursorId"`
 	Limit           pgtype.Int4      `json:"limit"`
@@ -324,6 +348,7 @@ func (q *Queries) ListRequests(ctx context.Context, arg ListRequestsParams) ([]L
 		arg.ProjectID,
 		arg.StartAt,
 		arg.EndAt,
+		arg.EmptyResponse,
 		arg.CursorCreatedAt,
 		arg.CursorID,
 		arg.Limit,

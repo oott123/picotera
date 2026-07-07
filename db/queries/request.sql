@@ -26,6 +26,29 @@ WHERE
       AND r.created_at <= selected_trace.last_request_at
     )
   )
+  -- emptyResponse filter: 'empty response' = completion endpoint with output_tokens 0/NULL.
+  -- completion endpoint types from pkg/contract/endpoint.go; unified routes from pkg/server/unified_routes.go.
+  AND (
+    sqlc.narg('empty_response')::bool IS NULL
+    OR NOT sqlc.narg('empty_response')::bool
+    OR (
+      (r.output_tokens IS NULL OR r.output_tokens = 0)
+      AND (
+        r.endpoint_path = ANY(ARRAY[
+          '/api/unified/v1/messages',
+          '/api/unified/v1/responses',
+          '/api/unified/v1/chat/completions',
+          '/api/unified/v1beta/models/{model}:generateContent',
+          '/api/unified/v1beta/models/{model}:streamGenerateContent'
+        ]::text[])
+        OR EXISTS (
+          SELECT 1 FROM endpoint e
+          WHERE e.path = r.endpoint_path
+            AND e.endpoint_type = ANY(ARRAY[2,3,4,7,8]::int[])
+        )
+      )
+    )
+  )
   AND (
     sqlc.narg('cursor_created_at')::timestamp IS NULL
     OR (r.created_at, r.id) < (sqlc.narg('cursor_created_at')::timestamp, sqlc.narg('cursor_id')::text)

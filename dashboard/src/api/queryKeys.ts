@@ -40,6 +40,7 @@ export type RequestsFilters = Readonly<{
   projectId?: number
   startAt?: string
   endAt?: string
+  emptyResponse?: boolean
 }>
 
 export type KvListFilters = Readonly<{ pattern?: string; cursor?: number }>

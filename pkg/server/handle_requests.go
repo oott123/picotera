@@ -131,6 +131,7 @@ func (s *Server) handleListRequests(ctx context.Context, input *contract.ListReq
 		UpstreamModel:   filterUpstreamModel,
 		StartAt:         startAt,
 		EndAt:           endAt,
+		EmptyResponse:   pgtype.Bool{Bool: input.EmptyResponse, Valid: true},
 		CursorCreatedAt: cursorCreatedAt,
 		CursorID:        cursorID,
 		Limit:           pgtype.Int4{Int32: fetchLimit, Valid: true},
