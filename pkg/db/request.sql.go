@@ -12,10 +12,12 @@ import (
 )
 
 const getRequest = `-- name: GetRequest :one
-SELECT id, span_id, parent_span_id, provider_id, endpoint_path, api_key_id, model, input_tokens, cache_read_tokens, output_tokens, cache_write_tokens, status_code, error_message, ttft_ms, time_spent_ms, created_at, type, upstream_model, model_cost, model_cost_currency, user_message_preview, cache_write_1h_tokens, project_id, finish_reason, inferred_provider, inferred_model, inferred_model_source, user_id FROM request
-WHERE id = $1
-  AND created_at = $2::timestamp
-  AND user_id = $3::bigint
+SELECT r.id, r.span_id, r.parent_span_id, r.provider_id, r.endpoint_path, r.api_key_id, r.model, r.input_tokens, r.cache_read_tokens, r.output_tokens, r.cache_write_tokens, r.status_code, r.error_message, r.ttft_ms, r.time_spent_ms, r.created_at, r.type, r.upstream_model, r.model_cost, r.model_cost_currency, r.user_message_preview, r.cache_write_1h_tokens, r.project_id, r.finish_reason, r.inferred_provider, r.inferred_model, r.inferred_model_source, r.user_id, t.id AS trace_id
+FROM request r
+LEFT JOIN traces t ON t.parent_span_id = r.parent_span_id AND t.user_id = r.user_id
+WHERE r.id = $1
+  AND r.created_at = $2::timestamp
+  AND r.user_id = $3::bigint
 `
 
 type GetRequestParams struct {
@@ -24,9 +26,41 @@ type GetRequestParams struct {
 	UserID      int64            `json:"userId"`
 }
 
-func (q *Queries) GetRequest(ctx context.Context, arg GetRequestParams) (Request, error) {
+type GetRequestRow struct {
+	ID                  string           `json:"id"`
+	SpanID              pgtype.Text      `json:"spanId"`
+	ParentSpanID        pgtype.Text      `json:"parentSpanId"`
+	ProviderID          pgtype.Int4      `json:"providerId"`
+	EndpointPath        pgtype.Text      `json:"endpointPath"`
+	ApiKeyID            pgtype.Int4      `json:"apiKeyId"`
+	Model               pgtype.Text      `json:"model"`
+	InputTokens         pgtype.Int4      `json:"inputTokens"`
+	CacheReadTokens     pgtype.Int4      `json:"cacheReadTokens"`
+	OutputTokens        pgtype.Int4      `json:"outputTokens"`
+	CacheWriteTokens    pgtype.Int4      `json:"cacheWriteTokens"`
+	StatusCode          pgtype.Int4      `json:"statusCode"`
+	ErrorMessage        pgtype.Text      `json:"errorMessage"`
+	TtftMs              pgtype.Int4      `json:"ttftMs"`
+	TimeSpentMs         pgtype.Int4      `json:"timeSpentMs"`
+	CreatedAt           pgtype.Timestamp `json:"createdAt"`
+	Type                int32            `json:"type"`
+	UpstreamModel       pgtype.Text      `json:"upstreamModel"`
+	ModelCost           pgtype.Numeric   `json:"modelCost"`
+	ModelCostCurrency   pgtype.Text      `json:"modelCostCurrency"`
+	UserMessagePreview  pgtype.Text      `json:"userMessagePreview"`
+	CacheWrite1hTokens  pgtype.Int4      `json:"cacheWrite1hTokens"`
+	ProjectID           pgtype.Int4      `json:"projectId"`
+	FinishReason        pgtype.Int4      `json:"finishReason"`
+	InferredProvider    pgtype.Text      `json:"inferredProvider"`
+	InferredModel       pgtype.Text      `json:"inferredModel"`
+	InferredModelSource int16            `json:"inferredModelSource"`
+	UserID              pgtype.Int8      `json:"userId"`
+	TraceID             pgtype.Text      `json:"traceId"`
+}
+
+func (q *Queries) GetRequest(ctx context.Context, arg GetRequestParams) (GetRequestRow, error) {
 	row := q.db.QueryRow(ctx, getRequest, arg.ID, arg.IDCreatedAt, arg.UserID)
-	var i Request
+	var i GetRequestRow
 	err := row.Scan(
 		&i.ID,
 		&i.SpanID,
@@ -56,6 +90,7 @@ func (q *Queries) GetRequest(ctx context.Context, arg GetRequestParams) (Request
 		&i.InferredModel,
 		&i.InferredModelSource,
 		&i.UserID,
+		&i.TraceID,
 	)
 	return i, err
 }
@@ -423,8 +458,10 @@ SELECT r.id, r.span_id, r.parent_span_id, r.type, r.provider_id, r.endpoint_path
        r.model_cost, r.model_cost_currency,
        r.user_message_preview, r.project_id, r.finish_reason,
        r.inferred_provider, r.inferred_model, r.inferred_model_source,
-       r.user_id
-FROM request r, anchor
+       r.user_id,
+       t.id AS trace_id
+FROM request r CROSS JOIN anchor
+LEFT JOIN traces t ON t.parent_span_id = r.parent_span_id AND t.user_id = r.user_id
 WHERE r.span_id = anchor.span_id
   AND r.user_id = $1::bigint
 ORDER BY r.created_at ASC, r.id ASC
@@ -465,6 +502,7 @@ type ListRequestsBySpanRow struct {
 	InferredModel       pgtype.Text      `json:"inferredModel"`
 	InferredModelSource int16            `json:"inferredModelSource"`
 	UserID              pgtype.Int8      `json:"userId"`
+	TraceID             pgtype.Text      `json:"traceId"`
 }
 
 func (q *Queries) ListRequestsBySpan(ctx context.Context, arg ListRequestsBySpanParams) ([]ListRequestsBySpanRow, error) {
@@ -505,6 +543,7 @@ func (q *Queries) ListRequestsBySpan(ctx context.Context, arg ListRequestsBySpan
 			&i.InferredModel,
 			&i.InferredModelSource,
 			&i.UserID,
+			&i.TraceID,
 		); err != nil {
 			return nil, err
 		}

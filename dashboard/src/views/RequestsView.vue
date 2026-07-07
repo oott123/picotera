@@ -473,7 +473,7 @@ function syncFiltersToQuery() {
     !currentCursor.value
   )
     return
-  replaceBrowserUrl(currentAppPathname(), query)
+    router.replace({ name: 'requests', query: Object.fromEntries(query.entries()) })
 }
 
 function resetPaginationMemory() {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
+import { RouterLink } from 'vue-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import type { RequestView, ProviderLabel, RequestLiveView } from '@/api'
 import { listRequestSpans, getRequestLive, interruptRequest } from '@/api/client'
@@ -384,13 +385,17 @@ watch(detailTabs, (tabs) => {
                   {{ finishReasonLabel(selected.finishReason) }}
                 </Tag>
               </Field>
-              <Field v-if="selected.spanId" label="Span" as="div">
-                <span class="font-mono text-xs text-ink break-all">{{ selected.spanId }}</span>
-              </Field>
-              <Field v-if="selected.parentSpanId" label="Parent Span" as="div">
-                <span class="font-mono text-xs text-ink break-all">{{
-                  selected.parentSpanId
-                }}</span>
+              <Field v-if="selected.traceId" label="追踪" as="div" class="col-span-2">
+                <span class="inline-flex items-center gap-1.5 min-w-0">
+                  <span class="font-mono text-xs text-ink break-all">{{ selected.traceId }}</span>
+                  <RouterLink
+                    :to="{ name: 'requests', query: { traceId: selected.traceId } }"
+                    class="inline-flex items-center text-ink-faint hover:text-accent transition-colors shrink-0"
+                    :title="`查看追踪 ${selected.traceId}`"
+                  >
+                    <Icon name="filter" :size="10" />
+                  </RouterLink>
+                </span>
               </Field>
               <Field
                 v-if="selected.userMessagePreview"

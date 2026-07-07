@@ -161,10 +161,12 @@ ORDER BY traces.last_request_at DESC, traces.id DESC
 LIMIT sqlc.narg('limit')::int;
 
 -- name: GetRequest :one
-SELECT * FROM request
-WHERE id = $1
-  AND created_at = sqlc.arg('id_created_at')::timestamp
-  AND user_id = sqlc.arg('user_id')::bigint;
+SELECT r.*, t.id AS trace_id
+FROM request r
+LEFT JOIN traces t ON t.parent_span_id = r.parent_span_id AND t.user_id = r.user_id
+WHERE r.id = $1
+  AND r.created_at = sqlc.arg('id_created_at')::timestamp
+  AND r.user_id = sqlc.arg('user_id')::bigint;
 
 -- name: ListRequestsBySpan :many
 WITH anchor AS (
@@ -181,8 +183,10 @@ SELECT r.id, r.span_id, r.parent_span_id, r.type, r.provider_id, r.endpoint_path
        r.model_cost, r.model_cost_currency,
        r.user_message_preview, r.project_id, r.finish_reason,
        r.inferred_provider, r.inferred_model, r.inferred_model_source,
-       r.user_id
-FROM request r, anchor
+       r.user_id,
+       t.id AS trace_id
+FROM request r CROSS JOIN anchor
+LEFT JOIN traces t ON t.parent_span_id = r.parent_span_id AND t.user_id = r.user_id
 WHERE r.span_id = anchor.span_id
   AND r.user_id = sqlc.arg('user_id')::bigint
 ORDER BY r.created_at ASC, r.id ASC;

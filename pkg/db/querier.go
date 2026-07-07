@@ -63,7 +63,7 @@ type Querier interface {
 	// and call this. Returns the same column shape as the path-based query plus
 	// e.endpoint_type so the handler can pick the right transformer per row.
 	GetProvidersByEndpointTypesAndModel(ctx context.Context, arg GetProvidersByEndpointTypesAndModelParams) ([]GetProvidersByEndpointTypesAndModelRow, error)
-	GetRequest(ctx context.Context, arg GetRequestParams) (Request, error)
+	GetRequest(ctx context.Context, arg GetRequestParams) (GetRequestRow, error)
 	GetScript(ctx context.Context, id string) (Script, error)
 	GetUserByID(ctx context.Context, id int64) (AppUser, error)
 	GetUserByIdentity(ctx context.Context, arg GetUserByIdentityParams) (AppUser, error)

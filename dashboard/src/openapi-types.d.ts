@@ -1735,6 +1735,7 @@ export interface components {
             statusCode?: number;
             /** Format: int32 */
             timeSpentMs?: number;
+            traceId?: string;
             /** Format: int32 */
             ttftMs?: number;
             /** Format: int32 */
