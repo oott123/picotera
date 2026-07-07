@@ -1,9 +1,6 @@
 package server
 
-import (
-	"net/http"
-	"strings"
-)
+import "net/http"
 
 // writeCORSHeaders emits a permissive, credential-less CORS policy for the
 // gateway-facing routes (catch-all gateway + /api/unified). Origin is fixed to
@@ -37,14 +34,4 @@ func corsMiddleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
-}
-
-// isUpstreamCORSHeader reports whether lower (the lowercased header name)
-// is an Access-Control-* response header. The gateway owns the downstream
-// CORS policy (writeCORSHeaders), so upstream CORS headers must never be
-// forwarded — otherwise an upstream "Access-Control-Allow-Origin: *" is
-// appended to the gateway's own "*" and serializes as "*, *" (and similarly
-// for Access-Control-Expose-Headers).
-func isUpstreamCORSHeader(lower string) bool {
-	return strings.HasPrefix(lower, "access-control-")
 }

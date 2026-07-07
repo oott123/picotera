@@ -6,15 +6,30 @@ import (
 	"testing"
 )
 
-func TestIsUpstreamCORSHeader(t *testing.T) {
+func TestShouldStripUpstreamHeader(t *testing.T) {
 	cases := []struct {
 		header string
 		want   bool
 	}{
+		{"access-control-allow-origin", true},
+		{"Access-Control-Expose-Headers", true},
+		{"ACCESS-CONTROL-MAX-AGE", true},
+		{"access-control-allow-credentials", true},
+		{"Alt-Svc", true},
+		{"ALT-SVC", true},
+		{"Nel", true},
+		{"NEL", true},
+		{"Report-To", true},
+		{"REPORT-TO", true},
+		{"Vary", true},
+		{"VARY", true},
 		// Below the prefix boundary: "access-control" lacks the trailing "-",
 		// so it is not an Access-Control-* header.
 		{"access-control", false},
-		{"access-control-allow-credentials", true},
+		// "alt-svc-x" shares a prefix but is not the exact "alt-svc" name.
+		{"alt-svc-x", false},
+		// "vary-x" is not the exact "vary" name.
+		{"vary-x", false},
 		{"content-type", false},
 		{"x-request-id", false},
 		{"authorization", false},
@@ -22,14 +37,14 @@ func TestIsUpstreamCORSHeader(t *testing.T) {
 	for _, c := range cases {
 		c := c
 		t.Run(c.header, func(t *testing.T) {
-			if got := isUpstreamCORSHeader(lowerHeader(c.header)); got != c.want {
-				t.Fatalf("isUpstreamCORSHeader(%q) = %v, want %v", c.header, got, c.want)
+			if got := shouldStripUpstreamHeader(lowerHeader(c.header)); got != c.want {
+				t.Fatalf("shouldStripUpstreamHeader(%q) = %v, want %v", c.header, got, c.want)
 			}
 		})
 	}
 }
 
-// lowerHeader lowercases an HTTP header name for the isUpstreamCORSHeader
+// lowerHeader lowercases an HTTP header name for the shouldStripUpstreamHeader
 // predicate, which is defined to take the already-lowercased form. Mirrors how
 // the copy loops build `lower` before the skip check.
 func lowerHeader(h string) string {
@@ -44,12 +59,14 @@ func lowerHeader(h string) string {
 	return string(b)
 }
 
-// TestCopyPathSuccessHeaders_SkipsUpstreamCORS reproduces the bug where an
+// TestCopyPathSuccessHeaders_StripsUpstreamHeaders reproduces the bug where an
 // upstream Access-Control-Allow-Origin: * was appended to the gateway's own
 // "*" (set by writeCORSHeaders), serializing as "*, *" — and likewise for
 // Access-Control-Expose-Headers. The gateway owns the downstream CORS policy,
-// so upstream Access-Control-* headers must not be forwarded.
-func TestCopyPathSuccessHeaders_SkipsUpstreamCORS(t *testing.T) {
+// so upstream Access-Control-* headers must not be forwarded; upstream
+// Alt-Svc points at the upstream's alternative endpoints and must not be
+// forwarded either.
+func TestCopyPathSuccessHeaders_StripsUpstreamHeaders(t *testing.T) {
 	// Simulate the gateway having already written its CORS headers.
 	w := httptest.NewRecorder()
 	writeCORSHeaders(w, &http.Request{Header: http.Header{}})
@@ -58,6 +75,10 @@ func TestCopyPathSuccessHeaders_SkipsUpstreamCORS(t *testing.T) {
 	resp.Header.Set("Access-Control-Allow-Origin", "*")
 	resp.Header.Set("Access-Control-Expose-Headers", "X-Foo")
 	resp.Header.Set("Access-Control-Allow-Credentials", "true")
+	resp.Header.Set("Alt-Svc", `h2="api.upstream.com:443"; ma=3600`)
+	resp.Header.Set("Nel", `{"report_to":"https://upstream.example/report","max_age":3600}`)
+	resp.Header.Set("Report-To", `{"group":"default","endpoints":[{"url":"https://upstream.example/report"}],"max_age":3600}`)
+	resp.Header.Set("Vary", "Accept-Encoding, Authorization")
 	resp.Header.Set("X-Trace", "abc")
 	resp.Header.Set("Content-Length", "123")
 
@@ -82,6 +103,20 @@ func TestCopyPathSuccessHeaders_SkipsUpstreamCORS(t *testing.T) {
 	// Upstream Allow-Credentials must not leak into the credential-less policy.
 	if vals := h.Values("Access-Control-Allow-Credentials"); len(vals) != 0 {
 		t.Fatalf("Access-Control-Allow-Credentials leaked %v, want absent", vals)
+	}
+
+	// Alt-Svc / Nel / Report-To point at the upstream's own endpoints and must
+	// not be forwarded to the client.
+	for _, hdr := range []string{"Alt-Svc", "Nel", "Report-To"} {
+		if vals := h.Values(hdr); len(vals) != 0 {
+			t.Fatalf("%s leaked %v, want absent", hdr, vals)
+		}
+	}
+
+	// Upstream Vary is an unreliable caching hint after the gateway rewrites
+	// the response, and the gateway emits no Vary of its own.
+	if vals := h.Values("Vary"); len(vals) != 0 {
+		t.Fatalf("Vary leaked %v, want absent", vals)
 	}
 
 	// Ordinary headers are still forwarded.
