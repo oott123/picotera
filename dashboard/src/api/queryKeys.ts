@@ -37,6 +37,7 @@ export type RequestsFilters = Readonly<{
   model?: string
   upstreamModel?: string
   traceId?: string
+  requestId?: string
   projectId?: number
   startAt?: string
   endAt?: string

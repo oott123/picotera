@@ -59,6 +59,13 @@ WHERE
     OR r.finish_reason = sqlc.narg('finish_reason')::int
   )
   AND (
+    sqlc.narg('request_id')::text IS NULL
+    OR r.id = sqlc.narg('request_id')::text
+    OR r.parent_span_id = sqlc.narg('request_id')::text
+    OR r.external_request_id = sqlc.narg('request_id')::text
+    OR r.external_response_id = sqlc.narg('request_id')::text
+  )
+  AND (
     sqlc.narg('cursor_created_at')::timestamp IS NULL
     OR (r.created_at, r.id) < (sqlc.narg('cursor_created_at')::timestamp, sqlc.narg('cursor_id')::text)
   )

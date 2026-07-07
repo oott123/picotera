@@ -17,6 +17,10 @@ import (
 
 const artifactPresignTTL = time.Hour
 
+// requestIDLookback is the default lookback window for requestId searches
+// when the caller omits startAt; an explicit startAt is respected as-is.
+const requestIDLookback = 30 * 24 * time.Hour
+
 // parseTimeWindow strictly parses optional RFC3339/RFC3339Nano start/end timestamps.
 // Empty strings yield invalid (NULL) timestamps. The server does not trim,
 // case-fold, infer timezones, or otherwise normalize the input.
@@ -120,14 +124,26 @@ func (s *Server) handleListRequests(ctx context.Context, input *contract.ListReq
 		filterTraceID = pgtype.Text{String: input.TraceID, Valid: true}
 	}
 
+	var filterRequestID pgtype.Text
+	if input.RequestID != "" {
+		filterRequestID = pgtype.Text{String: input.RequestID, Valid: true}
+	}
+
 	startAt, endAt, err := parseTimeWindow(input.StartAt, input.EndAt)
 	if err != nil {
 		return nil, err
 	}
 
+	// requestId search: default to the last 30 days when the caller omits startAt.
+	// An explicit startAt (any age) is respected and never clamped.
+	if input.RequestID != "" && !startAt.Valid {
+		startAt = pgtype.Timestamp{Time: time.Now().UTC().Add(-requestIDLookback), Valid: true}
+	}
+
 	rows, err := s.queries.ListRequests(ctx, db.ListRequestsParams{
 		UserID:          u.ID,
 		TraceID:         filterTraceID,
+		RequestID:       filterRequestID,
 		Type:            filterType,
 		ProviderID:      filterProviderID,
 		EndpointPath:    filterEndpointPath,

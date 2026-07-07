@@ -51,6 +51,7 @@ const filters = reactive({
   model: '',
   upstreamModel: '',
   traceId: typeof route.query.traceId === 'string' ? route.query.traceId : '',
+  requestId: typeof route.query.requestId === 'string' ? route.query.requestId : '',
   projectId: typeof route.query.projectId === 'string' ? Number(route.query.projectId) || 0 : 0,
   startAt: typeof route.query.startAt === 'string' ? route.query.startAt : '',
   endAt: typeof route.query.endAt === 'string' ? route.query.endAt : '',
@@ -94,6 +95,7 @@ const requestFilters = computed<RequestsFilters>(() => {
     model?: string
     upstreamModel?: string
     traceId?: string
+    requestId?: string
     projectId?: number
     startAt?: string
     endAt?: string
@@ -107,6 +109,7 @@ const requestFilters = computed<RequestsFilters>(() => {
   if (filters.model) out.model = filters.model
   if (filters.upstreamModel) out.upstreamModel = filters.upstreamModel
   if (filters.traceId) out.traceId = filters.traceId
+  if (filters.requestId) out.requestId = filters.requestId
   if (filters.projectId) out.projectId = filters.projectId
   if (filters.startAt) out.startAt = filters.startAt
   if (filters.endAt) out.endAt = filters.endAt
@@ -178,6 +181,7 @@ watch(
     filters.model,
     filters.upstreamModel,
     filters.traceId,
+    filters.requestId,
     filters.projectId,
     filters.startAt,
     filters.endAt,
@@ -207,6 +211,36 @@ watch(
       filters.traceId = next
     }
   },
+)
+
+watch(
+  () => route.query.requestId,
+  (value) => {
+    const next = typeof value === 'string' ? value : ''
+    if (filters.requestId !== next) {
+      filters.requestId = next
+    }
+  },
+)
+
+watch(
+  () => filters.requestId,
+  (next, prev) => {
+    if (!prev && next) {
+      filters.type = 'all'
+      filters.providerId = 0
+      filters.endpointPath = ''
+      filters.model = ''
+      filters.upstreamModel = ''
+      filters.traceId = ''
+      filters.projectId = 0
+      filters.startAt = ''
+      filters.endAt = ''
+      filters.emptyResponse = 0
+      filters.finishReason = 0
+    }
+  },
+  { immediate: true },
 )
 
 watch(
@@ -414,6 +448,7 @@ function activeFilterCount(): number {
   if (filters.model) n++
   if (filters.upstreamModel) n++
   if (filters.traceId) n++
+  if (filters.requestId) n++
   if (filters.projectId) n++
   if (filters.startAt || filters.endAt) n++
   if (filters.emptyResponse) n++
@@ -427,6 +462,7 @@ function clearAllFilters() {
   filters.model = ''
   filters.upstreamModel = ''
   filters.traceId = ''
+  filters.requestId = ''
   filters.projectId = 0
   filters.startAt = ''
   filters.endAt = ''
@@ -442,10 +478,16 @@ function syncFiltersToQuery() {
   const query = currentSearchParams()
   const currentTrace = query.get('traceId') ?? ''
   const currentProject = Number(query.get('projectId') ?? '') || 0
+  const currentRequestId = query.get('requestId') ?? ''
   if (filters.traceId) {
     query.set('traceId', filters.traceId)
   } else {
     query.delete('traceId')
+  }
+  if (filters.requestId) {
+    query.set('requestId', filters.requestId)
+  } else {
+    query.delete('requestId')
   }
   if (filters.projectId) {
     query.set('projectId', String(filters.projectId))
@@ -467,6 +509,7 @@ function syncFiltersToQuery() {
   const currentEnd = query.get('endAt') ?? ''
   if (
     filters.traceId === currentTrace &&
+    filters.requestId === currentRequestId &&
     filters.projectId === currentProject &&
     filters.startAt === currentStart &&
     filters.endAt === currentEnd &&
@@ -580,6 +623,14 @@ function resetCursorAndReload() {
             }
           "
         />
+        <Field label="ID">
+          <input
+            v-model="filters.requestId"
+            type="text"
+            placeholder="也支持外部 ID"
+            class="rounded-md border border-line bg-surface-0 px-2 py-1.5 text-sm text-ink outline-none focus:border-accent focus-visible:ring-1 focus-visible:ring-accent"
+          />
+        </Field>
       </div>
       <div class="flex items-center gap-2">
         <button
@@ -810,6 +861,9 @@ function resetCursorAndReload() {
       <Button v-if="canGoNext" variant="ghost" :disabled="loading" @click="goNext">
         {{ loading ? '加载中…' : '下一页' }}
       </Button>
+    </div>
+    <div v-if="filters.requestId && !filters.startAt" class="text-center text-xs text-ink-faint">
+      仅显示最近30天结果；手动设置开始时间以扩大搜索范围。
     </div>
   </div>
 </template>

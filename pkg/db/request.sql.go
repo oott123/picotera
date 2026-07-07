@@ -327,11 +327,18 @@ WHERE
     OR r.finish_reason = $12::int
   )
   AND (
-    $13::timestamp IS NULL
-    OR (r.created_at, r.id) < ($13::timestamp, $14::text)
+    $13::text IS NULL
+    OR r.id = $13::text
+    OR r.parent_span_id = $13::text
+    OR r.external_request_id = $13::text
+    OR r.external_response_id = $13::text
+  )
+  AND (
+    $14::timestamp IS NULL
+    OR (r.created_at, r.id) < ($14::timestamp, $15::text)
   )
 ORDER BY r.created_at DESC, r.id DESC
-LIMIT $15::int
+LIMIT $16::int
 `
 
 type ListRequestsParams struct {
@@ -347,6 +354,7 @@ type ListRequestsParams struct {
 	EndAt           pgtype.Timestamp `json:"endAt"`
 	EmptyResponse   pgtype.Bool      `json:"emptyResponse"`
 	FinishReason    pgtype.Int4      `json:"finishReason"`
+	RequestID       pgtype.Text      `json:"requestId"`
 	CursorCreatedAt pgtype.Timestamp `json:"cursorCreatedAt"`
 	CursorID        pgtype.Text      `json:"cursorId"`
 	Limit           pgtype.Int4      `json:"limit"`
@@ -399,6 +407,7 @@ func (q *Queries) ListRequests(ctx context.Context, arg ListRequestsParams) ([]L
 		arg.EndAt,
 		arg.EmptyResponse,
 		arg.FinishReason,
+		arg.RequestID,
 		arg.CursorCreatedAt,
 		arg.CursorID,
 		arg.Limit,

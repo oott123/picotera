@@ -3604,6 +3604,7 @@ export interface operations {
                 model?: string;
                 upstreamModel?: string;
                 traceId?: string;
+                requestId?: string;
                 projectId?: number;
                 startAt?: string;
                 endAt?: string;

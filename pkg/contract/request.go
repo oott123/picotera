@@ -374,6 +374,7 @@ type ListRequestsRequest struct {
 	Model         string `query:"model,omitempty"`
 	UpstreamModel string `query:"upstreamModel,omitempty"`
 	TraceID       string `query:"traceId,omitempty"`
+	RequestID     string `query:"requestId,omitempty"`
 	ProjectID     int32  `query:"projectId,omitempty"`
 	StartAt       string `query:"startAt,omitempty"`
 	EndAt         string `query:"endAt,omitempty"`
