@@ -518,6 +518,20 @@ watch(detailTabs, (tabs) => {
             </div>
           </section>
 
+          <section
+            v-if="selected.annotations && Object.keys(selected.annotations).length"
+            class="flex flex-col gap-2.5"
+          >
+            <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.04em]"
+              >标注</span
+            >
+            <div class="grid grid-cols-2 gap-2.5">
+              <Field v-for="(v, k) in selected.annotations" :key="k" :label="k" as="div">
+                <span class="font-mono text-sm text-ink break-all">{{ v }}</span>
+              </Field>
+            </div>
+          </section>
+
           <section v-if="selected.errorMessage" class="flex flex-col gap-2.5">
             <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.04em]"
               >错误信息</span

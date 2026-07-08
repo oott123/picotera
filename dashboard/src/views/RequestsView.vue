@@ -57,6 +57,8 @@ const filters = reactive({
   endAt: typeof route.query.endAt === 'string' ? route.query.endAt : '',
   emptyResponse: 0,
   finishReason: 0,
+  annotationKey: '',
+  annotationValue: '',
 })
 
 const typeOptions: { value: RequestKind; label: string }[] = [
@@ -101,6 +103,7 @@ const requestFilters = computed<RequestsFilters>(() => {
     endAt?: string
     emptyResponse?: boolean
     finishReason?: number
+    annotations?: string
   } = {}
   if (filters.type === 'meta') out.type = 0
   else if (filters.type === 'upstream') out.type = 1
@@ -115,6 +118,9 @@ const requestFilters = computed<RequestsFilters>(() => {
   if (filters.endAt) out.endAt = filters.endAt
   if (filters.emptyResponse) out.emptyResponse = true
   if (filters.finishReason) out.finishReason = filters.finishReason
+  if (filters.annotationKey) {
+    out.annotations = JSON.stringify({ [filters.annotationKey]: filters.annotationValue })
+  }
   return out
 })
 
@@ -187,6 +193,8 @@ watch(
     filters.endAt,
     filters.emptyResponse,
     filters.finishReason,
+    filters.annotationKey,
+    filters.annotationValue,
   ],
   () => {
     resetPaginationMemory()
@@ -238,6 +246,8 @@ watch(
       filters.endAt = ''
       filters.emptyResponse = 0
       filters.finishReason = 0
+      filters.annotationKey = ''
+      filters.annotationValue = ''
     }
   },
   { immediate: true },
@@ -453,6 +463,7 @@ function activeFilterCount(): number {
   if (filters.startAt || filters.endAt) n++
   if (filters.emptyResponse) n++
   if (filters.finishReason) n++
+  if (filters.annotationKey) n++
   return n
 }
 
@@ -468,6 +479,8 @@ function clearAllFilters() {
   filters.endAt = ''
   filters.emptyResponse = 0
   filters.finishReason = 0
+  filters.annotationKey = ''
+  filters.annotationValue = ''
 }
 
 function clearTraceFilter() {
@@ -630,6 +643,22 @@ function resetCursorAndReload() {
             placeholder="也支持外部 ID"
             class="rounded-md border border-line bg-surface-0 px-2 py-1.5 text-sm text-ink outline-none focus:border-accent focus-visible:ring-1 focus-visible:ring-accent"
           />
+        </Field>
+        <Field label="标注">
+          <div class="flex items-center gap-1.5">
+            <input
+              v-model="filters.annotationKey"
+              type="text"
+              placeholder="键"
+              class="w-28 rounded-md border border-line bg-surface-0 px-2 py-1.5 text-sm text-ink outline-none focus:border-accent focus-visible:ring-1 focus-visible:ring-accent"
+            />
+            <input
+              v-model="filters.annotationValue"
+              type="text"
+              placeholder="值"
+              class="w-32 rounded-md border border-line bg-surface-0 px-2 py-1.5 text-sm text-ink outline-none focus:border-accent focus-visible:ring-1 focus-visible:ring-accent"
+            />
+          </div>
         </Field>
       </div>
       <div class="flex items-center gap-2">
@@ -862,7 +891,7 @@ function resetCursorAndReload() {
         {{ loading ? '加载中…' : '下一页' }}
       </Button>
     </div>
-    <div v-if="filters.requestId && !filters.startAt" class="text-center text-xs text-ink-faint">
+    <div v-if="(filters.requestId || filters.annotationKey) && !filters.startAt" class="text-center text-xs text-ink-faint">
       仅显示最近30天结果；手动设置开始时间以扩大搜索范围。
     </div>
   </div>
