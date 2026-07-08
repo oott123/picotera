@@ -1,9 +1,13 @@
 package server
 
 import (
+	"encoding/json"
+	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
+
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -115,3 +119,65 @@ func assertTimestamp(t *testing.T, label string, got pgtype.Timestamp, want *tim
 }
 
 func ptr(t time.Time) *time.Time { return &t }
+
+func TestParseAnnotationsFilter(t *testing.T) {
+	t.Run("empty returns nil no error", func(t *testing.T) {
+		b, err := parseAnnotationsFilter("")
+		if err != nil || b != nil {
+			t.Fatalf("empty: got (%s, %v), want (nil, nil)", b, err)
+		}
+	})
+
+	valid := []struct {
+		name string
+		in   string
+		want map[string]string
+	}{
+		{"single pair", `{"agent":"claude-code"}`, map[string]string{"agent": "claude-code"}},
+		{"multi pair", `{"agent":"claude-code","team":"infra"}`, map[string]string{"agent": "claude-code", "team": "infra"}},
+		{"empty string value", `{"agent":""}`, map[string]string{"agent": ""}},
+	}
+	for _, tc := range valid {
+		t.Run(tc.name, func(t *testing.T) {
+			b, err := parseAnnotationsFilter(tc.in)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			var got map[string]string
+			if uerr := json.Unmarshal(b, &got); uerr != nil {
+				t.Fatalf("output not valid JSON object: %v", uerr)
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+
+	invalid := []struct {
+		name string
+		in   string
+	}{
+		{"array", `["a","b"]`},
+		{"bare string", `"agent"`},
+		{"number", `123`},
+		{"empty object", `{}`},
+		{"numeric value", `{"agent":1}`},
+		{"boolean value", `{"agent":true}`},
+		{"null value", `{"agent":null}`},
+		{"nested object value", `{"agent":{"x":"y"}}`},
+		{"array value", `{"agent":["x"]}`},
+		{"malformed json", `{"agent":`},
+	}
+	for _, tc := range invalid {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parseAnnotationsFilter(tc.in)
+			if err == nil {
+				t.Fatalf("want 400 error for %q, got nil", tc.in)
+			}
+			var se huma.StatusError
+			if !errors.As(err, &se) || se.GetStatus() != 400 {
+				t.Fatalf("want 400 status error, got %v", err)
+			}
+		})
+	}
+}

@@ -25,6 +25,61 @@ func registerHelpers(s *qjsSession) {
 	registerConsole(s)
 	registerKV(s)
 	registerObjects(s)
+	registerAnnotations(s)
+}
+
+// registerAnnotations exposes the per-request annotation accumulators to JS.
+// ctx.metaRequest.annotations and ctx.upstreamRequest.annotations are Proxies
+// (see sdk.js __picotera_makeAnnotationsProxy) whose traps forward through these
+// synchronous host functions, routed by slot ("meta" / "upstream"). Functions
+// that can fail return (value, error) so the SDK throws on the error element;
+// void ops return error (null on success). Type validation for values happens on
+// the JS side; the Go set is defensive (rejects an empty key).
+func registerAnnotations(s *qjsSession) {
+	vm := s.vm
+	// __picotera_anno_get returns the value's JSON encoding (so an empty-string
+	// value stays distinguishable from a missing key, which returns "").
+	_ = vm.RegisterFunc("__picotera_anno_get", func(slot, key string) (string, error) {
+		v, ok, err := s.annoGet(slot, key)
+		if err != nil {
+			return "", err
+		}
+		if !ok {
+			return "", nil
+		}
+		b, merr := json.Marshal(v)
+		if merr != nil {
+			return "", merr
+		}
+		return string(b), nil
+	}, false)
+	_ = vm.RegisterFunc("__picotera_anno_set", func(slot, key, value string) error {
+		return s.annoSet(slot, key, value)
+	}, false)
+	_ = vm.RegisterFunc("__picotera_anno_del", func(slot, key string) error {
+		return s.annoDel(slot, key)
+	}, false)
+	_ = vm.RegisterFunc("__picotera_anno_keys", func(slot string) (string, error) {
+		keys, err := s.annoKeys(slot)
+		if err != nil {
+			return "", err
+		}
+		b, merr := json.Marshal(keys)
+		if merr != nil {
+			return "", merr
+		}
+		return string(b), nil
+	}, false)
+	_ = vm.RegisterFunc("__picotera_anno_has", func(slot, key string) (int, error) {
+		ok, err := s.annoHas(slot, key)
+		if err != nil {
+			return 0, err
+		}
+		if ok {
+			return 1, nil
+		}
+		return 0, nil
+	}, false)
 }
 
 // registerObjects exposes the body object registry to JS. ctx.request.body and

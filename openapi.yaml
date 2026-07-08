@@ -1401,6 +1401,10 @@ components:
           format: uri
           readOnly: true
           type: string
+        annotations:
+          additionalProperties:
+            type: string
+          type: object
         apiKeyId:
           format: int32
           type: integer
@@ -3513,6 +3517,11 @@ paths:
           schema:
             format: int32
             type: integer
+        - explode: false
+          in: query
+          name: annotations
+          schema:
+            type: string
       responses:
         "200":
           content:

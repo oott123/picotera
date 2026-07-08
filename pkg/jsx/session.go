@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"sync"
 	"time"
@@ -62,9 +63,164 @@ type qjsSession struct {
 	logsBytes int
 	logsTrunc bool
 
+	// metaAnnotations / upstreamAnnotations back the JS-visible
+	// ctx.metaRequest.annotations / ctx.upstreamRequest.annotations Proxies.
+	// They are plain string KV accumulators written by host functions and read
+	// (copied) at each row's persistence point. Guarded by logsMu (shared with
+	// logs); lazily initialized on first write. upstreamAnnotations is reset per
+	// attempt via ResetUpstreamAnnotations. Reading them never touches the VM, so
+	// a session tainted by a hook timeout can still yield already-written labels.
+	metaAnnotations     map[string]string
+	upstreamAnnotations map[string]string
+	// upstreamAnnoInstalled records whether the ctx.upstreamRequest Proxy has
+	// been installed in the VM (done on the first ResetUpstreamAnnotations call).
+	upstreamAnnoInstalled bool
+
 	// registry backs the JS-visible body Proxies (ctx.request.body and
 	// rewriteRequest's pending.body). See objects.go.
 	registry *objectRegistry
+}
+
+// annotation slot identifiers routed through the __picotera_anno_* host
+// functions. Any other slot is a programming error and rejected.
+const (
+	annoSlotMeta     = "meta"
+	annoSlotUpstream = "upstream"
+)
+
+// annoSet writes key=value into the slot's accumulator. key must be non-empty
+// (a defensive check mirroring the JS-side validation); value is stored verbatim.
+func (s *qjsSession) annoSet(slot, key, value string) error {
+	if key == "" {
+		return fmt.Errorf("jsx: annotation key must be a non-empty string")
+	}
+	s.logsMu.Lock()
+	defer s.logsMu.Unlock()
+	switch slot {
+	case annoSlotMeta:
+		if s.metaAnnotations == nil {
+			s.metaAnnotations = map[string]string{}
+		}
+		s.metaAnnotations[key] = value
+	case annoSlotUpstream:
+		if s.upstreamAnnotations == nil {
+			s.upstreamAnnotations = map[string]string{}
+		}
+		s.upstreamAnnotations[key] = value
+	default:
+		return fmt.Errorf("jsx: unknown annotation slot %q", slot)
+	}
+	return nil
+}
+
+// annoMap returns the (locked) map for a slot; caller must hold logsMu. A nil
+// map is returned for an untouched slot.
+func (s *qjsSession) annoMap(slot string) (map[string]string, error) {
+	switch slot {
+	case annoSlotMeta:
+		return s.metaAnnotations, nil
+	case annoSlotUpstream:
+		return s.upstreamAnnotations, nil
+	default:
+		return nil, fmt.Errorf("jsx: unknown annotation slot %q", slot)
+	}
+}
+
+// annoGet returns (value, found) for a key in the slot.
+func (s *qjsSession) annoGet(slot, key string) (string, bool, error) {
+	s.logsMu.Lock()
+	defer s.logsMu.Unlock()
+	m, err := s.annoMap(slot)
+	if err != nil {
+		return "", false, err
+	}
+	v, ok := m[key]
+	return v, ok, nil
+}
+
+func (s *qjsSession) annoDel(slot, key string) error {
+	s.logsMu.Lock()
+	defer s.logsMu.Unlock()
+	m, err := s.annoMap(slot)
+	if err != nil {
+		return err
+	}
+	delete(m, key)
+	return nil
+}
+
+func (s *qjsSession) annoHas(slot, key string) (bool, error) {
+	s.logsMu.Lock()
+	defer s.logsMu.Unlock()
+	m, err := s.annoMap(slot)
+	if err != nil {
+		return false, err
+	}
+	_, ok := m[key]
+	return ok, nil
+}
+
+// annoKeys returns the slot's keys (unordered). Used by the Proxy's ownKeys trap.
+func (s *qjsSession) annoKeys(slot string) ([]string, error) {
+	s.logsMu.Lock()
+	defer s.logsMu.Unlock()
+	m, err := s.annoMap(slot)
+	if err != nil {
+		return nil, err
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys, nil
+}
+
+// annoSnapshot returns a copy of the slot's map, or nil when empty.
+func (s *qjsSession) annoSnapshot(slot string) map[string]string {
+	s.logsMu.Lock()
+	defer s.logsMu.Unlock()
+	m, _ := s.annoMap(slot)
+	if len(m) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(m))
+	maps.Copy(out, m)
+	return out
+}
+
+// MetaAnnotations returns a snapshot copy of the meta-request annotations, or
+// nil when none were written. Safe to call after Close / on a tainted session.
+func (s *qjsSession) MetaAnnotations() map[string]string {
+	return s.annoSnapshot(annoSlotMeta)
+}
+
+// UpstreamAnnotations returns a snapshot copy of the current attempt's
+// upstream-request annotations, or nil when none were written.
+func (s *qjsSession) UpstreamAnnotations() map[string]string {
+	return s.annoSnapshot(annoSlotUpstream)
+}
+
+// ResetUpstreamAnnotations clears the upstream annotation accumulator so the
+// next attempt starts empty. On the first call it also installs the
+// ctx.upstreamRequest Proxy in the VM (before which ctx.upstreamRequest is
+// undefined). Only the JS install can fail; the reset itself always succeeds.
+func (s *qjsSession) ResetUpstreamAnnotations() error {
+	s.logsMu.Lock()
+	s.upstreamAnnotations = nil
+	s.logsMu.Unlock()
+	if s.upstreamAnnoInstalled {
+		return nil
+	}
+	if s.tainted {
+		return ErrHookTimeout
+	}
+	if _, err := s.vm.EvalFile(
+		"globalThis.ctx.upstreamRequest = { annotations: globalThis.__picotera_makeAnnotationsProxy('upstream') };null;",
+		internalFilename("install-upstream-annotations.js"), quickjs.EvalGlobal); err != nil {
+		return fmt.Errorf("jsx: install upstream annotations: %w", err)
+	}
+	s.upstreamAnnoInstalled = true
+	return nil
 }
 
 func (s *qjsSession) appendLog(level, message string) {
@@ -148,6 +304,15 @@ func newSession(ctx context.Context, eng *qjsEngine, requestID string) (*qjsSess
 	if _, err := vm.EvalFile(ctxInit, internalFilename("ctx-init.js"), quickjs.EvalGlobal); err != nil {
 		s.Close()
 		return nil, fmt.Errorf("jsx: init ctx: %w", err)
+	}
+	// ctx.metaRequest.annotations is available for the whole session (sortProviders
+	// / rewriteModel onwards). ctx.upstreamRequest is installed lazily at the first
+	// attempt via ResetUpstreamAnnotations.
+	if _, err := vm.EvalFile(
+		"globalThis.ctx.metaRequest = { annotations: globalThis.__picotera_makeAnnotationsProxy('meta') };null;",
+		internalFilename("init-meta-annotations.js"), quickjs.EvalGlobal); err != nil {
+		s.Close()
+		return nil, fmt.Errorf("jsx: init meta annotations: %w", err)
 	}
 
 	scripts, err := eng.store.ListEnabledScripts(ctx)

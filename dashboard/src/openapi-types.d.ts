@@ -1697,6 +1697,9 @@ export interface components {
              * @example https://example.com/schemas/RequestView.json
              */
             readonly $schema?: string;
+            annotations?: {
+                [key: string]: string;
+            };
             /** Format: int32 */
             apiKeyId?: number;
             /** Format: int32 */
@@ -3610,6 +3613,7 @@ export interface operations {
                 endAt?: string;
                 emptyResponse?: boolean;
                 finishReason?: number;
+                annotations?: string;
             };
             header?: never;
             path?: never;

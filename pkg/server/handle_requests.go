@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"picotera/pkg/artifacts"
 	"picotera/pkg/contract"
@@ -17,9 +18,9 @@ import (
 
 const artifactPresignTTL = time.Hour
 
-// requestIDLookback is the default lookback window for requestId searches
-// when the caller omits startAt; an explicit startAt is respected as-is.
-const requestIDLookback = 30 * 24 * time.Hour
+// filterLookback is the default lookback window for requestId and annotations
+// searches when the caller omits startAt; an explicit startAt is respected as-is.
+const filterLookback = 30 * 24 * time.Hour
 
 // parseTimeWindow strictly parses optional RFC3339/RFC3339Nano start/end timestamps.
 // Empty strings yield invalid (NULL) timestamps. The server does not trim,
@@ -43,6 +44,45 @@ func parseTimeWindow(startAt, endAt string) (start pgtype.Timestamp, end pgtype.
 		return pgtype.Timestamp{}, pgtype.Timestamp{}, huma.Error400BadRequest("invalid time range")
 	}
 	return start, end, nil
+}
+
+// parseAnnotationsFilter strictly parses the annotations query parameter into
+// canonical JSONB bytes for a containment (@>) match. Empty input yields nil (no
+// filter). Fail fast: the value must be a JSON object with at least one pair and
+// all string values — arrays, nested objects, numbers, booleans, and null are
+// rejected with 400. The re-marshaled Go map (not the raw input) is returned so
+// only canonical JSON reaches SQL.
+func parseAnnotationsFilter(s string) ([]byte, error) {
+	if s == "" {
+		return nil, nil
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return nil, huma.Error400BadRequest("annotations must be a JSON object")
+	}
+	if len(raw) == 0 {
+		return nil, huma.Error400BadRequest("annotations must contain at least one pair")
+	}
+	filter := make(map[string]string, len(raw))
+	for k, v := range raw {
+		var val any
+		if err := json.Unmarshal(v, &val); err != nil {
+			return nil, huma.Error400BadRequest("annotations values must be strings")
+		}
+		// Reject non-string values (numbers, booleans, null, arrays, objects).
+		// json unmarshals JSON null into a string as "" without error, so a
+		// typed decode alone would not catch it.
+		str, ok := val.(string)
+		if !ok {
+			return nil, huma.Error400BadRequest("annotations values must be strings")
+		}
+		filter[k] = str
+	}
+	b, err := json.Marshal(filter)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to encode annotations filter", err)
+	}
+	return b, nil
 }
 
 // attachArtifactUrls fills in presigned URLs for the given view using id+createdAt.
@@ -133,15 +173,20 @@ func (s *Server) handleListRequests(ctx context.Context, input *contract.ListReq
 		filterRequestID = pgtype.Text{String: input.RequestID, Valid: true}
 	}
 
+	filterAnnotations, err := parseAnnotationsFilter(input.Annotations)
+	if err != nil {
+		return nil, err
+	}
+
 	startAt, endAt, err := parseTimeWindow(input.StartAt, input.EndAt)
 	if err != nil {
 		return nil, err
 	}
 
-	// requestId search: default to the last 30 days when the caller omits startAt.
-	// An explicit startAt (any age) is respected and never clamped.
-	if input.RequestID != "" && !startAt.Valid {
-		startAt = pgtype.Timestamp{Time: time.Now().UTC().Add(-requestIDLookback), Valid: true}
+	// requestId / annotations search: default to the last 30 days when the caller
+	// omits startAt. An explicit startAt (any age) is respected and never clamped.
+	if (input.RequestID != "" || filterAnnotations != nil) && !startAt.Valid {
+		startAt = pgtype.Timestamp{Time: time.Now().UTC().Add(-filterLookback), Valid: true}
 	}
 
 	rows, err := s.queries.ListRequests(ctx, db.ListRequestsParams{
@@ -158,6 +203,7 @@ func (s *Server) handleListRequests(ctx context.Context, input *contract.ListReq
 		EndAt:           endAt,
 		EmptyResponse:   pgtype.Bool{Bool: input.EmptyResponse, Valid: true},
 		FinishReason:    filterFinishReason,
+		Annotations:     filterAnnotations,
 		CursorCreatedAt: cursorCreatedAt,
 		CursorID:        cursorID,
 		Limit:           pgtype.Int4{Int32: fetchLimit, Valid: true},

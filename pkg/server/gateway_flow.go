@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"picotera/pkg/errorx"
 	"picotera/pkg/jsx"
 	"picotera/pkg/llmbridge"
+	"picotera/pkg/logx"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/tidwall/gjson"
@@ -152,6 +154,12 @@ func (f *gatewayFlow) run() {
 	}
 	defer (func() {
 		if f.session != nil {
+			// Persist the meta-row annotations a hook accumulated over the session.
+			// Reading them never touches the VM, so this is safe even if the session
+			// was tainted by a hook timeout. This defer runs on every path after the
+			// session is created (success, failures, stream interruption, both
+			// gateway and unified routes).
+			f.persistRequestAnnotations(f.meta.ID, f.meta.CreatedAt, f.session.MetaAnnotations())
 			f.session.Close()
 		}
 	})()
@@ -451,6 +459,26 @@ func (f *gatewayFlow) resolveAndSortCandidates() ([]jsx.CandidateView, map[strin
 		return nil, nil, false
 	}
 	return sorted, candidateSidecarMap(set), true
+}
+
+// persistRequestAnnotations writes the script-supplied annotations onto a request
+// row (meta or upstream) with a single partial UPDATE. Empty annotations are a
+// no-op (the column stays NULL, keeping the partial GIN index untouched). Not
+// gated by OTR: annotations are operator-authored operational labels, not client
+// content. Following the recording convention, marshal/update failures are logged
+// and never affect the response.
+func (f *gatewayFlow) persistRequestAnnotations(id string, createdAt time.Time, anno map[string]string) {
+	if len(anno) == 0 {
+		return
+	}
+	b, err := json.Marshal(anno)
+	if err != nil {
+		logx.WithContext(f.ctxs.Request).WithError(err).Warn("failed to marshal request annotations")
+		return
+	}
+	pctx, pcancel := f.ctxs.Persist()
+	defer pcancel()
+	f.h.updateRequest(pctx, newRequestUpdate(id, createdAt).Annotations(b))
 }
 
 func (f *gatewayFlow) updateMetaModel(model string) {

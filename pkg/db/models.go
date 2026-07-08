@@ -115,6 +115,7 @@ type Request struct {
 	UserID              pgtype.Int8      `json:"userId"`
 	ExternalRequestID   pgtype.Text      `json:"externalRequestId"`
 	ExternalResponseID  pgtype.Text      `json:"externalResponseId"`
+	Annotations         []byte           `json:"annotations"`
 }
 
 type RequestOverviewBucketed struct {

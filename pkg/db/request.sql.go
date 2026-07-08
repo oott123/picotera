@@ -12,7 +12,7 @@ import (
 )
 
 const getRequest = `-- name: GetRequest :one
-SELECT r.id, r.span_id, r.parent_span_id, r.provider_id, r.endpoint_path, r.api_key_id, r.model, r.input_tokens, r.cache_read_tokens, r.output_tokens, r.cache_write_tokens, r.status_code, r.error_message, r.ttft_ms, r.time_spent_ms, r.created_at, r.type, r.upstream_model, r.model_cost, r.model_cost_currency, r.user_message_preview, r.cache_write_1h_tokens, r.project_id, r.finish_reason, r.inferred_provider, r.inferred_model, r.inferred_model_source, r.user_id, r.external_request_id, r.external_response_id, t.id AS trace_id
+SELECT r.id, r.span_id, r.parent_span_id, r.provider_id, r.endpoint_path, r.api_key_id, r.model, r.input_tokens, r.cache_read_tokens, r.output_tokens, r.cache_write_tokens, r.status_code, r.error_message, r.ttft_ms, r.time_spent_ms, r.created_at, r.type, r.upstream_model, r.model_cost, r.model_cost_currency, r.user_message_preview, r.cache_write_1h_tokens, r.project_id, r.finish_reason, r.inferred_provider, r.inferred_model, r.inferred_model_source, r.user_id, r.external_request_id, r.external_response_id, r.annotations, t.id AS trace_id
 FROM request r
 LEFT JOIN traces t ON t.parent_span_id = r.parent_span_id AND t.user_id = r.user_id
 WHERE r.id = $1
@@ -57,6 +57,7 @@ type GetRequestRow struct {
 	UserID              pgtype.Int8      `json:"userId"`
 	ExternalRequestID   pgtype.Text      `json:"externalRequestId"`
 	ExternalResponseID  pgtype.Text      `json:"externalResponseId"`
+	Annotations         []byte           `json:"annotations"`
 	TraceID             pgtype.Text      `json:"traceId"`
 }
 
@@ -94,6 +95,7 @@ func (q *Queries) GetRequest(ctx context.Context, arg GetRequestParams) (GetRequ
 		&i.UserID,
 		&i.ExternalRequestID,
 		&i.ExternalResponseID,
+		&i.Annotations,
 		&i.TraceID,
 	)
 	return i, err
@@ -274,7 +276,8 @@ SELECT r.id, r.span_id, r.parent_span_id, r.type, r.provider_id, r.endpoint_path
        r.user_message_preview, r.project_id, r.finish_reason,
        r.inferred_provider, r.inferred_model, r.inferred_model_source,
        r.user_id,
-       r.external_request_id, r.external_response_id
+       r.external_request_id, r.external_response_id,
+       r.annotations
 FROM request r
 LEFT JOIN traces selected_trace ON selected_trace.id = $1::text
 WHERE
@@ -334,11 +337,15 @@ WHERE
     OR r.external_response_id = $13::text
   )
   AND (
-    $14::timestamp IS NULL
-    OR (r.created_at, r.id) < ($14::timestamp, $15::text)
+    $14::jsonb IS NULL
+    OR r.annotations @> $14::jsonb
+  )
+  AND (
+    $15::timestamp IS NULL
+    OR (r.created_at, r.id) < ($15::timestamp, $16::text)
   )
 ORDER BY r.created_at DESC, r.id DESC
-LIMIT $16::int
+LIMIT $17::int
 `
 
 type ListRequestsParams struct {
@@ -355,6 +362,7 @@ type ListRequestsParams struct {
 	EmptyResponse   pgtype.Bool      `json:"emptyResponse"`
 	FinishReason    pgtype.Int4      `json:"finishReason"`
 	RequestID       pgtype.Text      `json:"requestId"`
+	Annotations     []byte           `json:"annotations"`
 	CursorCreatedAt pgtype.Timestamp `json:"cursorCreatedAt"`
 	CursorID        pgtype.Text      `json:"cursorId"`
 	Limit           pgtype.Int4      `json:"limit"`
@@ -391,6 +399,7 @@ type ListRequestsRow struct {
 	UserID              pgtype.Int8      `json:"userId"`
 	ExternalRequestID   pgtype.Text      `json:"externalRequestId"`
 	ExternalResponseID  pgtype.Text      `json:"externalResponseId"`
+	Annotations         []byte           `json:"annotations"`
 }
 
 func (q *Queries) ListRequests(ctx context.Context, arg ListRequestsParams) ([]ListRequestsRow, error) {
@@ -408,6 +417,7 @@ func (q *Queries) ListRequests(ctx context.Context, arg ListRequestsParams) ([]L
 		arg.EmptyResponse,
 		arg.FinishReason,
 		arg.RequestID,
+		arg.Annotations,
 		arg.CursorCreatedAt,
 		arg.CursorID,
 		arg.Limit,
@@ -450,6 +460,7 @@ func (q *Queries) ListRequests(ctx context.Context, arg ListRequestsParams) ([]L
 			&i.UserID,
 			&i.ExternalRequestID,
 			&i.ExternalResponseID,
+			&i.Annotations,
 		); err != nil {
 			return nil, err
 		}
@@ -478,6 +489,7 @@ SELECT r.id, r.span_id, r.parent_span_id, r.type, r.provider_id, r.endpoint_path
        r.inferred_provider, r.inferred_model, r.inferred_model_source,
        r.user_id,
        r.external_request_id, r.external_response_id,
+       r.annotations,
        t.id AS trace_id
 FROM request r CROSS JOIN anchor
 LEFT JOIN traces t ON t.parent_span_id = r.parent_span_id AND t.user_id = r.user_id
@@ -523,6 +535,7 @@ type ListRequestsBySpanRow struct {
 	UserID              pgtype.Int8      `json:"userId"`
 	ExternalRequestID   pgtype.Text      `json:"externalRequestId"`
 	ExternalResponseID  pgtype.Text      `json:"externalResponseId"`
+	Annotations         []byte           `json:"annotations"`
 	TraceID             pgtype.Text      `json:"traceId"`
 }
 
@@ -566,6 +579,7 @@ func (q *Queries) ListRequestsBySpan(ctx context.Context, arg ListRequestsBySpan
 			&i.UserID,
 			&i.ExternalRequestID,
 			&i.ExternalResponseID,
+			&i.Annotations,
 			&i.TraceID,
 		); err != nil {
 			return nil, err
@@ -603,8 +617,9 @@ UPDATE request SET
   inferred_model = CASE WHEN $41::bool THEN $42::text ELSE inferred_model END,
   inferred_model_source = CASE WHEN $43::bool THEN $44::smallint ELSE inferred_model_source END,
   user_message_preview = CASE WHEN $45::bool THEN $46::text ELSE user_message_preview END,
-  external_response_id = CASE WHEN $47::bool THEN $48::text ELSE external_response_id END
-WHERE id = $49::text AND created_at = $50::timestamp
+  external_response_id = CASE WHEN $47::bool THEN $48::text ELSE external_response_id END,
+  annotations = CASE WHEN $49::bool THEN $50::jsonb ELSE annotations END
+WHERE id = $51::text AND created_at = $52::timestamp
 `
 
 type UpdateRequestParams struct {
@@ -656,6 +671,8 @@ type UpdateRequestParams struct {
 	UserMessagePreview     pgtype.Text      `json:"userMessagePreview"`
 	SetExternalResponseID  bool             `json:"setExternalResponseId"`
 	ExternalResponseID     pgtype.Text      `json:"externalResponseId"`
+	SetAnnotations         bool             `json:"setAnnotations"`
+	Annotations            []byte           `json:"annotations"`
 	ID                     string           `json:"id"`
 	CreatedAt              pgtype.Timestamp `json:"createdAt"`
 }
@@ -710,6 +727,8 @@ func (q *Queries) UpdateRequest(ctx context.Context, arg UpdateRequestParams) er
 		arg.UserMessagePreview,
 		arg.SetExternalResponseID,
 		arg.ExternalResponseID,
+		arg.SetAnnotations,
+		arg.Annotations,
 		arg.ID,
 		arg.CreatedAt,
 	)

@@ -45,6 +45,8 @@ type RequestView struct {
 	ExternalRequestID   string   `json:"externalRequestId,omitempty"`
 	ExternalResponseID  string   `json:"externalResponseId,omitempty"`
 	UserID              int64    `json:"userId,omitempty"`
+
+	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
 type TraceCostView struct {
@@ -102,6 +104,7 @@ type requestLike struct {
 	ExternalResponseID  pgtype.Text
 	UserID              pgtype.Int8
 	TraceID             pgtype.Text
+	Annotations         []byte
 }
 
 func toRequestView(r requestLike) *RequestView {
@@ -211,6 +214,15 @@ func toRequestView(r requestLike) *RequestView {
 	if r.TraceID.Valid {
 		view.TraceID = r.TraceID.String
 	}
+	// annotations is written exclusively by the script layer as a JSON object of
+	// string values; a decode failure is unreachable in normal operation, so we
+	// leave the field nil rather than change this no-error conversion signature.
+	if len(r.Annotations) > 0 {
+		var anno map[string]string
+		if err := json.Unmarshal(r.Annotations, &anno); err == nil {
+			view.Annotations = anno
+		}
+	}
 	return view
 }
 
@@ -247,6 +259,7 @@ func ToRequestView(r *db.GetRequestRow) *RequestView {
 		ExternalResponseID:  r.ExternalResponseID,
 		UserID:              r.UserID,
 		TraceID:             r.TraceID,
+		Annotations:         r.Annotations,
 	})
 }
 
@@ -282,6 +295,7 @@ func ToListRequestRowView(r *db.ListRequestsRow) *RequestView {
 		ExternalRequestID:   r.ExternalRequestID,
 		ExternalResponseID:  r.ExternalResponseID,
 		UserID:              r.UserID,
+		Annotations:         r.Annotations,
 	})
 }
 
@@ -318,6 +332,7 @@ func ToListRequestsBySpanRowView(r *db.ListRequestsBySpanRow) *RequestView {
 		ExternalResponseID:  r.ExternalResponseID,
 		UserID:              r.UserID,
 		TraceID:             r.TraceID,
+		Annotations:         r.Annotations,
 	})
 }
 
@@ -380,6 +395,9 @@ type ListRequestsRequest struct {
 	EndAt         string `query:"endAt,omitempty"`
 	EmptyResponse bool   `query:"emptyResponse,omitempty"`
 	FinishReason  int32  `query:"finishReason,omitempty"`
+	// Annotations is a URL-encoded JSON object of string values; requests are
+	// filtered by JSONB containment (@>, AND across pairs). Exact match only.
+	Annotations string `query:"annotations,omitempty"`
 }
 
 type ListRequestsResponse = PaginatedResponse[RequestView]

@@ -44,6 +44,18 @@ type Session interface {
 	// upstream attempt failed. Passthrough keeps the initial value (break=false).
 	RunAfterUpstreamError(initial UpstreamErrorView) (AfterUpstreamErrorDecision, error)
 
+	// MetaAnnotations returns a snapshot of the string KV pairs a hook wrote to
+	// ctx.metaRequest.annotations over the session. Persisted once to the meta
+	// row at request end. nil when none were written.
+	MetaAnnotations() map[string]string
+	// UpstreamAnnotations returns a snapshot of the current attempt's
+	// ctx.upstreamRequest.annotations. nil when none were written.
+	UpstreamAnnotations() map[string]string
+	// ResetUpstreamAnnotations clears the upstream annotation accumulator for a
+	// fresh attempt and, on the first call, installs the ctx.upstreamRequest
+	// Proxy (before which ctx.upstreamRequest is undefined).
+	ResetUpstreamAnnotations() error
+
 	Logs() []LogEntry
 	Close()
 }
