@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -21,6 +22,7 @@ type Sink interface {
 	Put(ctx context.Context, key string, payload []byte)
 	PresignedGet(ctx context.Context, key string, ttl time.Duration) (string, error)
 	Enabled() bool
+	Close(ctx context.Context) error
 }
 
 // bucketLookup maps the tri-state PICOTERA_S3_PATH_STYLE setting to a minio
@@ -89,6 +91,7 @@ func NewSink(cfg configx.S3Config, logger *logrus.Entry) (Sink, error) {
 		jobs:            make(chan job, 256),
 	}
 	for i := 0; i < 4; i++ {
+		s.wg.Add(1)
 		go s.worker()
 	}
 	logger.WithField("bucket", cfg.Bucket).WithField("endpoint", cfg.Endpoint).Info("artifact sink ready")
@@ -102,6 +105,9 @@ func (noopSink) PresignedGet(ctx context.Context, key string, ttl time.Duration)
 	return "", nil
 }
 func (noopSink) Enabled() bool { return false }
+func (noopSink) Close(ctx context.Context) error {
+	return nil
+}
 
 type job struct {
 	key     string
@@ -119,21 +125,56 @@ type minioSink struct {
 	pathStyle       *bool
 	logger          *logrus.Entry
 	jobs            chan job
+	closeOnce       sync.Once
+	mu              sync.Mutex
+	closed          bool
+	wg              sync.WaitGroup
 }
 
 func (s *minioSink) Enabled() bool { return true }
 
 func (s *minioSink) Put(ctx context.Context, key string, payload []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		s.logger.WithField("key", key).Warn("artifact: sink closed, dropping")
+		return
+	}
 	select {
 	case s.jobs <- job{key: key, payload: payload}:
+	case <-ctx.Done():
+		s.logger.WithError(ctx.Err()).WithField("key", key).Warn("artifact: context cancelled, dropping")
 	default:
 		s.logger.WithField("key", key).Warn("artifact: queue full, dropping")
 	}
 }
 
 func (s *minioSink) worker() {
+	defer s.wg.Done()
 	for j := range s.jobs {
 		s.upload(j)
+	}
+}
+
+func (s *minioSink) Close(ctx context.Context) error {
+	s.closeOnce.Do(func() {
+		s.mu.Lock()
+		s.closed = true
+		close(s.jobs)
+		s.mu.Unlock()
+	})
+
+	done := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 

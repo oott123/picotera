@@ -19,7 +19,7 @@ const impersonation = useImpersonationStore()
 
 async function stopImpersonating() {
   impersonation.stop()
-  await queryClient.invalidateQueries()
+  queryClient.clear()
 }
 const refreshing = ref(false)
 const activeRouteName = computed(() => {

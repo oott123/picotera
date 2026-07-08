@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"picotera/pkg/jsonast"
-	"picotera/pkg/logx"
 
 	"modernc.org/quickjs"
 )
@@ -249,9 +248,10 @@ func (s *qjsSession) evalJSON(name, filename, expr string) (data json.RawMessage
 	if terr := s.vm.SetEvalTimeout(s.timeout()); terr != nil {
 		return nil, false, fmt.Errorf("jsx: %s set timeout: %w", name, terr)
 	}
+	startedAt := time.Now()
 	v, err := s.vm.EvalValueFile(expr, filename, quickjs.EvalGlobal)
 	if err != nil {
-		if isInterrupt(err) {
+		if s.isTimeoutInterrupt(err, time.Since(startedAt)) {
 			s.tainted = true
 			return nil, false, ErrHookTimeout
 		}
@@ -270,8 +270,12 @@ func (s *qjsSession) evalJSON(name, filename, expr string) (data json.RawMessage
 	return json.RawMessage(b), false, nil
 }
 
-func isInterrupt(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "interrupted")
+func (s *qjsSession) isTimeoutInterrupt(err error, elapsed time.Duration) bool {
+	if err == nil || s.timeout() <= 0 || elapsed < s.timeout() {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "InternalError: interrupted") || msg == "interrupted"
 }
 
 func mustJSON(v any) (string, error) {
@@ -327,8 +331,7 @@ func (s *qjsSession) RunSortProviders(initial []CandidateView) ([]CandidateView,
 	}
 	var out []CandidateView
 	if err := json.Unmarshal(data, &out); err != nil {
-		logx.WithContext(s.ctx).WithError(err).Debug("sortProviders hook returned undecodable value; keeping input")
-		return initial, nil
+		return initial, fmt.Errorf("jsx: sortProviders decode: %w", err)
 	}
 	return out, nil
 }
@@ -561,7 +564,7 @@ func (s *qjsSession) RunBeforeTransform(initial OutboundProfile) (OutboundProfil
 }
 
 // RunRewriteProviderModels runs the rewriteProviderModels waterfall. A
-// non-array / undefined result, or an undecodable array, keeps the input.
+// non-array / undefined result keeps the input.
 func (s *qjsSession) RunRewriteProviderModels(initial []ProviderModelEntry) ([]ProviderModelEntry, error) {
 	init, err := mustJSON(initial)
 	if err != nil {
@@ -579,7 +582,7 @@ func (s *qjsSession) RunRewriteProviderModels(initial []ProviderModelEntry) ([]P
 	}
 	var out []ProviderModelEntry
 	if err := json.Unmarshal(data, &out); err != nil {
-		return initial, nil
+		return initial, fmt.Errorf("jsx: rewriteProviderModels decode: %w", err)
 	}
 	return out, nil
 }

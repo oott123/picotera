@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"slices"
@@ -433,6 +434,7 @@ func (h *gatewayHandler) unifiedStreamSuccess(input successInput) {
 	if err := internalReader.StartClientWrite(); err != nil {
 		cancel()
 		closeDecodedInternalResponseReader(internalBody, resp)
+		h.failUnifiedSuccessCommitted(hdrCtx, a, "start client write: "+err.Error(), db.FinishReasonCancelled, streamMode)
 		return
 	}
 	metaRespHeader := w.Header().Clone()
@@ -453,7 +455,7 @@ func (h *gatewayHandler) unifiedStreamSuccess(input successInput) {
 			br, err := h.llmBridge.BridgeStream(ctx, a.srcFormat, a.upFormat, teedUpstream, upstreamCT, a.outboundProfile)
 			if err != nil {
 				cancel()
-				h.failUnifiedSuccess(hdrCtx, a, err.Error())
+				h.failUnifiedSuccessCommitted(hdrCtx, a, err.Error(), db.FinishReasonStreamError, true)
 				return
 			}
 			clientReader = br
@@ -464,14 +466,14 @@ func (h *gatewayHandler) unifiedStreamSuccess(input successInput) {
 			if err != nil {
 				_ = teedUpstream.Close()
 				cancel()
-				h.failUnifiedSuccess(hdrCtx, a, err.Error())
+				h.failUnifiedSuccessCommitted(hdrCtx, a, err.Error(), db.FinishReasonStreamError, false)
 				return
 			}
 			_ = teedUpstream.Close()
 			bridged, _, berr := h.llmBridge.BridgeNonStream(ctx, a.srcFormat, a.upFormat, upstreamBody, resp.Header, a.outboundProfile)
 			if berr != nil {
 				cancel()
-				h.failUnifiedSuccess(hdrCtx, a, berr.Error())
+				h.failUnifiedSuccessCommitted(hdrCtx, a, berr.Error(), db.FinishReasonStreamError, false)
 				return
 			}
 			clientReader = io.NopCloser(bytes.NewReader(bridged))
@@ -493,13 +495,13 @@ func (h *gatewayHandler) unifiedStreamSuccess(input successInput) {
 			_ = clientReader.Close()
 			if rerr != nil {
 				cancel()
-				h.failUnifiedSuccess(hdrCtx, a, "read bridge output: "+rerr.Error())
+				h.failUnifiedSuccessCommitted(hdrCtx, a, "read bridge output: "+rerr.Error(), db.FinishReasonStreamError, false)
 				return
 			}
 			transformed, terr := h.transformWebSearchResponse(ctx, allBytes, a.wsCtx)
 			if terr != nil {
 				cancel()
-				h.failUnifiedSuccess(hdrCtx, a, "web search transform: "+terr.Error())
+				h.failUnifiedSuccessCommitted(hdrCtx, a, "web search transform: "+terr.Error(), db.FinishReasonStreamError, false)
 				return
 			}
 			transformed = h.loopWebSearchNonStream(ctx, transformed, a.wsCtx, buildForwardedHeaders(r))
@@ -650,6 +652,71 @@ func (h *gatewayHandler) failUnifiedSuccess(ctx context.Context, a unifiedStream
 	}
 	h.uploadMetaResponseArtifact(ctx, a.metaID, a.metaCreatedAt, http.StatusBadGateway, a.w.Header().Clone(), artifactBody, a.metaLogs, nil)
 	_ = a.resp.Body.Close()
+}
+
+func (h *gatewayHandler) failUnifiedSuccessCommitted(ctx context.Context, a unifiedStreamArgs, errMsg string, finishReason int32, stream bool) {
+	body := unifiedCommittedErrorBody(a.srcFormat, errMsg, stream)
+	_, _ = a.w.Write(body)
+	if flusher, ok := a.w.(http.Flusher); ok {
+		flusher.Flush()
+	}
+
+	status := int32(http.StatusOK)
+	h.updateRequest(ctx, newRequestUpdate(a.upstreamID, a.upstreamCreatedAt).
+		StatusCode(pgtype.Int4{Int32: status, Valid: true}).
+		ErrorMessage(pgtype.Text{String: errMsg, Valid: true}).
+		TimeSpentMs(pgtype.Int4{Int32: int32(time.Since(a.attemptStart).Milliseconds()), Valid: true}).
+		FinishReason(pgtype.Int4{Int32: finishReason, Valid: true}).
+		ExternalResponseID(matchExternalIDHeader(a.resp.Header, h.externalResponseIDHeaders)))
+	h.updateRequest(ctx, newRequestUpdate(a.metaID, a.metaCreatedAt).
+		StatusCode(pgtype.Int4{Int32: status, Valid: true}).
+		ErrorMessage(pgtype.Text{String: errMsg, Valid: true}).
+		TimeSpentMs(pgtype.Int4{Int32: int32(time.Since(a.gatewayStart).Milliseconds()), Valid: true}).
+		FinishReason(pgtype.Int4{Int32: finishReason, Valid: true}).
+		ExternalResponseID(matchExternalIDHeader(a.resp.Header, h.externalResponseIDHeaders)))
+
+	artifactBody := body
+	if !a.recordBody {
+		artifactBody = nil
+	}
+	h.uploadMetaResponseArtifact(ctx, a.metaID, a.metaCreatedAt, http.StatusOK, a.w.Header().Clone(), artifactBody, a.metaLogs, nil)
+	_ = a.resp.Body.Close()
+}
+
+func unifiedCommittedErrorBody(format llmbridge.Format, errMsg string, stream bool) []byte {
+	payload := map[string]any{
+		"error": map[string]any{
+			"message": errMsg,
+		},
+	}
+	eventName := "error"
+	switch format {
+	case llmbridge.FormatAnthropicMessages:
+		payload["type"] = "error"
+		payload["error"].(map[string]any)["type"] = "api_error"
+	case llmbridge.FormatOpenAIResponses:
+		eventName = "response.failed"
+		payload = map[string]any{
+			"type": "response.failed",
+			"response": map[string]any{
+				"error": map[string]any{
+					"message": errMsg,
+				},
+			},
+		}
+	}
+	if !stream {
+		b, _ := json.Marshal(payload)
+		return append(b, '\n')
+	}
+	b, _ := json.Marshal(payload)
+	var out bytes.Buffer
+	out.WriteString("event: ")
+	out.WriteString(eventName)
+	out.WriteString("\ndata: ")
+	out.Write(b)
+	out.WriteString("\n\n")
+	return out.Bytes()
 }
 
 // asReadCloser pairs an io.Reader (the response extractor) with the original

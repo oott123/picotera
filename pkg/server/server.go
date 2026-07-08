@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -49,6 +50,7 @@ type Server struct {
 	liveRequests              *liveRequestRegistry
 	externalRequestIDHeaders  []string
 	externalResponseIDHeaders []string
+	httpServer                *http.Server
 }
 
 // newGatewayTransport builds an HTTP transport for upstream gateway requests
@@ -367,6 +369,37 @@ func (s *Server) Serve() error {
 			logrus.WithError(err).Warn("failed to forward SIGUSR1 to llmbridge plugin")
 		}
 	})
+	addr := fmt.Sprintf("%s:%d", s.config.Host, s.config.Port)
+	s.httpServer = &http.Server{
+		Addr:    addr,
+		Handler: s.router,
+	}
 	logrus.WithField("host", s.config.Host).WithField("port", s.config.Port).Info("serving API")
-	return http.ListenAndServe(fmt.Sprintf("%s:%d", s.config.Host, s.config.Port), s.router)
+	if err := s.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
+}
+
+func (s *Server) Shutdown(ctx context.Context) error {
+	var errs []error
+	if s.httpServer != nil {
+		if err := s.httpServer.Shutdown(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("http shutdown: %w", err))
+		}
+	}
+	if s.llmBridge != nil {
+		if err := s.llmBridge.Close(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("llmbridge close: %w", err))
+		}
+	}
+	if s.artifacts != nil {
+		if err := s.artifacts.Close(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("artifact sink close: %w", err))
+		}
+	}
+	if s.db != nil {
+		s.db.Close()
+	}
+	return errors.Join(errs...)
 }

@@ -2,6 +2,7 @@ package configx
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"reflect"
 	"strings"
@@ -105,10 +106,24 @@ func Parse() (*Config, error) {
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
 	bindEnvs(Config{})
-	viper.Unmarshal(&config)
+	if err := viper.Unmarshal(&config); err != nil {
+		return nil, fmt.Errorf("configx: unmarshal: %w", err)
+	}
 
 	if config.Auth.HeaderEnabled && config.Auth.HeaderName == "" {
 		return nil, errors.New("auth.header_enabled is set but auth.header_name is empty")
+	}
+	if config.DatabaseURL == "" {
+		return nil, errors.New("database_url is required")
+	}
+	if config.Port <= 0 || config.Port > 65535 {
+		return nil, errors.New("port must be between 1 and 65535")
+	}
+	if !config.Auth.SingleUserMode && !config.Auth.HeaderEnabled {
+		return nil, errors.New("no auth provider enabled")
+	}
+	if config.S3.Endpoint != "" && (config.S3.AccessKey == "" || config.S3.SecretKey == "") {
+		return nil, errors.New("s3 access_key and secret_key are required when s3.endpoint is configured")
 	}
 
 	return &config, nil

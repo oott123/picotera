@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"time"
 
 	"picotera/pkg/configx"
 	"picotera/pkg/db"
@@ -22,16 +23,28 @@ type Options struct{}
 
 func main() {
 	cli := humacli.New(func(h humacli.Hooks, o *Options) {
+		var srv *server.Server
 		h.OnStart(func() {
 			ctx := context.Background()
-			server, err := server.NewServer(ctx)
+			var err error
+			srv, err = server.NewServer(ctx)
 			if err != nil {
 				log.Fatalf("failed to create server: %v", err)
 			}
 
-			err = server.Serve()
+			err = srv.Serve()
 			if err != nil {
 				log.Fatalf("failed to serve: %v", err)
+			}
+		})
+		h.OnStop(func() {
+			if srv == nil {
+				return
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+			defer cancel()
+			if err := srv.Shutdown(ctx); err != nil {
+				log.Printf("failed to shutdown cleanly: %v", err)
 			}
 		})
 	})

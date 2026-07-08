@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
 import {
   Badge,
@@ -503,6 +503,10 @@ async function send() {
 function stop() {
   controller?.abort()
 }
+
+onBeforeUnmount(() => {
+  controller?.abort()
+})
 
 // Reset dependent selections when context changes.
 watch(directProviderId, () => {

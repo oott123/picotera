@@ -69,7 +69,7 @@ async function impersonate(u: UserView) {
   impersonation.start({ id: u.id, displayName: u.displayName })
   // Leave admin pages the impersonated user can't access before me flips.
   await router.push({ name: 'overview' })
-  await queryClient.invalidateQueries()
+  queryClient.clear()
 }
 
 function confirmDelete(_event: Event, u: UserView) {

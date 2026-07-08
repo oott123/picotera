@@ -100,6 +100,10 @@ func (s *Server) handleListRequests(ctx context.Context, input *contract.ListReq
 	if input.ProviderID != 0 {
 		filterProviderID = pgtype.Int4{Int32: input.ProviderID, Valid: true}
 	}
+	var filterProjectID pgtype.Int4
+	if input.ProjectID != 0 {
+		filterProjectID = pgtype.Int4{Int32: input.ProjectID, Valid: true}
+	}
 	var filterEndpointPath pgtype.Text
 	if input.EndpointPath != "" {
 		filterEndpointPath = pgtype.Text{String: input.EndpointPath, Valid: true}
@@ -146,6 +150,7 @@ func (s *Server) handleListRequests(ctx context.Context, input *contract.ListReq
 		RequestID:       filterRequestID,
 		Type:            filterType,
 		ProviderID:      filterProviderID,
+		ProjectID:       filterProjectID,
 		EndpointPath:    filterEndpointPath,
 		Model:           filterModel,
 		UpstreamModel:   filterUpstreamModel,

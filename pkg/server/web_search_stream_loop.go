@@ -76,40 +76,48 @@ func (d *webSearchSSELoopDriver) run() {
 			return
 		}
 
-		subReq := httptest.NewRequestWithContext(d.ctx, "POST", "/api/unified/v1/messages", bytes.NewReader(subBody))
-		d.applyHeaders(subReq)
-		subReq.Header.Set("Content-Type", "application/json")
-		subReq.Header.Set("Accept", "text/event-stream")
-
-		rec := newStreamingResponseRecorder()
-		go func() { defer rec.Close(); d.h.Server.router.ServeHTTP(rec, subReq) }()
-
-		<-rec.StatusReady()
-		if rec.StatusCode() != http.StatusOK {
-			d.fallbackPauseTurn()
+		shouldLoop, ok := d.runSubRound(subBody)
+		if !ok {
 			return
 		}
-
-		subTransformer := newWebSearchSSETransformer(d.ctx, rec.Reader(), d.wsCtx, d.h, false)
-
-		shouldLoop, err := d.forwardSubStream(subTransformer)
-		_ = subTransformer.Close()
-		if err != nil {
-			d.fallbackPauseTurn()
-			return
-		}
-
-		subBlocks, subUsage := subTransformer.Snapshot()
-		d.accumulatedBlocks = append(d.accumulatedBlocks, subBlocks...)
-		mergeUsageInto(d.accumulatedUsage, subUsage)
-
-		d.round++
-		d.indexOffset = int64(len(d.accumulatedBlocks))
 		if !shouldLoop {
 			return
 		}
 	}
 	d.fallbackPauseTurn()
+}
+
+func (d *webSearchSSELoopDriver) runSubRound(subBody []byte) (shouldLoop bool, ok bool) {
+	subReq := httptest.NewRequestWithContext(d.ctx, "POST", "/api/unified/v1/messages", bytes.NewReader(subBody))
+	d.applyHeaders(subReq)
+	subReq.Header.Set("Content-Type", "application/json")
+	subReq.Header.Set("Accept", "text/event-stream")
+
+	rec := newStreamingResponseRecorder()
+	defer rec.Reader().Close()
+	go func() { defer rec.Close(); d.h.Server.router.ServeHTTP(rec, subReq) }()
+
+	<-rec.StatusReady()
+	if rec.StatusCode() != http.StatusOK {
+		d.fallbackPauseTurn()
+		return false, false
+	}
+
+	subTransformer := newWebSearchSSETransformer(d.ctx, rec.Reader(), d.wsCtx, d.h, false)
+	shouldLoop, err := d.forwardSubStream(subTransformer)
+	_ = subTransformer.Close()
+	if err != nil {
+		d.fallbackPauseTurn()
+		return false, false
+	}
+
+	subBlocks, subUsage := subTransformer.Snapshot()
+	d.accumulatedBlocks = append(d.accumulatedBlocks, subBlocks...)
+	mergeUsageInto(d.accumulatedUsage, subUsage)
+
+	d.round++
+	d.indexOffset = int64(len(d.accumulatedBlocks))
+	return shouldLoop, true
 }
 
 func (d *webSearchSSELoopDriver) applyHeaders(req *http.Request) {

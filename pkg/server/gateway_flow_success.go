@@ -168,6 +168,18 @@ func (h *gatewayHandler) openPathInternalReader(input successInput) (*lockedResp
 	w.WriteHeader(http.StatusOK)
 	if err := internalReader.StartClientWrite(); err != nil {
 		input.Cancel()
+		bgCtx, cancel := input.Flow.ctxs.Persist()
+		defer cancel()
+		metaID, metaCreatedAt := input.Flow.meta.ID, input.Flow.meta.CreatedAt
+		errMsg := "start client write: " + err.Error()
+		h.completeFailedAttemptWithReason(bgCtx, input.UpstreamID, input.UpstreamCreatedAt, input.AttemptStart, http.StatusOK, errMsg, db.FinishReasonCancelled, resp.Header)
+		h.updateRequest(bgCtx, newRequestUpdate(metaID, metaCreatedAt).
+			StatusCode(pgtype.Int4{Int32: http.StatusOK, Valid: true}).
+			ErrorMessage(pgtype.Text{String: errMsg, Valid: true}).
+			TimeSpentMs(pgtype.Int4{Int32: int32(time.Since(input.Flow.startedAt).Milliseconds()), Valid: true}).
+			FinishReason(pgtype.Int4{Int32: db.FinishReasonCancelled, Valid: true}).
+			ExternalResponseID(matchExternalIDHeader(resp.Header, h.externalResponseIDHeaders)))
+		h.uploadMetaResponseArtifact(bgCtx, metaID, metaCreatedAt, http.StatusOK, w.Header().Clone(), input.Flow.artifactBody(nil), input.Flow.collectLogs(), nil)
 		closeDecodedInternalResponseReader(internalBody, resp)
 		return nil, nil, false
 	}

@@ -228,9 +228,9 @@ func (w streamWriter) Write(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
-	out := make([]byte, len(p))
-	copy(out, p)
-	if err := w.stream.Send(&llmbridge.BridgeStreamChunk{Payload: &llmbridge.BridgeStreamChunk_Data{Data: out}}); err != nil {
+	// The stream pump passes a fresh encoded event buffer on each Write, and
+	// gRPC serializes the message before Send returns.
+	if err := w.stream.Send(&llmbridge.BridgeStreamChunk{Payload: &llmbridge.BridgeStreamChunk_Data{Data: p}}); err != nil {
 		return 0, err
 	}
 	return len(p), nil

@@ -61,6 +61,9 @@ func compilePattern(path string) (*regexp.Regexp, []string, int, error) {
 	)
 	matches := tokenRe.FindAllStringSubmatchIndex(path, -1)
 	for _, loc := range matches {
+		if err := validateEndpointPathLiteral(path, cursor, loc[0]); err != nil {
+			return nil, nil, 0, err
+		}
 		// loc[0]:loc[1] is the full {name} match; loc[2]:loc[3] is the capture.
 		name := path[loc[2]:loc[3]]
 		if seen[name] {
@@ -75,6 +78,9 @@ func compilePattern(path string) (*regexp.Regexp, []string, int, error) {
 		cursor = loc[1]
 	}
 	// Remaining literal suffix.
+	if err := validateEndpointPathLiteral(path, cursor, len(path)); err != nil {
+		return nil, nil, 0, err
+	}
 	suffix := path[cursor:]
 	literalLen += len(suffix)
 	pattern += regexp.QuoteMeta(suffix)
@@ -84,6 +90,16 @@ func compilePattern(path string) (*regexp.Regexp, []string, int, error) {
 		return nil, nil, 0, fmt.Errorf("endpoint path %q: compile regex: %w", path, err)
 	}
 	return re, varNames, literalLen, nil
+}
+
+func validateEndpointPathLiteral(path string, start, end int) error {
+	for i := start; i < end; i++ {
+		switch path[i] {
+		case '{', '}':
+			return fmt.Errorf("endpoint path %q: invalid variable token near byte %d", path, i)
+		}
+	}
+	return nil
 }
 
 // endpointRouter matches incoming request paths against the compiled endpoint
