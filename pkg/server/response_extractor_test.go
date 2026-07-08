@@ -539,6 +539,87 @@ func TestResponseExtractor_SSE_StreamError_OpenAIResponsesFailed(t *testing.T) {
 	}
 }
 
+func TestResponseExtractor_SSE_StreamError_OpenAIChoiceFinishReasonFixtures(t *testing.T) {
+	tests := []struct {
+		name          string
+		path          string
+		wantError     string
+		wantModel     string
+		wantModelFrom int32
+	}{
+		{
+			name:          "network error",
+			path:          "../../fixtures/zai-stream-error.sse",
+			wantError:     "network_error",
+			wantModel:     "glm-5.2",
+			wantModelFrom: db.InferredModelSourceResponse,
+		},
+		{
+			name:          "context window exceeded",
+			path:          "../../fixtures/zai-context-window-error.sse",
+			wantError:     "model_context_window_exceeded",
+			wantModel:     "glm-5v-turbo",
+			wantModelFrom: db.InferredModelSourceResponse,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := os.ReadFile(tt.path)
+			if err != nil {
+				t.Fatalf("ReadFile: %v", err)
+			}
+			extractor := NewResponseExtractor(strings.NewReader(string(data)), "text/event-stream", time.Now())
+
+			got, err := io.ReadAll(extractor)
+			if err != nil {
+				t.Fatalf("ReadAll: %v", err)
+			}
+
+			if string(got) != string(data) {
+				t.Errorf("bytes forwarded unchanged:\ngot:  %q\nwant: %q", string(got), string(data))
+			}
+			if got := extractor.StreamError(); got != tt.wantError {
+				t.Errorf("StreamError() = %q, want %q", got, tt.wantError)
+			}
+			m := extractor.Metrics()
+			if m.InferredModel != tt.wantModel {
+				t.Errorf("InferredModel = %q, want %q", m.InferredModel, tt.wantModel)
+			}
+			if m.InferredModelSource != tt.wantModelFrom {
+				t.Errorf("InferredModelSource = %d, want %d", m.InferredModelSource, tt.wantModelFrom)
+			}
+		})
+	}
+}
+
+func TestResponseExtractor_SSE_StreamError_OpenAIChoiceFinishReasonNonErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		choices string
+	}{
+		{name: "stop", choices: `[{"index":0,"finish_reason":"stop","delta":{"role":"assistant","content":""}}]`},
+		{name: "length", choices: `[{"index":0,"finish_reason":"length","delta":{"role":"assistant","content":""}}]`},
+		{name: "tool calls", choices: `[{"index":0,"finish_reason":"tool_calls","delta":{"role":"assistant","content":""}}]`},
+		{name: "null", choices: `[{"index":0,"finish_reason":null,"delta":{"role":"assistant","content":""}}]`},
+		{name: "number", choices: `[{"index":0,"finish_reason":1,"delta":{"role":"assistant","content":""}}]`},
+		{name: "error in second choice", choices: `[{"index":0,"finish_reason":"stop","delta":{"role":"assistant","content":""}},{"index":1,"finish_reason":"network_error","delta":{"role":"assistant","content":""}}]`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			events := `data: {"id":"chatcmpl-1","model":"gpt-5.5","choices":` + tt.choices + `}` + "\n\n"
+			extractor := NewResponseExtractor(strings.NewReader(events), "text/event-stream", time.Now())
+
+			_, _ = io.ReadAll(extractor)
+
+			if got := extractor.StreamError(); got != "" {
+				t.Errorf("StreamError() = %q, want empty", got)
+			}
+		})
+	}
+}
+
 func TestResponseExtractor_SSE_StreamError_FirstWins(t *testing.T) {
 	events := []string{
 		"data: {\"type\":\"error\",\"error\":{\"message\":\"first error\"}}\n\n",

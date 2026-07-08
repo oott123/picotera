@@ -203,10 +203,11 @@ func (e *ResponseExtractor) inferSignatureDeltaFromSSE(payload string) {
 	}
 }
 
-// detectStreamError records the first non-empty error message found in an SSE
-// data payload. OpenAI Responses uses response.error.message on
-// response.failed; Anthropic Messages, OpenAI Chat Completions, and Gemini
-// native error shapes use error.message.
+// detectStreamError records the first stream error found in an SSE data
+// payload. OpenAI Responses uses response.error.message on response.failed;
+// Anthropic Messages, OpenAI Chat Completions, and Gemini native error shapes
+// use error.message. Some OpenAI Chat compatible providers return errors as
+// strict choices[].finish_reason values.
 func (e *ResponseExtractor) detectStreamError(payload string) {
 	if e.streamError != "" {
 		return
@@ -217,6 +218,15 @@ func (e *ResponseExtractor) detectStreamError(payload string) {
 	}
 	if v := gjson.Get(payload, "error.message"); v.Exists() && v.Type == gjson.String && v.String() != "" {
 		e.streamError = v.String()
+		return
+	}
+	finishReason := gjson.Get(payload, "choices.0.finish_reason")
+	if !finishReason.Exists() || finishReason.Type != gjson.String {
+		return
+	}
+	switch finishReason.String() {
+	case "network_error", "model_context_window_exceeded":
+		e.streamError = finishReason.String()
 	}
 }
 
