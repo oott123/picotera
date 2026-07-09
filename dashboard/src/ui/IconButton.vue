@@ -5,7 +5,7 @@ const props = withDefaults(
   defineProps<{
     variant?: 'default' | 'danger'
     active?: boolean
-    size?: 'sm' | 'md'
+    size?: 'xs' | 'sm' | 'md'
     type?: 'button' | 'submit' | 'reset'
     disabled?: boolean
   }>(),
@@ -13,7 +13,7 @@ const props = withDefaults(
 )
 
 const sizeClass = computed(() =>
-  props.size === 'sm' ? 'w-[1.375rem] h-[1.375rem]' : 'w-[1.625rem] h-[1.625rem]',
+  props.size === 'xs' ? 'w-[0.6rem] h-[0.6rem]' : props.size === 'sm' ? 'w-[1.375rem] h-[1.375rem]' : 'w-[1.625rem] h-[1.625rem]',
 )
 
 const stateClass = computed(() => {

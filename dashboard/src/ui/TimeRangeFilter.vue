@@ -66,7 +66,6 @@ const rangeError = computed(() => {
 
 <template>
   <div class="flex items-start gap-2">
-    <Field label="开始时间" :error="start.invalid ? '格式无效' : ''">
       <input
         v-model="startLocal"
         type="datetime-local"
@@ -74,8 +73,6 @@ const rangeError = computed(() => {
         class="rounded-md border border-line bg-surface-0 px-2 py-1.5 text-sm text-ink outline-none focus:border-accent focus-visible:ring-1 focus-visible:ring-accent"
         :class="start.invalid || rangeError ? 'border-err focus:border-err focus-visible:ring-err' : ''"
       />
-    </Field>
-    <Field label="结束时间" :error="end.invalid ? '格式无效' : rangeError">
       <input
         v-model="endLocal"
         type="datetime-local"
@@ -83,6 +80,5 @@ const rangeError = computed(() => {
         class="rounded-md border border-line bg-surface-0 px-2 py-1.5 text-sm text-ink outline-none focus:border-accent focus-visible:ring-1 focus-visible:ring-accent"
         :class="end.invalid || rangeError ? 'border-err focus:border-err focus-visible:ring-err' : ''"
       />
-    </Field>
   </div>
 </template>

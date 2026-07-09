@@ -28,6 +28,7 @@ import type {
 import {
   Button,
   DataCard,
+  DynamicFilterBar,
   Icon,
   MoneyDisplay,
   SegmentedControl,
@@ -57,6 +58,32 @@ const filters = reactive({
   providerId: 0,
 })
 const granularity = ref<OverviewGranularity>('auto')
+const visibleFilters = ref<string[]>([])
+
+const availableFilters = [
+  { key: 'user', label: '用户' },
+  { key: 'model', label: '请求模型' },
+  { key: 'upstreamModel', label: '上游模型' },
+  { key: 'provider', label: '渠道' },
+]
+
+function onRemoveFilter(key: string) {
+  switch (key) {
+    case 'user':
+      filters.userId = 0
+      break
+    case 'model':
+      filters.model = ''
+      break
+    case 'upstreamModel':
+      filters.upstreamModel = ''
+      break
+    case 'provider':
+      filters.providerId = 0
+      break
+  }
+}
+
 const distributionDimension = ref<AdminOverviewDimension>('user')
 const seriesDimension = ref<AdminOverviewSeriesDimension>('none')
 const speedDimension = ref<AdminOverviewSeriesDimension>('model')
@@ -935,9 +962,7 @@ function formatCurrencyCompact(v: number, code: string) {
     <!-- Controls bar -->
     <div class="flex flex-wrap items-end gap-3">
       <div class="flex flex-col gap-1">
-        <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.03em]"
-          >时间范围</span
-        >
+        <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.03em]">时间范围</span>
         <SegmentedControl v-model="filters.range" :options="rangeOptions" />
       </div>
       <div v-if="filters.range === 'custom'" class="flex flex-col gap-1">
@@ -952,35 +977,35 @@ function formatCurrencyCompact(v: number, code: string) {
         />
       </div>
       <div class="flex flex-col gap-1">
-        <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.03em]"
-          >统计粒度</span
-        >
+        <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.03em]">统计粒度</span>
         <SegmentedControl v-model="granularity" :options="granularityOptions" />
       </div>
       <div class="flex flex-col gap-1">
         <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.03em]">货币</span>
         <Select v-model="overviewCurrencyValue" size="sm" :options="overviewCurrencyOptions" />
       </div>
-      <div class="flex flex-col gap-1">
-        <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.03em]">用户</span>
-        <Select v-model="filters.userId" size="sm" :options="userOptions" />
-      </div>
-      <div class="flex flex-col gap-1">
-        <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.03em]"
-          >请求模型</span
-        >
-        <Select v-model="filters.model" size="sm" :options="modelSelectOptions" />
-      </div>
-      <div class="flex flex-col gap-1">
-        <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.03em]"
-          >上游模型</span
-        >
-        <Select v-model="filters.upstreamModel" size="sm" :options="upstreamModelSelectOptions" />
-      </div>
-      <div class="flex flex-col gap-1">
-        <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.03em]">渠道</span>
-        <Select v-model="filters.providerId" size="sm" :options="providerOptions" />
-      </div>
+      <DynamicFilterBar
+        v-model="visibleFilters"
+        :available="availableFilters"
+        @remove="onRemoveFilter"
+      >
+        <template #user>
+          <Select v-model="filters.userId" size="sm" :options="userOptions" />
+        </template>
+        <template #model>
+          <Select v-model="filters.model" size="sm" :options="modelSelectOptions" />
+        </template>
+        <template #upstreamModel>
+          <Select
+            v-model="filters.upstreamModel"
+            size="sm"
+            :options="upstreamModelSelectOptions"
+          />
+        </template>
+        <template #provider>
+          <Select v-model="filters.providerId" size="sm" :options="providerOptions" />
+        </template>
+      </DynamicFilterBar>
       <Button
         variant="ghost"
         size="sm"

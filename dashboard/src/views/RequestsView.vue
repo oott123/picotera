@@ -20,6 +20,7 @@ import {
   DataCard,
   AutoDataTable,
   Tag,
+  DynamicFilterBar,
   Field,
   Icon,
   SegmentedControl,
@@ -60,6 +61,30 @@ const filters = reactive({
   annotationKey: '',
   annotationValue: '',
 })
+
+const visibleFilters = ref<string[]>([])
+
+const availableFilters = [
+  { key: 'timeRange', label: '时间范围' },
+  { key: 'requestId', label: 'ID' },
+  { key: 'annotation', label: '标注' },
+]
+
+function onRemoveFilter(key: string) {
+  switch (key) {
+    case 'timeRange':
+      filters.startAt = ''
+      filters.endAt = ''
+      break
+    case 'requestId':
+      filters.requestId = ''
+      break
+    case 'annotation':
+      filters.annotationKey = ''
+      filters.annotationValue = ''
+      break
+  }
+}
 
 const typeOptions: { value: RequestKind; label: string }[] = [
   { value: 'meta', label: '元请求' },
@@ -623,43 +648,51 @@ function resetCursorAndReload() {
 <template>
   <div class="flex flex-col gap-3.5">
     <div class="flex items-end justify-between gap-3 flex-wrap">
-      <div class="flex items-end gap-3 flex-wrap">
+      <div class="flex items-end gap-2">
         <Field label="类型" as="div">
           <SegmentedControl v-model="filters.type" :options="typeOptions" />
         </Field>
-        <TimeRangeFilter
-          :model-value="{ startAt: filters.startAt, endAt: filters.endAt }"
-          @update:model-value="
-            (v) => {
-              filters.startAt = v.startAt
-              filters.endAt = v.endAt
-            }
-          "
-        />
-        <Field label="ID">
-          <input
-            v-model="filters.requestId"
-            type="text"
-            placeholder="也支持外部 ID"
-            class="rounded-md border border-line bg-surface-0 px-2 py-1.5 text-sm text-ink outline-none focus:border-accent focus-visible:ring-1 focus-visible:ring-accent"
-          />
-        </Field>
-        <Field label="标注">
-          <div class="flex items-center gap-1.5">
-            <input
-              v-model="filters.annotationKey"
-              type="text"
-              placeholder="键"
-              class="w-28 rounded-md border border-line bg-surface-0 px-2 py-1.5 text-sm text-ink outline-none focus:border-accent focus-visible:ring-1 focus-visible:ring-accent"
+        <DynamicFilterBar
+          v-model="visibleFilters"
+          :available="availableFilters"
+          @remove="onRemoveFilter"
+        >
+          <template #timeRange>
+            <TimeRangeFilter
+              :model-value="{ startAt: filters.startAt, endAt: filters.endAt }"
+              @update:model-value="
+                (v) => {
+                  filters.startAt = v.startAt
+                  filters.endAt = v.endAt
+                }
+              "
             />
+          </template>
+          <template #requestId>
             <input
-              v-model="filters.annotationValue"
+              v-model="filters.requestId"
               type="text"
-              placeholder="值"
-              class="w-32 rounded-md border border-line bg-surface-0 px-2 py-1.5 text-sm text-ink outline-none focus:border-accent focus-visible:ring-1 focus-visible:ring-accent"
+              placeholder="也支持外部 ID"
+              class="rounded-md border border-line bg-surface-0 px-2 py-1.5 text-sm text-ink outline-none focus:border-accent focus-visible:ring-1 focus-visible:ring-accent"
             />
-          </div>
-        </Field>
+          </template>
+          <template #annotation>
+            <div class="flex items-center gap-1.5">
+              <input
+                v-model="filters.annotationKey"
+                type="text"
+                placeholder="键"
+                class="w-28 rounded-md border border-line bg-surface-0 px-2 py-1.5 text-sm text-ink outline-none focus:border-accent focus-visible:ring-1 focus-visible:ring-accent"
+              />
+              <input
+                v-model="filters.annotationValue"
+                type="text"
+                placeholder="值"
+                class="w-32 rounded-md border border-line bg-surface-0 px-2 py-1.5 text-sm text-ink outline-none focus:border-accent focus-visible:ring-1 focus-visible:ring-accent"
+              />
+            </div>
+          </template>
+        </DynamicFilterBar>
       </div>
       <div class="flex items-center gap-2">
         <button

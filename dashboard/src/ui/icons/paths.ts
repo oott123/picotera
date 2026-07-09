@@ -11,6 +11,7 @@ import {
   IconCloudDollar,
   IconCloudDownload,
   IconFilter,
+  IconFilterPlus,
   IconCloudUpload,
   IconCpu,
   IconCurrencyDollar,
@@ -85,6 +86,7 @@ export type IconName =
   | 'users'
   | 'shield-check'
   | 'filter'
+  | 'filter-plus'
   | 'mask'
 
 export const iconComponents: Record<IconName, Component> = {
@@ -130,4 +132,5 @@ export const iconComponents: Record<IconName, Component> = {
   'shield-check': IconShieldCheck,
   mask: IconMask,
   filter: IconFilter,
+  'filter-plus': IconFilterPlus,
 }
