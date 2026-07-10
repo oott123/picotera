@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 
 	"picotera/pkg/contract"
 
@@ -70,6 +71,24 @@ var fieldNames = map[priceField]string{
 	fieldImplicitCacheRead: "implicit_cache_read",
 }
 
+func stripLastSlash(s string) string {
+	if i := strings.LastIndex(s, "/"); i >= 0 && i+1 < len(s) {
+		return s[i+1:]
+	}
+	return s
+}
+
+func minScore(target string, candidates ...string) int {
+	best := -1
+	for _, c := range candidates {
+		d := levenshtein.ComputeDistance(target, c)
+		if best < 0 || d < best {
+			best = d
+		}
+	}
+	return best
+}
+
 // Match returns the best built-in pricing candidates for target. Matching uses
 // target exactly as provided.
 func Match(target string, limit int) ([]contract.PricingMatchCandidate, error) {
@@ -85,10 +104,24 @@ func Match(target string, limit int) ([]contract.PricingMatchCandidate, error) {
 			if !ok {
 				continue
 			}
-			score := levenshtein.ComputeDistance(target, m.ID)
+			score := minScore(target, m.ID, stripLastSlash(m.ID))
 			for _, alias := range m.Aliases {
-				if d := levenshtein.ComputeDistance(target, alias); d < score {
+				d := minScore(target, alias, stripLastSlash(alias))
+				if d < score {
 					score = d
+				}
+			}
+			strippedTarget := stripLastSlash(target)
+			if strippedTarget != target {
+				d := minScore(strippedTarget, m.ID, stripLastSlash(m.ID))
+				if d < score {
+					score = d
+				}
+				for _, alias := range m.Aliases {
+					d := minScore(strippedTarget, alias, stripLastSlash(alias))
+					if d < score {
+						score = d
+					}
 				}
 			}
 			matches = append(matches, matchedCandidate{

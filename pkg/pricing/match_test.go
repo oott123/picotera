@@ -6,6 +6,24 @@ import (
 	"picotera/pkg/contract"
 )
 
+func TestStripLastSlash(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{"openai/gpt-5-5", "gpt-5-5"},
+		{"gpt-5-5", "gpt-5-5"},
+		{"openai/", "openai/"},
+		{"/gpt-5-5", "gpt-5-5"},
+		{"a/b/c", "c"},
+	}
+	for _, c := range cases {
+		got := stripLastSlash(c.in)
+		if got != c.want {
+			t.Errorf("stripLastSlash(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 func TestMatchExactIDFirst(t *testing.T) {
 	got, err := Match("claude-haiku-4-5", 8)
 	if err != nil {
@@ -16,6 +34,31 @@ func TestMatchExactIDFirst(t *testing.T) {
 	}
 	if got[0].ModelID != "claude-haiku-4-5" || got[0].Score != 0 {
 		t.Fatalf("first candidate = %s score %d, want exact claude-haiku-4-5", got[0].ModelID, got[0].Score)
+	}
+}
+
+func TestMatchStripTargetSlash(t *testing.T) {
+	got, err := Match("openai/gpt-5-5", 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) == 0 {
+		t.Fatal("expected candidates")
+	}
+	if got[0].ModelID != "gpt-5-5" || got[0].Score != 0 {
+		t.Fatalf("first candidate = %s score %d, want exact gpt-5-5", got[0].ModelID, got[0].Score)
+	}
+}
+
+func TestMatchTrailingSlashDoesNotStrip(t *testing.T) {
+	// "openai/" stripped stays "openai/" (no content after slash), so it should not
+	// match anything exactly. Just verify it runs without panic and returns candidates.
+	got, err := Match("openai/", 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) == 0 {
+		t.Fatal("expected some candidates")
 	}
 }
 
