@@ -129,7 +129,11 @@ function openEdit(p: ProviderView) {
 function toggleBindings(p: ProviderView) {
   panel.toggle(
     ProviderEndpointsPanel,
-    { providerId: p.id, providerName: p.name },
+    {
+      providerId: p.id,
+      providerName: p.name,
+      modelsEndpointUrl: p.modelsEndpointUrl || undefined,
+    },
     { key: bindingKey(p.id) },
   )
 }

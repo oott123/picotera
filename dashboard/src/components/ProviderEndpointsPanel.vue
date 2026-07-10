@@ -27,7 +27,7 @@ const RESOLVER_LABEL = Object.fromEntries(
   RESOLVER_OPTIONS.map((o) => [o.value, o.label]),
 ) as Record<Resolver, string>
 
-const props = defineProps<{ providerId: number; providerName: string }>()
+const props = defineProps<{ providerId: number; providerName: string; modelsEndpointUrl?: string }>()
 const emit = defineEmits<{ close: [] }>()
 const queryClient = useQueryClient()
 
@@ -90,17 +90,31 @@ const endpointPathOptions = computed(() => [
 function guessUpstreamUrl(endpointPath: string) {
   if (!endpointPath) return ''
 
+  // 1. 优先从已有绑定推断
   const shortestMatchedBinding = providerEndpoints.value
     .filter((pe) => pe.upstreamUrl.endsWith(pe.endpointPath))
     .sort((a, b) => a.upstreamUrl.length - b.upstreamUrl.length)[0]
 
-  if (!shortestMatchedBinding) return endpointPath
+  if (shortestMatchedBinding) {
+    const prefix = shortestMatchedBinding.upstreamUrl.slice(
+      0,
+      shortestMatchedBinding.upstreamUrl.length - shortestMatchedBinding.endpointPath.length,
+    )
+    return `${prefix}${endpointPath}`
+  }
 
-  const prefix = shortestMatchedBinding.upstreamUrl.slice(
-    0,
-    shortestMatchedBinding.upstreamUrl.length - shortestMatchedBinding.endpointPath.length,
-  )
-  return `${prefix}${endpointPath}`
+  // 2. fallback：从 provider 的 modelsEndpointUrl 推断
+  const modelsUrl = props.modelsEndpointUrl
+  if (modelsUrl) {
+    if (modelsUrl.endsWith('/v1/models')) {
+      return `${modelsUrl.slice(0, -'/v1/models'.length)}${endpointPath}`
+    }
+    if (modelsUrl.endsWith('/models')) {
+      return `${modelsUrl.slice(0, -'/models'.length)}${endpointPath}`
+    }
+  }
+
+  return endpointPath
 }
 
 const upsertMutation = useMutation({
