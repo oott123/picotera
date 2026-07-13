@@ -11,6 +11,7 @@
 * 基于工作目录自动识别项目，并分别统计成本
 * 多币种费用统计
 * 完整的请求/响应日志
+* 基于反向代理认证的多用户系统
 
 ## 界面展示
 
@@ -45,7 +46,7 @@
 ## 安装
 
 > [!CAUTION]
-> 本项目的管理 API 目前没有鉴权，因此请勿将其暴露到公网使用！
+> 本项目的管理 API 默认没有鉴权，因此请勿将其暴露到公网使用！
 
 ### Docker
 
@@ -85,9 +86,11 @@ PICOTERA_S3_PATH_STYLE=true
 PICOTERA_S3_PUBLIC_URL=http://localhost:34050
 ```
 
-### 请求转换组件
+### 请求转换插件
 
-请求转换组件使用 AxonHub 的 LGPL 代码，因而需要单独编译，通过 go-plugin 作为独立进程使用：
+请求转换插件使用 AxonHub 的 LGPL 代码。
+
+如果自行编译运行 PicoTera ，需要单独编译请求转换插件，通过 go-plugin 作为独立进程使用：
 
 ```bash
 mise run llmbridge-plugin
@@ -115,17 +118,39 @@ PICOTERA_AUTH_SINGLE_USER_MODE=true
 
 ### 多用户模式
 
-TBD
+如需多用户功能，需要在 PicoTera 之外，部署一层反向代理进行鉴权，常见的有 oauth2-proxy 或 traefik 的 forward auth。
+
+提供如下变量以开启多用户模式：
+
+```env
+PICOTERA_AUTH_HEADER_ENABLED=true
+PICOTERA_AUTH_HEADER_NAME=X-User-Identity # 用户唯一识别符的 Header
+PICOTERA_AUTH_AUTO_CREATE_USER=true # 自动创建没有见过的用户
+```
 
 ### 通过命令行绑定用户
 
-运行如下命令以绑定提供商到现存用户：
+如果没有使用自动创建用户，你应运行如下命令以绑定提供商到现存用户：
 
 ```bash
 mise bind-identity -- <identity_provider> <identity> <user_id>
 # 例如
 mise bind-identity -- http-header root 1
 ```
+
+## 初次使用
+
+1. 创建各类端点。可以参考文档开头的端点界面截图。
+2. 创建一个渠道。
+3. 点击渠道右侧的模型按钮，拉取模型。
+4. 点击渠道右侧的链接按钮，将上游绑定到支持的端点。
+5. 在模型页面，展开未注册上游模型，将模型添加到支持列表。可以先不填写价格。
+6. 在模型界面点击“匹配价格”，匹配一个合适的价格。
+7. 在密钥界面创建一个新的密钥。
+8. 在设置界面允许项目自动创建。
+9. 设置你的 harness，将 `https://picotera/api/unified` 作为 Base URL，将刚才创建的密钥作为密钥。
+   如果不需要请求转换（透传），则将 `https://picotera` 作为 Base URL。
+10. 探索 <./docs/example-scripts> 目录，检查是否有需要的脚本。
 
 ## 协议
 
