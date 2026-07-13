@@ -25,6 +25,10 @@
 
 ![](./docs/screenshots/overview2.webp)
 
+科学的各类速度统计图
+
+![](./docs/screenshots/overview3.webp)
+
 ### 端点页
 
 自由设置访问端点
