@@ -164,7 +164,7 @@ func (f *gatewayFlow) runSingleAttempt(cand jsx.CandidateView, side gatewayCandi
 		return false, false
 	}
 	reqArtifactCtx, reqArtifactCancel := f.ctxs.Persist()
-	redactedHeader, redactedURL := redactUpstreamCredentials(prepared.Request.Header.Clone(), prepared.Request.URL.String())
+	redactedHeader, redactedURL := redactRequestCredentials(prepared.Request.Header.Clone(), prepared.Request.URL.String())
 	f.h.uploadRequestArtifact(reqArtifactCtx, input.UpstreamID, input.UpstreamCreatedAt, prepared.Request.Method, redactedURL, redactedHeader, f.artifactBody(prepared.RequestBody))
 	reqArtifactCancel()
 	upstreamStart := time.Now()

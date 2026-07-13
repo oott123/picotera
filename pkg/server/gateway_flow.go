@@ -321,7 +321,8 @@ func (f *gatewayFlow) authenticateAndBackfill() bool {
 	}
 	// Upload the request artifact now (deferred from insertMetaRequest); the body
 	// is cleared when the OTR mode moves bodies out of the record.
-	f.h.uploadRequestArtifact(pctx, f.meta.ID, f.meta.CreatedAt, f.meta.RequestMethod, f.meta.RequestURL, f.meta.RequestHeader, f.artifactBody(f.body))
+	redactedHeader, redactedURL := redactRequestCredentials(f.meta.RequestHeader.Clone(), f.meta.RequestURL)
+	f.h.uploadRequestArtifact(pctx, f.meta.ID, f.meta.CreatedAt, f.meta.RequestMethod, redactedURL, redactedHeader, f.artifactBody(f.body))
 	// The trace is created now (post-auth, user known) anchored to the meta
 	// row's created_at, so ListRequestTraces' time-window LATERALs still match
 	// the meta row. Subsequent upstream rows extend the window via upsertTrace.

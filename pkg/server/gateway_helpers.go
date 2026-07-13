@@ -608,17 +608,18 @@ func buildUpstreamRequest(ctx context.Context, original *http.Request, body []by
 
 const redactedPlaceholder = "[REDACTED]"
 
-// redactUpstreamCredentials redacts upstream provider credentials in a cloned
-// header and the raw URL, returning the redacted header and URL. It mutates
-// the provided header in place (the caller passes a clone) and only touches fields
-// that actually carry a credential:
+// redactRequestCredentials redacts request credentials in a cloned header and
+// the raw URL, returning the redacted header and URL. It applies to both meta
+// (client → PicoTera) and upstream (PicoTera → provider) request artifacts. It
+// mutates the provided header in place (the caller passes a clone) and only
+// touches fields that actually carry a credential:
 //   - Authorization: keeps the scheme prefix → "<scheme> [REDACTED]"; a value
 //     with no whitespace is replaced wholesale.
 //   - X-Api-Key / X-Goog-Api-Key: replaced wholesale.
 //   - Cf-Access-Client-Id / Cf-Access-Client-Secret: replaced wholesale
 //     (Cloudflare Access service tokens).
 //   - URL "key" query param: value replaced, leaving other params intact.
-func redactUpstreamCredentials(header http.Header, rawURL string) (http.Header, string) {
+func redactRequestCredentials(header http.Header, rawURL string) (http.Header, string) {
 	if auth := header.Get("Authorization"); auth != "" {
 		if scheme, _, found := strings.Cut(auth, " "); found {
 			header.Set("Authorization", scheme+" "+redactedPlaceholder)

@@ -77,7 +77,7 @@ func TestRedactUpstreamCredentials(t *testing.T) {
 	t.Run("authorization keeps scheme prefix", func(t *testing.T) {
 		h := http.Header{}
 		h.Set("Authorization", "Bearer sk-supersecret")
-		got, _ := redactUpstreamCredentials(h, "http://upstream.example/v1")
+		got, _ := redactRequestCredentials(h, "http://upstream.example/v1")
 		if v := got.Get("Authorization"); v != "Bearer [REDACTED]" {
 			t.Errorf("Authorization = %q, want %q", v, "Bearer [REDACTED]")
 		}
@@ -86,7 +86,7 @@ func TestRedactUpstreamCredentials(t *testing.T) {
 	t.Run("authorization without scheme replaced wholesale", func(t *testing.T) {
 		h := http.Header{}
 		h.Set("Authorization", "sk-supersecret")
-		got, _ := redactUpstreamCredentials(h, "http://upstream.example/v1")
+		got, _ := redactRequestCredentials(h, "http://upstream.example/v1")
 		if v := got.Get("Authorization"); v != "[REDACTED]" {
 			t.Errorf("Authorization = %q, want %q", v, "[REDACTED]")
 		}
@@ -96,7 +96,7 @@ func TestRedactUpstreamCredentials(t *testing.T) {
 		h := http.Header{}
 		h.Set("X-Api-Key", "sk-anthropic")
 		h.Set("X-Goog-Api-Key", "goog-key")
-		got, _ := redactUpstreamCredentials(h, "http://upstream.example/v1")
+		got, _ := redactRequestCredentials(h, "http://upstream.example/v1")
 		if v := got.Get("X-Api-Key"); v != "[REDACTED]" {
 			t.Errorf("X-Api-Key = %q, want %q", v, "[REDACTED]")
 		}
@@ -106,7 +106,7 @@ func TestRedactUpstreamCredentials(t *testing.T) {
 	})
 
 	t.Run("url key query param redacted, others intact", func(t *testing.T) {
-		_, gotURL := redactUpstreamCredentials(http.Header{}, "http://upstream.example/v1beta/models/gemini:generateContent?key=goog-secret&alt=sse")
+		_, gotURL := redactRequestCredentials(http.Header{}, "http://upstream.example/v1beta/models/gemini:generateContent?key=goog-secret&alt=sse")
 		u, err := url.Parse(gotURL)
 		if err != nil {
 			t.Fatalf("parse redacted url: %v", err)
@@ -123,7 +123,7 @@ func TestRedactUpstreamCredentials(t *testing.T) {
 		h := http.Header{}
 		h.Set("Content-Type", "application/json")
 		rawURL := "http://upstream.example/v1/messages"
-		got, gotURL := redactUpstreamCredentials(h, rawURL)
+		got, gotURL := redactRequestCredentials(h, rawURL)
 		if v := got.Get("Authorization"); v != "" {
 			t.Errorf("unexpected Authorization: %q", v)
 		}
@@ -139,7 +139,7 @@ func TestRedactUpstreamCredentials(t *testing.T) {
 		h := http.Header{}
 		h.Set("Cf-Access-Client-Id", "client-id-secret")
 		h.Set("Cf-Access-Client-Secret", "client-secret-value")
-		got, _ := redactUpstreamCredentials(h, "http://upstream.example/v1")
+		got, _ := redactRequestCredentials(h, "http://upstream.example/v1")
 		if v := got.Get("Cf-Access-Client-Id"); v != "[REDACTED]" {
 			t.Errorf("Cf-Access-Client-Id = %q, want %q", v, "[REDACTED]")
 		}
