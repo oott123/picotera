@@ -161,7 +161,7 @@ mise bind-identity -- http-header root 1
 8. 在设置界面允许项目自动创建。
 9. 设置你的 harness，将 `https://picotera/api/unified` 作为 Base URL，将刚才创建的密钥作为密钥。
    如果不需要请求转换（透传），则将 `https://picotera` 作为 Base URL。
-10. 探索 <./docs/example-scripts> 目录，检查是否有需要的脚本。
+10. 探索 [docs/example-scripts](./docs/example-scripts/) 目录，检查是否有需要的脚本。
 
 ## 协议
 
