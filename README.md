@@ -90,6 +90,13 @@ PICOTERA_S3_PATH_STYLE=true
 PICOTERA_S3_PUBLIC_URL=http://localhost:34050
 ```
 
+### 路径参考
+
+* `/api/unified` 为 LLM 统一访问端点
+* `/api/picotera` 为 PicoTera 管理端点
+* 若用户配置了自定义端点，则这些端点直接挂载在根路由下
+* 其它端点将被转发至前端 SPA
+
 ### 请求转换插件
 
 请求转换插件使用 AxonHub 的 LGPL 代码。
