@@ -10,7 +10,9 @@ import {
 } from '@/composables/useSSEParser'
 import { isJsonContentType, parseJsonBody, rawBodyText } from './artifactBody'
 import type { ArtifactPayload } from './artifactTypes'
+import { extractSearchResults } from '@/composables/conversation'
 import JsonArtifactViewer from './JsonArtifactViewer.vue'
+import SearchResultsView from './SearchResultsView.vue'
 import SSEEventsVirtualList from './SSEEventsVirtualList.vue'
 import TimedRawView from './TimedRawView.vue'
 import { useRequestDetailUiState } from '@/composables/useRequestDetailUiState'
@@ -55,6 +57,11 @@ const sseEvents = computed(() => {
 
 const content = computed(() => {
   return extractContentFromAggregated(props.payload.aggregated)
+})
+
+const searchResults = computed(() => {
+  if (!jsonBody.value.ok) return []
+  return extractSearchResults(jsonBody.value.value)
 })
 
 const replyHtml = computed(() => {
@@ -286,7 +293,16 @@ watch(
             />
           </details>
           <div v-if="content.reply" class="prose prose-sm max-w-none" v-html="replyHtml" />
-          <StateText v-else-if="!content.thinking && !openAIImageGeneration" :dashed="false" compact
+          <SearchResultsView v-if="searchResults.length" :results="searchResults" />
+          <StateText
+            v-if="
+              !content.thinking &&
+              !content.reply &&
+              !openAIImageGeneration &&
+              !searchResults.length
+            "
+            :dashed="false"
+            compact
             >无可渲染内容</StateText
           >
         </div>

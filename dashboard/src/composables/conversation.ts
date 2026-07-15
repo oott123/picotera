@@ -2,6 +2,16 @@ import type { AggregatedFormat } from '@/components/artifactTypes'
 
 export type ConversationRole = 'system' | 'user' | 'assistant' | 'tool'
 
+export interface SearchResult {
+  citation: string
+  title: string
+  url: string | null
+  wordlim: string | null
+  published: string | null
+  crawled: string | null
+  content: string
+}
+
 export type ConversationPart =
   | { kind: 'text'; text: string }
   | { kind: 'thinking'; text: string }
@@ -14,13 +24,19 @@ export type ConversationPart =
       isError: boolean
     }
   | { kind: 'media'; mediaType: string; label: string }
+  | { kind: 'searchResults'; results: SearchResult[] }
 
 export interface ConversationMessage {
   role: ConversationRole
   parts: ConversationPart[]
 }
 
-type ConversationFormat = 'openaiChat' | 'openaiResponses' | 'anthropic' | 'gemini'
+type ConversationFormat =
+  | 'openaiChat'
+  | 'openaiResponses'
+  | 'anthropic'
+  | 'gemini'
+  | 'openaiSearch'
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return null
@@ -130,6 +146,7 @@ export function detectFormat(
     return null
   }
 
+  if (typeof root.output === 'string') return 'openaiSearch'
   if (Array.isArray(root.candidates)) return 'gemini'
   if (root.object === 'response' || Array.isArray(root.output)) return 'openaiResponses'
   if (Array.isArray(root.choices)) return 'openaiChat'
@@ -474,6 +491,90 @@ export function parseGeminiResponse(json: unknown): ConversationMessage[] {
   return message ? [{ ...message, role: 'assistant' }] : []
 }
 
+// A search result is anchored by its citation marker: U+E200 "cite" U+E202 <ref> U+E201
+// (a marker may carry several U+E202-separated refs). Dash separators between results are
+// unreliable (sometimes absent, sometimes glued to the preceding text), so results are split
+// on the markers, not the dashes.
+const SEARCH_CITE = /\uE200cite\uE202([\s\S]*?)\uE201/g
+
+function stripTrailingSeparators(text: string): string {
+  return text.replace(/\s*-{20,}\s*$/, '').replace(/^\s+|\s+$/g, '')
+}
+
+// The title of a result is the line directly above its citation marker.
+function searchTitleBefore(
+  output: string,
+  markerStart: number,
+): { title: string; lineStart: number } {
+  const nlBefore = output.lastIndexOf('\n', markerStart - 1)
+  if (nlBefore < 0) return { title: output.slice(0, markerStart).trim(), lineStart: 0 }
+  const prevNL = output.lastIndexOf('\n', nlBefore - 1)
+  return { title: output.slice(prevNL + 1, nlBefore).trim(), lineStart: prevNL + 1 }
+}
+
+function parseSearchOutput(output: string): SearchResult[] {
+  const markers = [...output.matchAll(SEARCH_CITE)]
+  const results: SearchResult[] = []
+  for (let k = 0; k < markers.length; k++) {
+    const marker = markers[k]
+    if (!marker || marker.index === undefined) continue
+    const markerEnd = marker.index + marker[0].length
+
+    const citation = (marker[1] ?? '')
+      .split('\uE202')
+      .map((ref) => ref.trim())
+      .filter(Boolean)
+      .join(', ')
+
+    const titleLine = searchTitleBefore(output, marker.index).title
+
+    // Content runs until the title line of the next result (or end of output).
+    let regionEnd = output.length
+    const next = markers[k + 1]
+    if (next && next.index !== undefined) {
+      regionEnd = searchTitleBefore(output, next.index).lineStart
+    }
+    const region = output.slice(markerEnd, regionEnd)
+
+    let title = titleLine
+    let url: string | null = null
+    const urlMatch = titleLine.match(/^(.*?)\s*\((https?:\/\/[^\s)]+)\)\s*$/)
+    if (urlMatch) {
+      title = urlMatch[1]?.trim() ?? titleLine
+      url = urlMatch[2] ?? null
+    }
+
+    const wordlim = region.match(/\[wordlim:\s*([^\]]+)\]/)?.[1]?.trim() ?? null
+    const published = region.match(/Published:\s*([^;]+);/)?.[1]?.trim() ?? null
+    const crawled = region.match(/Crawled:\s*([^;]+);/)?.[1]?.trim() ?? null
+
+    // Strip the three metadata markers (rendered as badges) and the trailing result
+    // separator; the rest is the Markdown content.
+    const content = stripTrailingSeparators(
+      region
+        .replace(/\[wordlim:\s*[^\]]+\]/, '')
+        .replace(/Published:\s*[^;]+;\s*/, '')
+        .replace(/Crawled:\s*[^;]+;\s*/, ''),
+    )
+
+    if (!title && !content) continue
+    results.push({ citation, title, url, wordlim, published, crawled, content })
+  }
+  return results
+}
+
+export function extractSearchResults(json: unknown): SearchResult[] {
+  const output = asRecord(json)?.output
+  return typeof output === 'string' ? parseSearchOutput(output) : []
+}
+
+export function parseSearchResponse(json: unknown): ConversationMessage[] {
+  const results = extractSearchResults(json)
+  return results.length
+    ? [{ role: 'assistant', parts: [{ kind: 'searchResults', results }] }]
+    : []
+}
+
 function formatFromAggregated(format: AggregatedFormat | undefined): ConversationFormat | null {
   switch (format) {
     case 'openaiChatCompletions':
@@ -501,6 +602,8 @@ export function parseRequestConversation(json: unknown): ConversationMessage[] |
       return parseAnthropicRequest(json)
     case 'gemini':
       return parseGeminiRequest(json)
+    case 'openaiSearch':
+      return []
   }
 }
 
@@ -519,6 +622,8 @@ export function parseResponseConversation(
       return parseAnthropicResponse(json)
     case 'gemini':
       return parseGeminiResponse(json)
+    case 'openaiSearch':
+      return parseSearchResponse(json)
   }
 }
 

@@ -16,6 +16,7 @@ import type {
 import { renderMarkdown } from '@/composables/useSSEParser'
 import { Button, Icon, Tag } from '@/ui'
 import JsonArtifactViewer from './JsonArtifactViewer.vue'
+import SearchResultsView from './SearchResultsView.vue'
 
 const props = defineProps<{ messages: ConversationMessage[] }>()
 
@@ -219,6 +220,11 @@ onBeforeUnmount(() => {
                 <JsonArtifactViewer :value="part.kind === 'toolCall' ? part.input : part.output" />
               </div>
             </details>
+
+            <SearchResultsView
+              v-else-if="part.kind === 'searchResults'"
+              :results="part.results"
+            />
 
             <span
               v-else-if="part.kind === 'media'"
