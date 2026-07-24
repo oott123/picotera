@@ -303,7 +303,7 @@ func fillTierDefaults(t *contract.PricingTier, inputSet, cacheReadSet, cacheWrit
 		t.CacheWrite = t.Input
 	}
 	if !cacheWriteLongSet {
-		t.CacheWrite1H = t.Input
+		t.CacheWrite1H = t.CacheWrite
 	}
 	if !implicitSet {
 		t.ImplicitCacheRead = t.CacheRead

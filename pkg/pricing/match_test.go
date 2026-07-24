@@ -150,6 +150,53 @@ func TestMissingCacheFieldsAreFilled(t *testing.T) {
 	}
 }
 
+func TestMissingLongCacheWriteUsesCacheWrite(t *testing.T) {
+	got, ok := convertModelPricing(model{
+		ID:       "m",
+		Currency: "USD",
+		Unit:     "per_1m_tokens",
+		Prices: map[string]*priceDef{
+			"input":       {Type: "flat", Price: 5},
+			"cache_write": {Type: "flat", Price: 1.25},
+		},
+	})
+	if !ok {
+		t.Fatal("expected pricing to convert")
+	}
+	tier := got.Tiers[0]
+	if tier.CacheWrite != 1.25 || tier.CacheWrite1H != 1.25 {
+		t.Fatalf("cache writes = %v/%v, want cache write fallback 1.25/1.25", tier.CacheWrite, tier.CacheWrite1H)
+	}
+}
+
+func TestGPT56LunaCacheWrite1HMatchesCacheWrite(t *testing.T) {
+	candidates, err := Match("gpt-5.6-luna", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range candidates {
+		if candidate.ModelName != "gpt-5.6-luna" {
+			continue
+		}
+		if candidate.Pricing.Currency != "USD" {
+			t.Fatalf("currency = %q, want USD", candidate.Pricing.Currency)
+		}
+		want := []contract.PricingTier{
+			{MinInputTokens: 0, Input: 1, Output: 6, CacheRead: 0.1, CacheWrite: 1.25, CacheWrite1H: 1.25, ImplicitCacheRead: 0.1},
+			{MinInputTokens: 272000, Input: 2, Output: 9, CacheRead: 0.2, CacheWrite: 2.5, CacheWrite1H: 2.5, ImplicitCacheRead: 0.2},
+		}
+		if len(candidate.Pricing.Tiers) != len(want) {
+			t.Fatalf("tiers = %+v, want %+v", candidate.Pricing.Tiers, want)
+		}
+		for i := range want {
+			if candidate.Pricing.Tiers[i] != want[i] {
+				t.Fatalf("tier %d = %+v, want %+v", i, candidate.Pricing.Tiers[i], want[i])
+			}
+		}
+		return
+	}
+	t.Fatal("expected gpt-5.6-luna candidate")
+}
 func TestRejectUnsupportedTierBasis(t *testing.T) {
 	_, ok := convertModelPricing(model{
 		ID:       "m",
