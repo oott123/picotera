@@ -254,10 +254,6 @@ func (e *ResponseExtractor) extractOpenAISSE(payload string) {
 			val := v.Int()
 			e.metrics.OutputTokens = &val
 		}
-		if v := usage.Get("prompt_tokens_details.cached_tokens"); v.Exists() {
-			val := v.Int()
-			e.metrics.CacheReadTokens = &val
-		}
 	}
 }
 
@@ -287,10 +283,6 @@ func (e *ResponseExtractor) extractOpenAIResponsesSSE(payload string) {
 			if v := usage.Get("output_tokens"); v.Exists() {
 				val := v.Int()
 				e.metrics.OutputTokens = &val
-			}
-			if v := usage.Get("input_tokens_details.cached_tokens"); v.Exists() {
-				val := v.Int()
-				e.metrics.CacheReadTokens = &val
 			}
 		}
 	}
@@ -485,32 +477,19 @@ func (e *ResponseExtractor) extractJSONMetrics() {
 	e.inferModelField(result.String())
 	e.inferSignatureModelFromJSON(result)
 
-	// Try OpenAI Chat Completions format
+	// Try OpenAI Chat Completions / Responses format.
+	// setOpenAIInputTokens handles both prefixes (prompt_tokens* and
+	// input_tokens*) and sets InputTokens / CacheReadTokens / CacheWriteTokens.
 	usage := result.Get("usage")
 	e.setOpenAIInputTokens(usage)
 	if v := result.Get("usage.completion_tokens"); v.Exists() {
 		val := v.Int()
 		e.metrics.OutputTokens = &val
 	}
-	if v := result.Get("usage.prompt_tokens_details.cached_tokens"); v.Exists() {
-		val := v.Int()
-		e.metrics.CacheReadTokens = &val
-	}
-
-	// Try OpenAI Responses format (only sets if Chat Completions didn't find fields)
-	if e.metrics.InputTokens == nil {
-		e.setOpenAIInputTokens(usage)
-	}
 	if e.metrics.OutputTokens == nil {
 		if v := result.Get("usage.output_tokens"); v.Exists() {
 			val := v.Int()
 			e.metrics.OutputTokens = &val
-		}
-	}
-	if e.metrics.CacheReadTokens == nil {
-		if v := result.Get("usage.input_tokens_details.cached_tokens"); v.Exists() {
-			val := v.Int()
-			e.metrics.CacheReadTokens = &val
 		}
 	}
 
@@ -675,18 +654,25 @@ func (e *ResponseExtractor) setOpenAIInputTokens(usage gjson.Result) {
 	}
 
 	total := usage.Get("prompt_tokens")
-	cached := usage.Get("prompt_tokens_details.cached_tokens")
+	details := usage.Get("prompt_tokens_details")
 	if !total.Exists() {
 		total = usage.Get("input_tokens")
-		cached = usage.Get("input_tokens_details.cached_tokens")
+		details = usage.Get("input_tokens_details")
 	}
 	if !total.Exists() {
 		return
 	}
 
 	val := total.Int()
-	if cached.Exists() {
-		val -= cached.Int()
+	if cached := details.Get("cached_tokens"); cached.Exists() {
+		read := cached.Int()
+		e.metrics.CacheReadTokens = &read
+		val -= read
+	}
+	if cw := details.Get("cache_write_tokens"); cw.Exists() {
+		write := cw.Int()
+		e.metrics.CacheWriteTokens = &write
+		val -= write
 	}
 	e.metrics.InputTokens = &val
 }

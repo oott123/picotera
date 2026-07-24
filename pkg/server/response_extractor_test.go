@@ -369,6 +369,9 @@ func TestResponseExtractor_SSE_OpenAIResponses_UsageAndTTFT(t *testing.T) {
 	if m.CacheReadTokens == nil || *m.CacheReadTokens != 5 {
 		t.Errorf("CacheReadTokens: got %v, want 5", m.CacheReadTokens)
 	}
+	if m.CacheWriteTokens != nil {
+		t.Errorf("CacheWriteTokens should be nil without cache_write_tokens, got %v", m.CacheWriteTokens)
+	}
 }
 
 func TestResponseExtractor_SSE_OpenAIResponses_FunctionCallTTFT(t *testing.T) {
@@ -402,6 +405,92 @@ func TestResponseExtractor_JSON_OpenAIResponses(t *testing.T) {
 	}
 	if m.CacheReadTokens == nil || *m.CacheReadTokens != 5 {
 		t.Errorf("CacheReadTokens: got %v, want 5", m.CacheReadTokens)
+	}
+	if m.CacheWriteTokens != nil {
+		t.Errorf("CacheWriteTokens should be nil without cache_write_tokens, got %v", m.CacheWriteTokens)
+	}
+}
+
+func TestResponseExtractor_SSE_OpenAI_CacheWrite(t *testing.T) {
+	events := []string{
+		"data: {\"id\":\"chatcmpl-1\",\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}\n\n",
+		"data: {\"id\":\"chatcmpl-1\",\"choices\":[],\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":50,\"prompt_tokens_details\":{\"cached_tokens\":30,\"cache_write_tokens\":20}}}\n\n",
+		"data: [DONE]\n\n",
+	}
+	inner := &chunkReader{chunks: []string{strings.Join(events, "")}}
+	extractor := NewResponseExtractor(inner, "text/event-stream", time.Now())
+
+	_, _ = io.ReadAll(extractor)
+
+	m := extractor.Metrics()
+	if m.InputTokens == nil || *m.InputTokens != 50 {
+		t.Errorf("InputTokens: got %v, want 50", m.InputTokens)
+	}
+	if m.CacheReadTokens == nil || *m.CacheReadTokens != 30 {
+		t.Errorf("CacheReadTokens: got %v, want 30", m.CacheReadTokens)
+	}
+	if m.CacheWriteTokens == nil || *m.CacheWriteTokens != 20 {
+		t.Errorf("CacheWriteTokens: got %v, want 20", m.CacheWriteTokens)
+	}
+}
+
+func TestResponseExtractor_JSON_OpenAI_CacheWrite(t *testing.T) {
+	jsonData := `{"id":"chatcmpl-1","choices":[{"message":{"role":"assistant","content":"Hi"}}],"usage":{"prompt_tokens":150,"completion_tokens":75,"prompt_tokens_details":{"cached_tokens":40,"cache_write_tokens":25}}}`
+	inner := strings.NewReader(jsonData)
+	extractor := NewResponseExtractor(inner, "application/json", time.Now())
+
+	_, _ = io.ReadAll(extractor)
+
+	m := extractor.Metrics()
+	if m.InputTokens == nil || *m.InputTokens != 85 {
+		t.Errorf("InputTokens: got %v, want 85", m.InputTokens)
+	}
+	if m.CacheReadTokens == nil || *m.CacheReadTokens != 40 {
+		t.Errorf("CacheReadTokens: got %v, want 40", m.CacheReadTokens)
+	}
+	if m.CacheWriteTokens == nil || *m.CacheWriteTokens != 25 {
+		t.Errorf("CacheWriteTokens: got %v, want 25", m.CacheWriteTokens)
+	}
+}
+
+func TestResponseExtractor_SSE_OpenAIResponses_CacheWrite(t *testing.T) {
+	events := []string{
+		"event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"Hello\"}\n\n",
+		"event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"object\":\"response\",\"status\":\"completed\",\"usage\":{\"input_tokens\":22,\"input_tokens_details\":{\"cached_tokens\":5,\"cache_write_tokens\":7},\"output_tokens\":42,\"total_tokens\":64}}}\n\n",
+	}
+	inner := &chunkReader{chunks: []string{strings.Join(events, "")}}
+	extractor := NewResponseExtractor(inner, "text/event-stream", time.Now())
+
+	_, _ = io.ReadAll(extractor)
+
+	m := extractor.Metrics()
+	if m.InputTokens == nil || *m.InputTokens != 10 {
+		t.Errorf("InputTokens: got %v, want 10", m.InputTokens)
+	}
+	if m.CacheReadTokens == nil || *m.CacheReadTokens != 5 {
+		t.Errorf("CacheReadTokens: got %v, want 5", m.CacheReadTokens)
+	}
+	if m.CacheWriteTokens == nil || *m.CacheWriteTokens != 7 {
+		t.Errorf("CacheWriteTokens: got %v, want 7", m.CacheWriteTokens)
+	}
+}
+
+func TestResponseExtractor_JSON_OpenAIResponses_CacheWrite(t *testing.T) {
+	jsonData := `{"id":"resp_1","object":"response","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Hi"}]}],"usage":{"input_tokens":22,"input_tokens_details":{"cached_tokens":5,"cache_write_tokens":7},"output_tokens":40,"total_tokens":62}}`
+	inner := strings.NewReader(jsonData)
+	extractor := NewResponseExtractor(inner, "application/json", time.Now())
+
+	_, _ = io.ReadAll(extractor)
+
+	m := extractor.Metrics()
+	if m.InputTokens == nil || *m.InputTokens != 10 {
+		t.Errorf("InputTokens: got %v, want 10", m.InputTokens)
+	}
+	if m.CacheReadTokens == nil || *m.CacheReadTokens != 5 {
+		t.Errorf("CacheReadTokens: got %v, want 5", m.CacheReadTokens)
+	}
+	if m.CacheWriteTokens == nil || *m.CacheWriteTokens != 7 {
+		t.Errorf("CacheWriteTokens: got %v, want 7", m.CacheWriteTokens)
 	}
 }
 
