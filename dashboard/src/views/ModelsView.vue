@@ -21,6 +21,7 @@ import {
 import { queryKeys } from '@/api/queryKeys'
 import ModelForm from '@/components/ModelForm.vue'
 import ModelPricingMatchPanel from '@/components/ModelPricingMatchPanel.vue'
+import PricingExportPanel from '@/components/PricingExportPanel.vue'
 import ModelUpstreamsPanel, { type Upstream } from '@/components/ModelUpstreamsPanel.vue'
 import { useSidePanel } from '@/composables/useSidePanel'
 import {
@@ -160,6 +161,10 @@ function openPricingMatch(m: ModelView) {
   panel.open(ModelPricingMatchPanel, { model: m }, { key: `model-pricing-match:${m.name}` })
 }
 
+function openPricingExport(m: ModelView) {
+  panel.open(PricingExportPanel, { model: m }, { key: `model-pricing-export:${m.name}` })
+}
+
 async function toggleDisabled(m: ModelView) {
   await upsertModelMutation.mutateAsync({ ...m, disabled: !m.disabled })
 }
@@ -275,6 +280,15 @@ function confirmDelete(_event: Event, m: ModelView) {
                     @click="openPricingMatch(m)"
                   >
                     <Icon name="cloud-dollar" :size="13" />
+                  </IconButton>
+                  <IconButton
+                    v-if="m.pricing?.tiers?.length"
+                    :active="panel.isActive(`model-pricing-export:${m.name}`)"
+                    title="导出价格表达式"
+                    aria-label="导出价格表达式"
+                    @click="openPricingExport(m)"
+                  >
+                    <Icon name="braces" :size="13" />
                   </IconButton>
                   <IconButton
                     :active="panel.isActive(`model:${m.name}`)"

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import Field from './Field.vue'
 
 export interface TimeRangeValue {
   startAt: string
