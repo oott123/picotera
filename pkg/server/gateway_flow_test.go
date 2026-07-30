@@ -126,6 +126,29 @@ func TestBuildPathCandidateSetAnnotations(t *testing.T) {
 	}
 }
 
+// TestBuildPathCandidateSetFormat guards the path-route candidate format: the
+// sidecar and the JS-visible ProviderModel must carry the endpoint's bridge
+// format so buildRewrittenUpstreamRequest patches ctx.format to the real
+// source format instead of clobbering it with "unknown".
+func TestBuildPathCandidateSetFormat(t *testing.T) {
+	rows := []providerCandidateRow{{
+		ProviderID:   1,
+		ProviderName: "provider",
+		EndpointPath: "/v1/messages",
+	}}
+	set, err := buildPathCandidateSet(rows, nil, nil, nil, db.Endpoint{Path: "/v1/messages", EndpointType: contract.EndpointType_AnthropicMessages})
+	if err != nil {
+		t.Fatal(err)
+	}
+	side := set.Items[0].Sidecar
+	if side.UpstreamFormat != llmbridge.FormatAnthropicMessages {
+		t.Fatalf("unexpected path sidecar format: %+v", side)
+	}
+	if got := set.Items[0].Candidate.ProviderModel.UpstreamFormat; got != "anthropicMessages" {
+		t.Fatalf("unexpected JS-visible upstream format: %q", got)
+	}
+}
+
 func TestBuildUnifiedCandidateSetAnnotationsAndFormat(t *testing.T) {
 	rows := []db.GetProvidersByEndpointTypesAndModelRow{{
 		ProviderID:              2,

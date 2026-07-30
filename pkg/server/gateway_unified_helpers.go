@@ -43,10 +43,10 @@ func sourceEndpointType(f llmbridge.Format) int32 {
 	}
 }
 
-// upstreamFormatFor maps a candidate row's endpoint_type to the bridge
-// format. Endpoint types not in the generation set never appear in the
-// type-set query result, so they default to Unknown which fails the bridge
-// loudly if it ever sneaks in.
+// upstreamFormatFor maps an endpoint_type to the bridge format. Endpoint
+// types outside the generation set (general, model list, search, ...) map to
+// FormatUnknown; for unified candidates those never appear in the type-set
+// query result, so the bridge fails loudly if one ever sneaks in.
 func upstreamFormatFor(t int32) llmbridge.Format {
 	switch t {
 	case contract.EndpointType_AnthropicMessages:

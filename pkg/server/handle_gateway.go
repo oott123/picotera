@@ -48,7 +48,7 @@ func (h *gatewayHandler) newPathGatewayFlowConfig(endpoint db.Endpoint, pathVars
 		Kind:         gatewayRoutePath,
 		Endpoint:     endpoint,
 		PathVars:     pathVars,
-		SourceFormat: sourceEndpointTypeForPath(endpoint.EndpointType),
+		SourceFormat: upstreamFormatFor(endpoint.EndpointType),
 		ExtractModel: func(_ *http.Request, body []byte, vars map[string]string) (gatewayModelMode, error) {
 			if endpoint.ModelPath == "" {
 				return gatewayModelMode{}, nil

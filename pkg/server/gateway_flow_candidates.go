@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"picotera/pkg/annotations"
-	"picotera/pkg/contract"
 	"picotera/pkg/db"
 	"picotera/pkg/jsx"
 	"picotera/pkg/llmbridge"
@@ -45,6 +44,9 @@ func buildPathCandidateSet(providers []providerCandidateRow, userAnno map[string
 		return candidateSet{}, err
 	}
 	annoBuilder.modelAnno = modelAnno
+	// Path-route candidates all share the route's single endpoint, so the
+	// upstream format is loop-invariant.
+	upstreamFormat := upstreamFormatFor(endpoint.EndpointType)
 	out := candidateSet{Items: make([]gatewayCandidate, 0, len(providers)), ModelAnno: modelAnno}
 	for _, row := range providers {
 		entryAnno, _ := annotations.Decode(row.EntryAnnotations)
@@ -55,7 +57,7 @@ func buildPathCandidateSet(providers []providerCandidateRow, userAnno map[string
 		}
 		cand := jsx.CandidateView{
 			Provider:      buildJSProviderSummary(row.ProviderID, row.ProviderName, row.ProviderPriority, providerAnno),
-			ProviderModel: buildProviderModel(row.ModelName, row.EndpointPath, row.UpstreamModelName, row.EntryPriority, entryAnno, ""),
+			ProviderModel: buildProviderModel(row.ModelName, row.EndpointPath, row.UpstreamModelName, row.EntryPriority, entryAnno, upstreamFormat.String()),
 			Annotations:   merged,
 		}
 		key := fmt.Sprintf("%d", row.ProviderID)
@@ -67,10 +69,11 @@ func buildPathCandidateSet(providers []providerCandidateRow, userAnno map[string
 				UpstreamURL:  row.UpstreamURL,
 				Credentials:  row.ProviderCredentials,
 				SendResolver: effectiveSendResolver(endpoint.CredentialsResolver, row.SendCredentialsResolver),
-				ProxyURL:     proxyURL,
-				EndpointPath: endpoint.Path,
-				EndpointType: endpoint.EndpointType,
-				Annotations:  merged,
+				ProxyURL:       proxyURL,
+				EndpointPath:   endpoint.Path,
+				EndpointType:   endpoint.EndpointType,
+				UpstreamFormat: upstreamFormat,
+				Annotations:    merged,
 			},
 		})
 	}
@@ -161,19 +164,3 @@ func lookupCandidateSidecar(kind gatewayRouteKind, sidecars map[string]gatewayCa
 	return side, ok
 }
 
-func sourceEndpointTypeForPath(endpointType int32) llmbridge.Format {
-	switch endpointType {
-	case contract.EndpointType_AnthropicMessages:
-		return llmbridge.FormatAnthropicMessages
-	case contract.EndpointType_OpenAIChatCompletions:
-		return llmbridge.FormatOpenAIChatCompletions
-	case contract.EndpointType_OpenAIResponses:
-		return llmbridge.FormatOpenAIResponses
-	case contract.EndpointType_GeminiGenerateContent:
-		return llmbridge.FormatGeminiGenerateContent
-	case contract.EndpointType_GeminiStreamGenerateContent:
-		return llmbridge.FormatGeminiStreamGenerateContent
-	default:
-		return llmbridge.FormatUnknown
-	}
-}
