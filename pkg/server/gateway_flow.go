@@ -375,6 +375,7 @@ func (f *gatewayFlow) resolveAndRewriteModel() bool {
 		Annotations:  &mergedAnno,
 		Stream:       &streaming,
 		SourceFormat: &srcFormat,
+		Format:       &srcFormat,
 	}); err != nil {
 		f.failHook(err)
 		return false
