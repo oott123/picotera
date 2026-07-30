@@ -117,7 +117,7 @@ func (h *gatewayHandler) markPathHeadersReceived(input successInput) {
 	// user_id / project_id are intentionally NOT touched here: they were
 	// backfilled post-auth on the meta row and must survive the header update.
 	// The header update only sets provider/model/endpoint/status.
-	h.updateRequest(bgCtx, newRequestUpdate(metaID, metaCreatedAt).
+	input.Flow.updateMeta(bgCtx, newRequestUpdate(metaID, metaCreatedAt).
 		ProviderID(pgtype.Int4{Int32: input.ProviderID, Valid: true}).
 		Model(pgtype.Text{String: input.RoutedModel, Valid: input.RoutedModel != ""}).
 		UpstreamModel(pgtype.Text{String: input.UpstreamModel, Valid: input.UpstreamModel != ""}).
@@ -154,7 +154,7 @@ func (h *gatewayHandler) openPathInternalReader(input successInput) (*lockedResp
 		metaID, metaCreatedAt := input.Flow.meta.ID, input.Flow.meta.CreatedAt
 		h.completeFailedAttemptWithReason(bgCtx, input.UpstreamID, input.UpstreamCreatedAt, input.AttemptStart, int32(resp.StatusCode), "decode upstream response: "+derr.Error(), db.FinishReasonInternal, resp.Header)
 		respBody := writeGatewayError(w, http.StatusBadGateway, "decode upstream response: "+derr.Error(), errorx.UpstreamError.Error())
-		h.updateRequest(bgCtx, newRequestUpdate(metaID, metaCreatedAt).
+		input.Flow.updateMeta(bgCtx, newRequestUpdate(metaID, metaCreatedAt).
 			StatusCode(pgtype.Int4{Int32: http.StatusBadGateway, Valid: true}).
 			ErrorMessage(pgtype.Text{String: "decode upstream response: " + derr.Error(), Valid: true}).
 			TimeSpentMs(pgtype.Int4{Int32: int32(time.Since(input.Flow.startedAt).Milliseconds()), Valid: true}).
@@ -173,7 +173,7 @@ func (h *gatewayHandler) openPathInternalReader(input successInput) (*lockedResp
 		metaID, metaCreatedAt := input.Flow.meta.ID, input.Flow.meta.CreatedAt
 		errMsg := "start client write: " + err.Error()
 		h.completeFailedAttemptWithReason(bgCtx, input.UpstreamID, input.UpstreamCreatedAt, input.AttemptStart, http.StatusOK, errMsg, db.FinishReasonCancelled, resp.Header)
-		h.updateRequest(bgCtx, newRequestUpdate(metaID, metaCreatedAt).
+		input.Flow.updateMeta(bgCtx, newRequestUpdate(metaID, metaCreatedAt).
 			StatusCode(pgtype.Int4{Int32: http.StatusOK, Valid: true}).
 			ErrorMessage(pgtype.Text{String: errMsg, Valid: true}).
 			TimeSpentMs(pgtype.Int4{Int32: int32(time.Since(input.Flow.startedAt).Milliseconds()), Valid: true}).
@@ -288,7 +288,7 @@ func (h *gatewayHandler) completeGatewaySuccess(input successInput, m ResponseMe
 		InferredModelSource(int16(m.InferredModelSource)).
 		ExternalResponseID(matchExternalIDHeader(input.Response.Header, h.externalResponseIDHeaders)))
 	metaTimeSpent := int32(time.Since(input.Flow.startedAt).Milliseconds())
-	h.updateRequest(bgCtx, newRequestUpdate(input.Flow.meta.ID, input.Flow.meta.CreatedAt).
+	input.Flow.updateMeta(bgCtx, newRequestUpdate(input.Flow.meta.ID, input.Flow.meta.CreatedAt).
 		StatusCode(pgtype.Int4{Int32: int32(statusCode), Valid: true}).
 		ErrorMessage(errMsg).
 		TimeSpentMs(pgtype.Int4{Int32: metaTimeSpent, Valid: true}).

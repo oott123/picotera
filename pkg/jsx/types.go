@@ -167,6 +167,42 @@ type ProviderModelEntry struct {
 	Disabled          bool              `json:"disabled,omitempty"`
 }
 
+// RequestRef is the JS-visible identity of a request row (ctx.metaRequest and
+// ctx.upstreamRequest). It carries no annotation map — scripts write annotations
+// through picotera.request.setAnnotation(id, key, value) instead.
+type RequestRef struct {
+	ID     string `json:"id"`
+	SpanID string `json:"spanId"`
+	// ParentSpanID is the inbound session header; null when absent.
+	ParentSpanID *string `json:"parentSpanId"`
+	// TraceID is traces.id; null when no trace exists (no parentSpanId, or the
+	// upsert failed).
+	TraceID *string `json:"traceId"`
+}
+
+// RequestFinishedView is the input to the requestFinished hook: the meta row's
+// terminal state, accumulated in memory (never read back from the database).
+// Fields that never happened are zero (e.g. a pure-failure path has no tokens,
+// cost, or providerId).
+type RequestFinishedView struct {
+	RequestID          string  `json:"requestId"`
+	StatusCode         int32   `json:"statusCode"`
+	FinishReason       int32   `json:"finishReason"`
+	ErrorMessage       string  `json:"errorMessage"`
+	TimeSpentMs        int32   `json:"timeSpentMs"`
+	TtftMs             int32   `json:"ttftMs"`
+	InputTokens        int32   `json:"inputTokens"`
+	OutputTokens       int32   `json:"outputTokens"`
+	CacheReadTokens    int32   `json:"cacheReadTokens"`
+	CacheWriteTokens   int32   `json:"cacheWriteTokens"`
+	CacheWrite1hTokens int32   `json:"cacheWrite1hTokens"`
+	ModelCost          float64 `json:"modelCost"`
+	ModelCostCurrency  string  `json:"modelCostCurrency"`
+	ProviderID         int32   `json:"providerId"`
+	Model              string  `json:"model"`
+	UpstreamModel      string  `json:"upstreamModel"`
+}
+
 // ContextPatch is the Go-side patch applied to globalThis.ctx. Only non-nil
 // pointer fields are shallow-merged (Object.assign) onto the persistent ctx,
 // preserving any custom fields the scripts attached.
@@ -181,6 +217,7 @@ type ContextPatch struct {
 	Provider         *ProviderSummary   `json:"provider,omitempty"`
 	ProviderModel    *ProviderModel     `json:"providerModel,omitempty"`
 	Attempt          *AttemptState      `json:"attempt,omitempty"`
+	MetaRequest      *RequestRef        `json:"metaRequest,omitempty"`
 	Annotations      *map[string]string `json:"annotations,omitempty"`
 	Stream           *bool              `json:"stream,omitempty"`
 	SourceFormat     *string            `json:"sourceFormat,omitempty"`

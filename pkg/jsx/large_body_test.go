@@ -87,6 +87,7 @@ func TestSession_RewriteRequest_LargeBody(t *testing.T) {
 					Config{HookTimeout: 30 * time.Second, MemoryLimit: memLimit},
 					&fakeStore{scripts: []db.Script{{ID: "a", Source: h.source}}},
 					kv.NewMemoryStore(),
+					&fakeHostAPI{},
 				)
 				s, err := eng.NewSession(context.Background(), "t")
 				if err != nil {

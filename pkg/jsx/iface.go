@@ -44,18 +44,30 @@ type Session interface {
 	// upstream attempt failed. Passthrough keeps the initial value (break=false).
 	RunAfterUpstreamError(initial UpstreamErrorView) (AfterUpstreamErrorDecision, error)
 
-	// MetaAnnotations returns a snapshot of the string KV pairs a hook wrote to
-	// ctx.metaRequest.annotations over the session. Persisted once to the meta
-	// row at request end. nil when none were written.
-	MetaAnnotations() map[string]string
-	// UpstreamAnnotations returns a snapshot of the current attempt's
-	// ctx.upstreamRequest.annotations. nil when none were written.
-	UpstreamAnnotations() map[string]string
-	// ResetUpstreamAnnotations clears the upstream annotation accumulator for a
-	// fresh attempt and, on the first call, installs the ctx.upstreamRequest
-	// Proxy (before which ctx.upstreamRequest is undefined).
-	ResetUpstreamAnnotations() error
+	// SetUpstreamRequest installs ctx.upstreamRequest for the current attempt.
+	// ref == nil sets it to null (the state before an upstream row exists).
+	SetUpstreamRequest(ref *RequestRef) error
+
+	// RunRequestFinished runs the requestFinished waterfall after the meta row's
+	// finish reason landed. It is purely observational: the waterfall's result is
+	// discarded and only an evaluation error is returned.
+	RunRequestFinished(input RequestFinishedView) error
 
 	Logs() []LogEntry
 	Close()
+}
+
+// HostAPI is the host capability surface the JS SDK calls into for
+// configuration/telemetry writes that outlive a single hook value: annotation
+// writes keyed by row id and lookups of provider / api-key configuration. The
+// jsx package defines the interface; pkg/server implements it over db.Querier.
+//
+// A nil value means "delete this annotation key". The Get* methods return
+// (nil, nil) when the id does not exist.
+type HostAPI interface {
+	SetRequestAnnotation(ctx context.Context, requestID, key string, value *string) error
+	SetProviderAnnotation(ctx context.Context, providerID int32, key string, value *string) error
+	SetApiKeyAnnotation(ctx context.Context, apiKeyID int32, key string, value *string) error
+	GetProvider(ctx context.Context, providerID int32) (*ProviderSummary, error)
+	GetApiKey(ctx context.Context, apiKeyID int32) (*ApiKeySummary, error)
 }

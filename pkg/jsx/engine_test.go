@@ -19,18 +19,78 @@ func (f *fakeStore) ListEnabledScripts(_ context.Context) ([]db.Script, error) {
 	return f.scripts, nil
 }
 
+// hostAnnoCall records one setAnnotation call that reached the fake HostAPI.
+// Kind is "request" / "provider" / "apiKey"; only the matching id field is set.
+// Value is nil for a delete.
+type hostAnnoCall struct {
+	Kind      string
+	RequestID string
+	ID        int32
+	Key       string
+	Value     *string
+}
+
+// fakeHostAPI is a recording jsx.HostAPI: it captures every set call and serves
+// configurable get results (nil summary = not found).
+type fakeHostAPI struct {
+	annoCalls []hostAnnoCall
+	setErr    error
+
+	provider    *ProviderSummary
+	apiKey      *ApiKeySummary
+	getErr      error
+	providerIDs []int32
+	apiKeyIDs   []int32
+}
+
+func (h *fakeHostAPI) SetRequestAnnotation(_ context.Context, requestID, key string, value *string) error {
+	h.annoCalls = append(h.annoCalls, hostAnnoCall{Kind: "request", RequestID: requestID, Key: key, Value: value})
+	return h.setErr
+}
+
+func (h *fakeHostAPI) SetProviderAnnotation(_ context.Context, providerID int32, key string, value *string) error {
+	h.annoCalls = append(h.annoCalls, hostAnnoCall{Kind: "provider", ID: providerID, Key: key, Value: value})
+	return h.setErr
+}
+
+func (h *fakeHostAPI) SetApiKeyAnnotation(_ context.Context, apiKeyID int32, key string, value *string) error {
+	h.annoCalls = append(h.annoCalls, hostAnnoCall{Kind: "apiKey", ID: apiKeyID, Key: key, Value: value})
+	return h.setErr
+}
+
+func (h *fakeHostAPI) GetProvider(_ context.Context, providerID int32) (*ProviderSummary, error) {
+	h.providerIDs = append(h.providerIDs, providerID)
+	return h.provider, h.getErr
+}
+
+func (h *fakeHostAPI) GetApiKey(_ context.Context, apiKeyID int32) (*ApiKeySummary, error) {
+	h.apiKeyIDs = append(h.apiKeyIDs, apiKeyID)
+	return h.apiKey, h.getErr
+}
+
 func newTestEngine(t *testing.T, scripts ...db.Script) Engine {
+	t.Helper()
+	return newTestEngineWithHost(t, &fakeHostAPI{}, scripts...)
+}
+
+func newTestEngineWithHost(t *testing.T, host HostAPI, scripts ...db.Script) Engine {
 	t.Helper()
 	return NewEngine(
 		Config{HookTimeout: 500 * time.Millisecond, MemoryLimit: 64 * 1024 * 1024},
 		&fakeStore{scripts: scripts},
 		kv.NewMemoryStore(),
+		host,
 	)
 }
 
 func newTestSession(t *testing.T, scripts ...db.Script) Session {
 	t.Helper()
-	s, err := newTestEngine(t, scripts...).NewSession(context.Background(), "test-req")
+	return newTestSessionWithHost(t, &fakeHostAPI{}, scripts...)
+}
+
+func newTestSessionWithHost(t *testing.T, host HostAPI, scripts ...db.Script) Session {
+	t.Helper()
+	s, err := newTestEngineWithHost(t, host, scripts...).NewSession(context.Background(), "test-req")
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
@@ -556,6 +616,7 @@ func TestSession_MemoryLimit(t *testing.T) {
 			picotera.hooks.sortProviders.tap("a", function () { var x = new Array(5000000).fill(0); return [{provider:{id:x.length}}]; });
 		`}}},
 		kv.NewMemoryStore(),
+		&fakeHostAPI{},
 	)
 	s, err := eng.NewSession(context.Background(), "")
 	if err != nil {

@@ -21,6 +21,41 @@
     return value
   }
 
+  // ---- Annotation API argument validation (fail fast, no coercion) ----
+
+  function checkRequestId(id) {
+    if (typeof id !== 'string' || id === '') {
+      throw new TypeError('picotera: requestId must be a non-empty string')
+    }
+    return id
+  }
+
+  function checkIntId(name, id) {
+    if (!Number.isInteger(id)) {
+      throw new TypeError('picotera: ' + name + ' must be an integer')
+    }
+    return id
+  }
+
+  function checkKey(key) {
+    if (typeof key !== 'string' || key === '') {
+      throw new TypeError('picotera: annotation key must be a non-empty string')
+    }
+    return key
+  }
+
+  // encodeAnnotationValue maps the value argument onto the host encoding: "" for
+  // a delete (null / undefined), otherwise the JSON encoding of the string (so
+  // an empty-string value stays distinguishable from a delete). Any other type
+  // is a TypeError — no implicit String() conversion.
+  function encodeAnnotationValue(value) {
+    if (value === null || typeof value === 'undefined') return ''
+    if (typeof value !== 'string') {
+      throw new TypeError('picotera: annotation value must be a string, null, or undefined')
+    }
+    return JSON.stringify(value)
+  }
+
   globalThis.picotera = {
     hooks: {
       sortProviders: new Waterfall(),
@@ -30,6 +65,38 @@
       rewriteModel: new Waterfall(),
       rewriteProviderModels: new Waterfall(),
       afterUpstreamError: new Waterfall(),
+      requestFinished: new Waterfall(),
+    },
+    request: {
+      setAnnotation: function (requestId, key, value) {
+        var e = globalThis.__picotera_anno_request(
+          checkRequestId(requestId), checkKey(key), encodeAnnotationValue(value))
+        if (e) throw new Error(e)
+      },
+    },
+    provider: {
+      get: function (providerId) {
+        var r = globalThis.__picotera_get_provider(checkIntId('providerId', providerId))
+        if (r[1]) throw new Error(r[1])
+        return r[0] === '' ? null : JSON.parse(r[0])
+      },
+      setAnnotation: function (providerId, key, value) {
+        var e = globalThis.__picotera_anno_provider(
+          checkIntId('providerId', providerId), checkKey(key), encodeAnnotationValue(value))
+        if (e) throw new Error(e)
+      },
+    },
+    apiKey: {
+      get: function (apiKeyId) {
+        var r = globalThis.__picotera_get_apikey(checkIntId('apiKeyId', apiKeyId))
+        if (r[1]) throw new Error(r[1])
+        return r[0] === '' ? null : JSON.parse(r[0])
+      },
+      setAnnotation: function (apiKeyId, key, value) {
+        var e = globalThis.__picotera_anno_apikey(
+          checkIntId('apiKeyId', apiKeyId), checkKey(key), encodeAnnotationValue(value))
+        if (e) throw new Error(e)
+      },
     },
     kv: {
       get: function (key) {
@@ -279,65 +346,6 @@
 
   globalThis.__picotera_descToValue = descToValue
   globalThis.__picotera_markerReplacer = markerReplacer
-
-  // ---- Request annotations Proxy (ctx.metaRequest / ctx.upstreamRequest) ----
-  //
-  // A flat string KV accumulator lives on the Go side, one per slot
-  // ("meta" / "upstream"). Each Proxy forwards get/set/delete/has/enumerate
-  // through the __picotera_anno_* host functions. The set trap enforces the
-  // contract in JS (non-empty string key, string value) so QuickJS never does an
-  // implicit coercion at the host boundary; violations throw a TypeError.
-  // Distinct from ctx.annotations (the read-only merged config-layer view).
-  globalThis.__picotera_makeAnnotationsProxy = function (slot) {
-    return new Proxy({}, {
-      get: function (t, prop) {
-        if (typeof prop === 'symbol') return undefined
-        var r = globalThis.__picotera_anno_get(slot, prop)
-        if (r[1]) throw new Error(r[1])
-        // "" from the host means the key is absent; a present empty-string value
-        // is encoded as the JSON literal '""'.
-        if (r[0] === '') return undefined
-        return JSON.parse(r[0])
-      },
-      set: function (t, prop, value) {
-        if (typeof prop !== 'string' || prop === '') {
-          throw new TypeError('picotera: annotation key must be a non-empty string')
-        }
-        if (typeof value !== 'string') {
-          throw new TypeError('picotera: annotation value must be a string')
-        }
-        var e = globalThis.__picotera_anno_set(slot, prop, value)
-        if (e) throw new Error(e)
-        return true
-      },
-      deleteProperty: function (t, prop) {
-        if (typeof prop === 'symbol') return true
-        var e = globalThis.__picotera_anno_del(slot, prop)
-        if (e) throw new Error(e)
-        return true
-      },
-      has: function (t, prop) {
-        if (typeof prop === 'symbol') return false
-        var r = globalThis.__picotera_anno_has(slot, prop)
-        if (r[1]) throw new Error(r[1])
-        return !!r[0]
-      },
-      ownKeys: function () {
-        var r = globalThis.__picotera_anno_keys(slot)
-        if (r[1]) throw new Error(r[1])
-        return JSON.parse(r[0])
-      },
-      getOwnPropertyDescriptor: function (t, prop) {
-        if (typeof prop === 'symbol') return undefined
-        var r = globalThis.__picotera_anno_has(slot, prop)
-        if (r[1]) throw new Error(r[1])
-        if (!r[0]) return undefined
-        var g = globalThis.__picotera_anno_get(slot, prop)
-        if (g[1]) throw new Error(g[1])
-        return { value: g[0] === '' ? undefined : JSON.parse(g[0]), writable: true, enumerable: true, configurable: true }
-      },
-    })
-  }
 
   // Installs (or reinstalls) the lazy ctx.request.body getter. Called by the
   // host after a request PatchContext (which replaces ctx.request) or after

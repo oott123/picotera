@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -14,7 +13,6 @@ import (
 	"picotera/pkg/errorx"
 	"picotera/pkg/jsx"
 	"picotera/pkg/llmbridge"
-	"picotera/pkg/logx"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/tidwall/gjson"
@@ -40,6 +38,10 @@ type gatewayFlow struct {
 	auth           gatewayAuthState
 	model          gatewayModelState
 	session        jsx.Session
+	// metaFinal mirrors, in memory, every update applied to the meta row via
+	// updateMeta. It is the requestFinished hook's input — see
+	// gateway_flow_finish.go.
+	metaFinal metaOutcome
 	// headerOTR carries the X-PicoTera-OTR override parsed pre-auth in run();
 	// headerOTRSet reports whether the header was present and valid. otr is the
 	// effective mode computed post-auth (header override, else user setting).
@@ -61,8 +63,12 @@ type gatewayFlowConfig struct {
 }
 
 type gatewayMetaState struct {
-	ID             string
-	CreatedAt      time.Time
+	ID        string
+	CreatedAt time.Time
+	// TraceID is the traces row id for this request, filled post-auth by
+	// authenticateAndBackfill. "" when there is no trace (no inbound session
+	// header, or the upsert failed).
+	TraceID        string
 	ParentSpanID   string
 	ParentSpanIDPg pgtype.Text
 	ProjectID      pgtype.Int4
@@ -154,12 +160,12 @@ func (f *gatewayFlow) run() {
 	}
 	defer (func() {
 		if f.session != nil {
-			// Persist the meta-row annotations a hook accumulated over the session.
-			// Reading them never touches the VM, so this is safe even if the session
-			// was tainted by a hook timeout. This defer runs on every path after the
-			// session is created (success, failures, stream interruption, both
-			// gateway and unified routes).
-			f.persistRequestAnnotations(f.meta.ID, f.meta.CreatedAt, f.session.MetaAnnotations())
+			// The meta row's terminal state has landed by now (every write path is
+			// synchronous and completes before run returns), so the requestFinished
+			// hook runs here — last, just before the VM goes away. This defer covers
+			// every post-session path: success, failures, stream interruption, both
+			// gateway and unified routes.
+			f.runRequestFinished()
 			f.session.Close()
 		}
 	})()
@@ -306,7 +312,7 @@ func (f *gatewayFlow) authenticateAndBackfill() bool {
 	f.meta.ProjectID = projectIDPg
 	pctx, pcancel := f.ctxs.Persist()
 	defer pcancel()
-	f.h.updateRequest(pctx, newRequestUpdate(f.meta.ID, f.meta.CreatedAt).
+	f.updateMeta(pctx, newRequestUpdate(f.meta.ID, f.meta.CreatedAt).
 		ApiKeyID(f.auth.APIKeyID).
 		UserID(f.auth.UserID).
 		ProjectID(projectIDPg))
@@ -315,7 +321,7 @@ func (f *gatewayFlow) authenticateAndBackfill() bool {
 	// written above.
 	if f.otr.recordPreview() {
 		if preview := extractUserMessagePreview(f.body, f.config.Endpoint.EndpointType); preview.Valid {
-			f.h.updateRequest(pctx, newRequestUpdate(f.meta.ID, f.meta.CreatedAt).
+			f.updateMeta(pctx, newRequestUpdate(f.meta.ID, f.meta.CreatedAt).
 				UserMessagePreview(preview))
 		}
 	}
@@ -326,7 +332,7 @@ func (f *gatewayFlow) authenticateAndBackfill() bool {
 	// The trace is created now (post-auth, user known) anchored to the meta
 	// row's created_at, so ListRequestTraces' time-window LATERALs still match
 	// the meta row. Subsequent upstream rows extend the window via upsertTrace.
-	f.h.upsertTrace(pctx, f.meta.ParentSpanIDPg, f.auth.UserID, f.meta.CreatedAt)
+	f.meta.TraceID = f.h.upsertTrace(pctx, f.meta.ParentSpanIDPg, f.auth.UserID, f.meta.CreatedAt)
 	if projectIDPg.Valid {
 		seenCtx, seenCancel := f.ctxs.Persist()
 		go func() {
@@ -376,6 +382,7 @@ func (f *gatewayFlow) resolveAndRewriteModel() bool {
 		Stream:       &streaming,
 		SourceFormat: &srcFormat,
 		Format:       &srcFormat,
+		MetaRequest:  f.requestRef(f.meta.ID),
 	}); err != nil {
 		f.failHook(err)
 		return false
@@ -463,29 +470,26 @@ func (f *gatewayFlow) resolveAndSortCandidates() ([]jsx.CandidateView, map[strin
 	return sorted, candidateSidecarMap(set), true
 }
 
-// persistRequestAnnotations writes the script-supplied annotations onto a request
-// row (meta or upstream) with a single partial UPDATE. Empty annotations are a
-// no-op (the column stays NULL, keeping the partial GIN index untouched). Not
-// gated by OTR: annotations are operator-authored operational labels, not client
-// content. Following the recording convention, marshal/update failures are logged
-// and never affect the response.
-func (f *gatewayFlow) persistRequestAnnotations(id string, createdAt time.Time, anno map[string]string) {
-	if len(anno) == 0 {
-		return
+// requestRef builds the JS-visible identity of a request row belonging to this
+// flow. span_id is the meta row's id for both the meta row and its upstream
+// attempts; parentSpanId / traceId are shared across all of them and become null
+// when absent.
+func (f *gatewayFlow) requestRef(id string) *jsx.RequestRef {
+	ref := &jsx.RequestRef{ID: id, SpanID: f.meta.ID}
+	if f.meta.ParentSpanID != "" {
+		parent := f.meta.ParentSpanID
+		ref.ParentSpanID = &parent
 	}
-	b, err := json.Marshal(anno)
-	if err != nil {
-		logx.WithContext(f.ctxs.Request).WithError(err).Warn("failed to marshal request annotations")
-		return
+	if f.meta.TraceID != "" {
+		trace := f.meta.TraceID
+		ref.TraceID = &trace
 	}
-	pctx, pcancel := f.ctxs.Persist()
-	defer pcancel()
-	f.h.updateRequest(pctx, newRequestUpdate(id, createdAt).Annotations(b))
+	return ref
 }
 
 func (f *gatewayFlow) updateMetaModel(model string) {
 	pctx, pcancel := f.ctxs.Persist()
 	defer pcancel()
-	f.h.updateRequest(pctx, newRequestUpdate(f.meta.ID, f.meta.CreatedAt).
+	f.updateMeta(pctx, newRequestUpdate(f.meta.ID, f.meta.CreatedAt).
 		Model(pgtype.Text{String: model, Valid: model != ""}))
 }

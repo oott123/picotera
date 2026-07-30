@@ -738,7 +738,7 @@ func (s *Server) insertRequest(ctx context.Context, arg db.InsertRequestParams) 
 		return time.Now().UTC()
 	}
 	insertedAt := createdAt.Time.UTC()
-	s.upsertTrace(ctx, arg.ParentSpanID, arg.UserID, insertedAt)
+	_ = s.upsertTrace(ctx, arg.ParentSpanID, arg.UserID, insertedAt)
 	return insertedAt
 }
 
@@ -775,16 +775,20 @@ func (s *Server) upsertProjectSeen(ctx context.Context, projectID int32, seenAt 
 	}
 }
 
-func (s *Server) upsertTrace(ctx context.Context, parentSpanID pgtype.Text, userID pgtype.Int8, requestCreatedAt time.Time) {
+// upsertTrace creates (or extends) the trace for a (parent_span_id, user_id)
+// pair and returns its id — the RETURNING id also yields the existing row's id
+// on conflict. A skipped upsert (no parent span / no user) or a failure returns
+// "": callers surface that as a null ctx.metaRequest.traceId.
+func (s *Server) upsertTrace(ctx context.Context, parentSpanID pgtype.Text, userID pgtype.Int8, requestCreatedAt time.Time) string {
 	if !parentSpanID.Valid || parentSpanID.String == "" {
-		return
+		return ""
 	}
 	// Traces are keyed by (parent_span_id, user_id); without a known user there
 	// is no trace to upsert (the meta row before auth hits this path).
 	if !userID.Valid {
-		return
+		return ""
 	}
-	_, err := s.queries.UpsertTrace(ctx, db.UpsertTraceParams{
+	row, err := s.queries.UpsertTrace(ctx, db.UpsertTraceParams{
 		ID:             xid.New().String(),
 		ParentSpanID:   parentSpanID.String,
 		UserID:         userID.Int64,
@@ -792,7 +796,9 @@ func (s *Server) upsertTrace(ctx context.Context, parentSpanID pgtype.Text, user
 	})
 	if err != nil {
 		logx.WithContext(ctx).WithError(err).Error("failed to upsert trace")
+		return ""
 	}
+	return row.ID
 }
 
 // costsFor computes the per-request cost snapshot from model.pricing.

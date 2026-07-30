@@ -7,6 +7,8 @@ package db
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const deleteApiKey = `-- name: DeleteApiKey :exec
@@ -34,6 +36,26 @@ type GetApiKeyParams struct {
 
 func (q *Queries) GetApiKey(ctx context.Context, arg GetApiKeyParams) (ApiKey, error) {
 	row := q.db.QueryRow(ctx, getApiKey, arg.ID, arg.UserID)
+	var i ApiKey
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Annotations,
+		&i.Key,
+		&i.Disabled,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.UserID,
+	)
+	return i, err
+}
+
+const getApiKeyByID = `-- name: GetApiKeyByID :one
+SELECT id, name, annotations, key, disabled, created_at, updated_at, user_id FROM api_key WHERE id = $1 LIMIT 1
+`
+
+func (q *Queries) GetApiKeyByID(ctx context.Context, id int32) (ApiKey, error) {
+	row := q.db.QueryRow(ctx, getApiKeyByID, id)
 	var i ApiKey
 	err := row.Scan(
 		&i.ID,
@@ -135,6 +157,29 @@ func (q *Queries) ListApiKeys(ctx context.Context, userID int64) ([]ApiKey, erro
 		return nil, err
 	}
 	return items, nil
+}
+
+const setApiKeyAnnotation = `-- name: SetApiKeyAnnotation :execrows
+UPDATE api_key SET annotations = CASE
+    WHEN $1::text IS NULL THEN annotations - $2::text
+    ELSE annotations || jsonb_build_object($2::text, $1::text)
+  END,
+  updated_at = now()
+WHERE id = $3::int
+`
+
+type SetApiKeyAnnotationParams struct {
+	Value pgtype.Text `json:"value"`
+	Key   string      `json:"key"`
+	ID    int32       `json:"id"`
+}
+
+func (q *Queries) SetApiKeyAnnotation(ctx context.Context, arg SetApiKeyAnnotationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setApiKeyAnnotation, arg.Value, arg.Key, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateApiKey = `-- name: UpdateApiKey :one

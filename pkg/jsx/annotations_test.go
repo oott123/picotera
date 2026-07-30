@@ -2,245 +2,361 @@ package jsx
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"picotera/pkg/db"
 )
 
-// annoSession is a qjsSession-typed handle so tests can reach the accumulator
-// accessors (MetaAnnotations / UpstreamAnnotations / ResetUpstreamAnnotations)
-// that are part of the Session interface but read here as concrete methods.
-func annoSession(t *testing.T, scripts ...db.Script) *qjsSession {
+func strptr(s string) *string { return &s }
+
+// runHookScript loads source as a single script, runs it through rewriteModel and
+// returns the recorded host calls. The hook body is the only thing under test, so
+// every case funnels through the same waterfall.
+func runHookScript(t *testing.T, host *fakeHostAPI, body string) error {
 	t.Helper()
-	return newTestSession(t, scripts...).(*qjsSession)
-}
-
-func TestAnnotations_MetaWriteOverwriteDelete(t *testing.T) {
-	s := annoSession(t, db.Script{ID: "a", Source: `
-		picotera.hooks.rewriteModel.tap("write", function (ctx, m) {
-			ctx.metaRequest.annotations.agent = 'claude-code';
-			ctx.metaRequest.annotations.team = 'infra';
-			return m;
-		});
-		picotera.hooks.beforeRequest.tap("mutate", function (ctx, d) {
-			ctx.metaRequest.annotations.agent = 'codex';   // overwrite
-			delete ctx.metaRequest.annotations.team;        // delete
-			return d;
-		});
+	s := newTestSessionWithHost(t, host, db.Script{ID: "a", Source: `
+		picotera.hooks.rewriteModel.tap("a", function (ctx, m) { ` + body + ` return m; });
 	`})
-	if _, err := s.RunRewriteModel("m"); err != nil {
-		t.Fatalf("RunRewriteModel: %v", err)
-	}
-	if _, err := s.RunBeforeRequest(BeforeRequestDecision{}); err != nil {
-		t.Fatalf("RunBeforeRequest: %v", err)
-	}
-	got := s.MetaAnnotations()
-	want := map[string]string{"agent": "codex"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("MetaAnnotations = %v, want %v", got, want)
-	}
+	_, err := s.RunRewriteModel("m")
+	return err
 }
 
-func TestAnnotations_EmptyReturnsNil(t *testing.T) {
-	s := annoSession(t, db.Script{ID: "a", Source: `picotera.hooks.rewriteModel.tap("a", function (ctx, m) { return m; });`})
-	if _, err := s.RunRewriteModel("m"); err != nil {
-		t.Fatalf("RunRewriteModel: %v", err)
+func TestSetRequestAnnotation_WriteDeleteAndPassthrough(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want hostAnnoCall
+	}{
+		{
+			name: "string",
+			body: `picotera.request.setAnnotation('r1', 'agent', 'claude-code');`,
+			want: hostAnnoCall{Kind: "request", RequestID: "r1", Key: "agent", Value: strptr("claude-code")},
+		},
+		{
+			name: "emptyString",
+			body: `picotera.request.setAnnotation('r1', 'agent', '');`,
+			want: hostAnnoCall{Kind: "request", RequestID: "r1", Key: "agent", Value: strptr("")},
+		},
+		{
+			name: "nullDeletes",
+			body: `picotera.request.setAnnotation('r1', 'agent', null);`,
+			want: hostAnnoCall{Kind: "request", RequestID: "r1", Key: "agent", Value: nil},
+		},
+		{
+			name: "undefinedDeletes",
+			body: `picotera.request.setAnnotation('r1', 'agent', undefined);`,
+			want: hostAnnoCall{Kind: "request", RequestID: "r1", Key: "agent", Value: nil},
+		},
+		{
+			name: "missingArgDeletes",
+			body: `picotera.request.setAnnotation('r1', 'agent');`,
+			want: hostAnnoCall{Kind: "request", RequestID: "r1", Key: "agent", Value: nil},
+		},
 	}
-	if got := s.MetaAnnotations(); got != nil {
-		t.Fatalf("MetaAnnotations = %v, want nil", got)
-	}
-	if got := s.UpstreamAnnotations(); got != nil {
-		t.Fatalf("UpstreamAnnotations = %v, want nil", got)
-	}
-}
-
-func TestAnnotations_ReadBack(t *testing.T) {
-	// A value written by one hook is readable (=== undefined semantics) by a later
-	// hook, and an empty-string value is distinguishable from a missing key.
-	s := annoSession(t, db.Script{ID: "a", Source: `
-		picotera.hooks.rewriteModel.tap("w", function (ctx, m) {
-			ctx.metaRequest.annotations.a = 'x';
-			ctx.metaRequest.annotations.empty = '';
-			return m;
-		});
-		picotera.hooks.beforeRequest.tap("r", function (ctx, d) {
-			var parts = [
-				String(ctx.metaRequest.annotations.a),
-				String(ctx.metaRequest.annotations.empty),
-				String(ctx.metaRequest.annotations.missing),
-				('empty' in ctx.metaRequest.annotations),
-				('missing' in ctx.metaRequest.annotations),
-			];
-			return { upstreamModel: parts.join('|') };
-		});
-	`})
-	if _, err := s.RunRewriteModel("m"); err != nil {
-		t.Fatalf("RunRewriteModel: %v", err)
-	}
-	dec, err := s.RunBeforeRequest(BeforeRequestDecision{})
-	if err != nil {
-		t.Fatalf("RunBeforeRequest: %v", err)
-	}
-	want := "x||undefined|true|false"
-	if dec.UpstreamModel != want {
-		t.Fatalf("read-back = %q, want %q", dec.UpstreamModel, want)
-	}
-}
-
-func TestAnnotations_TypeValidationThrows(t *testing.T) {
-	cases := map[string]string{
-		"nonStringValue": `ctx.metaRequest.annotations.a = 123;`,
-		"emptyKey":       `ctx.metaRequest.annotations[''] = 'x';`,
-		"symbolKey":      `ctx.metaRequest.annotations[Symbol('s')] = 'x';`,
-		"nullValue":      `ctx.metaRequest.annotations.a = null;`,
-	}
-	for name, body := range cases {
-		t.Run(name, func(t *testing.T) {
-			s := annoSession(t, db.Script{ID: "a", Source: `
-				picotera.hooks.rewriteModel.tap("a", function (ctx, m) { ` + body + ` return m; });
-			`})
-			_, err := s.RunRewriteModel("m")
-			if err == nil {
-				t.Fatalf("want error for %s, got nil", name)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			host := &fakeHostAPI{}
+			if err := runHookScript(t, host, tc.body); err != nil {
+				t.Fatalf("RunRewriteModel: %v", err)
+			}
+			if !reflect.DeepEqual(host.annoCalls, []hostAnnoCall{tc.want}) {
+				t.Fatalf("calls = %+v, want %+v", host.annoCalls, tc.want)
 			}
 		})
 	}
 }
 
-func TestAnnotations_ObjectKeysStringifySpread(t *testing.T) {
-	s := annoSession(t, db.Script{ID: "a", Source: `
-		picotera.hooks.rewriteModel.tap("w", function (ctx, m) {
-			ctx.metaRequest.annotations.a = '1';
-			ctx.metaRequest.annotations.b = '2';
-			return m;
-		});
-		picotera.hooks.beforeRequest.tap("r", function (ctx, d) {
-			var keys = Object.keys(ctx.metaRequest.annotations).sort().join(',');
-			var json = JSON.stringify(ctx.metaRequest.annotations);
-			var spread = Object.assign({}, ctx.metaRequest.annotations);
-			return { upstreamModel: keys + '#' + json + '#' + spread.a + spread.b };
-		});
-	`})
-	if _, err := s.RunRewriteModel("m"); err != nil {
+func TestSetAnnotation_ProviderAndApiKeyPassthrough(t *testing.T) {
+	host := &fakeHostAPI{}
+	err := runHookScript(t, host, `
+		picotera.provider.setAnnotation(7, 'tier', 'gold');
+		picotera.provider.setAnnotation(7, 'stale', null);
+		picotera.apiKey.setAnnotation(3, 'team', 'infra');
+		picotera.apiKey.setAnnotation(3, 'old', undefined);
+	`)
+	if err != nil {
 		t.Fatalf("RunRewriteModel: %v", err)
 	}
-	dec, err := s.RunBeforeRequest(BeforeRequestDecision{})
-	if err != nil {
-		t.Fatalf("RunBeforeRequest: %v", err)
+	want := []hostAnnoCall{
+		{Kind: "provider", ID: 7, Key: "tier", Value: strptr("gold")},
+		{Kind: "provider", ID: 7, Key: "stale", Value: nil},
+		{Kind: "apiKey", ID: 3, Key: "team", Value: strptr("infra")},
+		{Kind: "apiKey", ID: 3, Key: "old", Value: nil},
 	}
-	want := `a,b#{"a":"1","b":"2"}#12`
-	if dec.UpstreamModel != want {
-		t.Fatalf("enumeration = %q, want %q", dec.UpstreamModel, want)
+	if !reflect.DeepEqual(host.annoCalls, want) {
+		t.Fatalf("calls = %+v, want %+v", host.annoCalls, want)
 	}
 }
 
-func TestAnnotations_UpstreamUndefinedBeforeReset(t *testing.T) {
-	s := annoSession(t, db.Script{ID: "a", Source: `
+func TestSetAnnotation_ValidationThrows(t *testing.T) {
+	cases := map[string]string{
+		"numberValue":        `picotera.request.setAnnotation('r1', 'k', 123);`,
+		"objectValue":        `picotera.request.setAnnotation('r1', 'k', {a: 1});`,
+		"booleanValue":       `picotera.request.setAnnotation('r1', 'k', true);`,
+		"emptyKey":           `picotera.request.setAnnotation('r1', '', 'v');`,
+		"nonStringKey":       `picotera.request.setAnnotation('r1', 5, 'v');`,
+		"emptyRequestId":     `picotera.request.setAnnotation('', 'k', 'v');`,
+		"numericRequestId":   `picotera.request.setAnnotation(1, 'k', 'v');`,
+		"floatProviderId":    `picotera.provider.setAnnotation(1.5, 'k', 'v');`,
+		"stringProviderId":   `picotera.provider.setAnnotation('7', 'k', 'v');`,
+		"floatApiKeyId":      `picotera.apiKey.setAnnotation(1.5, 'k', 'v');`,
+		"getFloatProviderId": `picotera.provider.get(1.5);`,
+		"getStringApiKeyId":  `picotera.apiKey.get('3');`,
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			host := &fakeHostAPI{}
+			err := runHookScript(t, host, body)
+			if err == nil {
+				t.Fatalf("want error for %s, got nil", name)
+			}
+			if !strings.Contains(err.Error(), "TypeError") {
+				t.Fatalf("want TypeError for %s, got %v", name, err)
+			}
+			if len(host.annoCalls) != 0 || len(host.providerIDs) != 0 || len(host.apiKeyIDs) != 0 {
+				t.Fatalf("host must not be reached on a validation failure, got %+v", host)
+			}
+		})
+	}
+}
+
+func TestSetAnnotation_HostErrorBecomesJSError(t *testing.T) {
+	host := &fakeHostAPI{setErr: errNotFound}
+	err := runHookScript(t, host, `picotera.request.setAnnotation('missing', 'k', 'v');`)
+	if err == nil {
+		t.Fatalf("want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "request \"missing\" not found") {
+		t.Fatalf("host error should surface in the JS exception, got %v", err)
+	}
+}
+
+// errNotFound stands in for the server-side "row not found" error the real
+// HostAPI returns when a script annotates a nonexistent id.
+var errNotFound = errStr("request \"missing\" not found")
+
+type errStr string
+
+func (e errStr) Error() string { return string(e) }
+
+func TestGetProviderAndApiKey_HitAndMiss(t *testing.T) {
+	host := &fakeHostAPI{
+		provider: &ProviderSummary{ID: 1, Name: "openai", Priority: 10, Annotations: map[string]string{"tier": "gold"}},
+		apiKey:   &ApiKeySummary{ID: 3, Name: "team-a", Annotations: map[string]string{}, Disabled: true},
+	}
+	s := newTestSessionWithHost(t, host, db.Script{ID: "a", Source: `
 		picotera.hooks.rewriteModel.tap("a", function (ctx, m) {
-			return { }; // ignore
-		});
-		picotera.hooks.sortProviders.tap("a", function (ctx, list) {
-			ctx.__upstreamDefined = (typeof ctx.upstreamRequest !== 'undefined');
-			return list;
-		});
-		picotera.hooks.beforeRequest.tap("a", function (ctx, d) {
-			return { upstreamModel: String(ctx.__upstreamDefined) };
+			var p = picotera.provider.get(1);
+			var k = picotera.apiKey.get(3);
+			return [p.id, p.name, p.priority, p.annotations.tier, p.disabled, k.id, k.name, k.disabled].join('|');
 		});
 	`})
-	if _, err := s.RunSortProviders(nil); err != nil {
-		t.Fatalf("RunSortProviders: %v", err)
-	}
-	dec, err := s.RunBeforeRequest(BeforeRequestDecision{})
+	out, err := s.RunRewriteModel("m")
 	if err != nil {
-		t.Fatalf("RunBeforeRequest: %v", err)
-	}
-	if dec.UpstreamModel != "false" {
-		t.Fatalf("ctx.upstreamRequest should be undefined before reset, got %q", dec.UpstreamModel)
-	}
-}
-
-func TestAnnotations_UpstreamResetInstallsAndClears(t *testing.T) {
-	s := annoSession(t, db.Script{ID: "a", Source: `
-		picotera.hooks.beforeRequest.tap("a", function (ctx, d) {
-			ctx.upstreamRequest.annotations.route = 'fallback';
-			return d;
-		});
-	`})
-	// First attempt: install + write.
-	if err := s.ResetUpstreamAnnotations(); err != nil {
-		t.Fatalf("ResetUpstreamAnnotations: %v", err)
-	}
-	if _, err := s.RunBeforeRequest(BeforeRequestDecision{}); err != nil {
-		t.Fatalf("RunBeforeRequest: %v", err)
-	}
-	if got := s.UpstreamAnnotations(); !reflect.DeepEqual(got, map[string]string{"route": "fallback"}) {
-		t.Fatalf("after attempt 1 = %v", got)
-	}
-	// Second attempt: reset clears the accumulator; meta is untouched.
-	if err := s.ResetUpstreamAnnotations(); err != nil {
-		t.Fatalf("ResetUpstreamAnnotations #2: %v", err)
-	}
-	if got := s.UpstreamAnnotations(); got != nil {
-		t.Fatalf("reset did not clear upstream annotations, got %v", got)
-	}
-}
-
-func TestAnnotations_MetaAndUpstreamIndependent(t *testing.T) {
-	s := annoSession(t, db.Script{ID: "a", Source: `
-		picotera.hooks.beforeRequest.tap("a", function (ctx, d) {
-			ctx.metaRequest.annotations.m = '1';
-			ctx.upstreamRequest.annotations.u = '2';
-			return d;
-		});
-	`})
-	if err := s.ResetUpstreamAnnotations(); err != nil {
-		t.Fatalf("ResetUpstreamAnnotations: %v", err)
-	}
-	if _, err := s.RunBeforeRequest(BeforeRequestDecision{}); err != nil {
-		t.Fatalf("RunBeforeRequest: %v", err)
-	}
-	if got := s.MetaAnnotations(); !reflect.DeepEqual(got, map[string]string{"m": "1"}) {
-		t.Fatalf("meta = %v", got)
-	}
-	if got := s.UpstreamAnnotations(); !reflect.DeepEqual(got, map[string]string{"u": "2"}) {
-		t.Fatalf("upstream = %v", got)
-	}
-}
-
-func TestAnnotations_PatchContextPreservesProxies(t *testing.T) {
-	s := annoSession(t, db.Script{ID: "a", Source: `
-		picotera.hooks.rewriteModel.tap("w", function (ctx, m) { ctx.metaRequest.annotations.a = 'x'; return m; });
-		picotera.hooks.beforeRequest.tap("r", function (ctx, d) { return { upstreamModel: String(ctx.metaRequest.annotations.a) }; });
-	`})
-	if _, err := s.RunRewriteModel("m"); err != nil {
 		t.Fatalf("RunRewriteModel: %v", err)
 	}
-	// An Attempt patch (Object.assign) must not clobber ctx.metaRequest.
-	if err := s.PatchContext(ContextPatch{Attempt: &AttemptState{CurrentRetryCount: 1}}); err != nil {
+	if want := "1|openai|10|gold|false|3|team-a|true"; out != want {
+		t.Fatalf("summaries = %q, want %q", out, want)
+	}
+	if !reflect.DeepEqual(host.providerIDs, []int32{1}) || !reflect.DeepEqual(host.apiKeyIDs, []int32{3}) {
+		t.Fatalf("ids = %v / %v", host.providerIDs, host.apiKeyIDs)
+	}
+
+	// A missing id (nil summary, nil error) reads as null, matching picotera.kv.get.
+	missHost := &fakeHostAPI{}
+	missSession := newTestSessionWithHost(t, missHost, db.Script{ID: "a", Source: `
+		picotera.hooks.rewriteModel.tap("a", function (ctx, m) {
+			return String(picotera.provider.get(99)) + '|' + String(picotera.apiKey.get(98));
+		});
+	`})
+	out, err = missSession.RunRewriteModel("m")
+	if err != nil {
+		t.Fatalf("RunRewriteModel (miss): %v", err)
+	}
+	if out != "null|null" {
+		t.Fatalf("miss = %q, want null|null", out)
+	}
+}
+
+func TestGetProvider_HostErrorBecomesJSError(t *testing.T) {
+	host := &fakeHostAPI{getErr: errStr("connection refused")}
+	err := runHookScript(t, host, `picotera.provider.get(1);`)
+	if err == nil || !strings.Contains(err.Error(), "connection refused") {
+		t.Fatalf("want host error in JS exception, got %v", err)
+	}
+}
+
+// readRefs is a script that reports the JSON of both request refs, so the tests
+// below can assert the exact shape (including nulls) the scripts observe.
+const readRefsScript = `
+	picotera.hooks.rewriteModel.tap("a", function (ctx, m) {
+		return JSON.stringify(ctx.metaRequest) + '#' + JSON.stringify(ctx.upstreamRequest);
+	});
+`
+
+func TestRequestRefs_ZeroStateIsNull(t *testing.T) {
+	s := newTestSession(t, db.Script{ID: "a", Source: readRefsScript})
+	out, err := s.RunRewriteModel("m")
+	if err != nil {
+		t.Fatalf("RunRewriteModel: %v", err)
+	}
+	if out != "null#null" {
+		t.Fatalf("zero state = %q, want null#null", out)
+	}
+}
+
+func TestRequestRefs_MetaPatchAndUpstreamLifecycle(t *testing.T) {
+	s := newTestSession(t, db.Script{ID: "a", Source: readRefsScript})
+	parent, trace := "sess-1", "tr-1"
+	meta := &RequestRef{ID: "meta-1", SpanID: "meta-1", ParentSpanID: &parent, TraceID: &trace}
+	if err := s.PatchContext(ContextPatch{MetaRequest: meta}); err != nil {
 		t.Fatalf("PatchContext: %v", err)
 	}
-	dec, err := s.RunBeforeRequest(BeforeRequestDecision{})
+	// Before the first attempt, upstreamRequest is still the zero state.
+	out, err := s.RunRewriteModel("m")
 	if err != nil {
-		t.Fatalf("RunBeforeRequest: %v", err)
+		t.Fatalf("RunRewriteModel: %v", err)
 	}
-	if dec.UpstreamModel != "x" {
-		t.Fatalf("metaRequest proxy lost across PatchContext, got %q", dec.UpstreamModel)
+	wantMeta := `{"id":"meta-1","spanId":"meta-1","parentSpanId":"sess-1","traceId":"tr-1"}`
+	if out != wantMeta+"#null" {
+		t.Fatalf("after meta patch = %q, want %q", out, wantMeta+"#null")
+	}
+	// Attempt start: explicit reset to null.
+	if err := s.SetUpstreamRequest(nil); err != nil {
+		t.Fatalf("SetUpstreamRequest(nil): %v", err)
+	}
+	if out, err = s.RunRewriteModel("m"); err != nil {
+		t.Fatalf("RunRewriteModel: %v", err)
+	}
+	if out != wantMeta+"#null" {
+		t.Fatalf("after reset = %q, want upstream null", out)
+	}
+	// Upstream row inserted: the full ref becomes visible.
+	if err := s.SetUpstreamRequest(&RequestRef{ID: "up-1", SpanID: "meta-1", ParentSpanID: &parent, TraceID: &trace}); err != nil {
+		t.Fatalf("SetUpstreamRequest: %v", err)
+	}
+	if out, err = s.RunRewriteModel("m"); err != nil {
+		t.Fatalf("RunRewriteModel: %v", err)
+	}
+	wantUp := `{"id":"up-1","spanId":"meta-1","parentSpanId":"sess-1","traceId":"tr-1"}`
+	if out != wantMeta+"#"+wantUp {
+		t.Fatalf("after install = %q, want %q", out, wantMeta+"#"+wantUp)
 	}
 }
 
-func TestAnnotations_SurviveTimeoutTaint(t *testing.T) {
-	// A hook writes an annotation, then spins until the timeout taints the session.
-	// The already-written annotation must still be retrievable.
-	s := annoSession(t, db.Script{ID: "a", Source: `
-		picotera.hooks.sortProviders.tap("a", function (ctx, list) {
-			ctx.metaRequest.annotations.agent = 'claude-code';
-			for (;;) {}
+func TestRequestRefs_MissingParentAndTraceAreNull(t *testing.T) {
+	s := newTestSession(t, db.Script{ID: "a", Source: readRefsScript})
+	if err := s.PatchContext(ContextPatch{MetaRequest: &RequestRef{ID: "meta-1", SpanID: "meta-1"}}); err != nil {
+		t.Fatalf("PatchContext: %v", err)
+	}
+	out, err := s.RunRewriteModel("m")
+	if err != nil {
+		t.Fatalf("RunRewriteModel: %v", err)
+	}
+	want := `{"id":"meta-1","spanId":"meta-1","parentSpanId":null,"traceId":null}#null`
+	if out != want {
+		t.Fatalf("refs = %q, want %q", out, want)
+	}
+}
+
+func TestRequestRefs_SurviveAttemptPatch(t *testing.T) {
+	// An Attempt patch (Object.assign) must not clobber the installed refs.
+	s := newTestSession(t, db.Script{ID: "a", Source: readRefsScript})
+	if err := s.PatchContext(ContextPatch{MetaRequest: &RequestRef{ID: "meta-1", SpanID: "meta-1"}}); err != nil {
+		t.Fatalf("PatchContext: %v", err)
+	}
+	if err := s.SetUpstreamRequest(&RequestRef{ID: "up-1", SpanID: "meta-1"}); err != nil {
+		t.Fatalf("SetUpstreamRequest: %v", err)
+	}
+	if err := s.PatchContext(ContextPatch{Attempt: &AttemptState{CurrentRetryCount: 1}}); err != nil {
+		t.Fatalf("PatchContext(attempt): %v", err)
+	}
+	out, err := s.RunRewriteModel("m")
+	if err != nil {
+		t.Fatalf("RunRewriteModel: %v", err)
+	}
+	if !strings.Contains(out, `"id":"meta-1"`) || !strings.Contains(out, `"id":"up-1"`) {
+		t.Fatalf("refs lost across PatchContext, got %q", out)
+	}
+}
+
+func TestRunRequestFinished_TapReadsEveryField(t *testing.T) {
+	host := &fakeHostAPI{}
+	s := newTestSessionWithHost(t, host, db.Script{ID: "a", Source: `
+		picotera.hooks.requestFinished.tap("usage", function (ctx, info) {
+			picotera.request.setAnnotation(info.requestId, 'snapshot', JSON.stringify(info));
 		});
 	`})
-	if _, err := s.RunSortProviders(nil); err != ErrHookTimeout {
-		t.Fatalf("want ErrHookTimeout, got %v", err)
+	input := RequestFinishedView{
+		RequestID:          "meta-1",
+		StatusCode:         200,
+		FinishReason:       3,
+		ErrorMessage:       "",
+		TimeSpentMs:        1200,
+		TtftMs:             300,
+		InputTokens:        11,
+		OutputTokens:       22,
+		CacheReadTokens:    33,
+		CacheWriteTokens:   44,
+		CacheWrite1hTokens: 55,
+		ModelCost:          0.125,
+		ModelCostCurrency:  "USD",
+		ProviderID:         7,
+		Model:              "sonnet",
+		UpstreamModel:      "claude-sonnet",
 	}
-	if got := s.MetaAnnotations(); !reflect.DeepEqual(got, map[string]string{"agent": "claude-code"}) {
-		t.Fatalf("annotations lost after taint, got %v", got)
+	if err := s.RunRequestFinished(input); err != nil {
+		t.Fatalf("RunRequestFinished: %v", err)
+	}
+	if len(host.annoCalls) != 1 {
+		t.Fatalf("calls = %+v, want one", host.annoCalls)
+	}
+	call := host.annoCalls[0]
+	if call.RequestID != "meta-1" || call.Key != "snapshot" || call.Value == nil {
+		t.Fatalf("call = %+v", call)
+	}
+	want := `{"requestId":"meta-1","statusCode":200,"finishReason":3,"errorMessage":"",` +
+		`"timeSpentMs":1200,"ttftMs":300,"inputTokens":11,"outputTokens":22,` +
+		`"cacheReadTokens":33,"cacheWriteTokens":44,"cacheWrite1hTokens":55,` +
+		`"modelCost":0.125,"modelCostCurrency":"USD","providerId":7,` +
+		`"model":"sonnet","upstreamModel":"claude-sonnet"}`
+	if *call.Value != want {
+		t.Fatalf("info =\n%s\nwant\n%s", *call.Value, want)
+	}
+}
+
+func TestRunRequestFinished_NoTapIsNoop(t *testing.T) {
+	host := &fakeHostAPI{}
+	s := newTestSessionWithHost(t, host)
+	if err := s.RunRequestFinished(RequestFinishedView{RequestID: "meta-1"}); err != nil {
+		t.Fatalf("RunRequestFinished: %v", err)
+	}
+	if len(host.annoCalls) != 0 {
+		t.Fatalf("calls = %+v, want none", host.annoCalls)
+	}
+}
+
+func TestRunRequestFinished_TaintedSessionFastFails(t *testing.T) {
+	s := newTestSession(t, db.Script{ID: "a", Source: `
+		picotera.hooks.sortProviders.tap("spin", function () { for (;;) {} });
+	`})
+	if _, err := s.RunSortProviders(nil); err != ErrHookTimeout {
+		t.Fatalf("want ErrHookTimeout from the spinning hook, got %v", err)
+	}
+	if err := s.RunRequestFinished(RequestFinishedView{RequestID: "meta-1"}); err != ErrHookTimeout {
+		t.Fatalf("want ErrHookTimeout on a tainted session, got %v", err)
+	}
+}
+
+func TestSetUpstreamRequest_TaintedSessionFastFails(t *testing.T) {
+	s := newTestSession(t, db.Script{ID: "a", Source: `
+		picotera.hooks.sortProviders.tap("spin", function () { for (;;) {} });
+	`})
+	if _, err := s.RunSortProviders(nil); err != ErrHookTimeout {
+		t.Fatalf("want ErrHookTimeout from the spinning hook, got %v", err)
+	}
+	if err := s.SetUpstreamRequest(nil); err != ErrHookTimeout {
+		t.Fatalf("want ErrHookTimeout on a tainted session, got %v", err)
 	}
 }

@@ -54,7 +54,7 @@ picotera.hooks.rewriteRequest.tap('add-include-usage', function (ctx, pending) {
   }
   return pending
 })`}
-	eng := jsx.NewEngine(jsx.Config{HookTimeout: 2 * time.Second, MemoryLimit: 64 << 20}, stubScriptStore{[]db.Script{script}}, kv.NewMemoryStore())
+	eng := jsx.NewEngine(jsx.Config{HookTimeout: 2 * time.Second, MemoryLimit: 64 << 20}, stubScriptStore{[]db.Script{script}}, kv.NewMemoryStore(), stubJSXHostAPI{})
 	session, err := eng.NewSession(context.Background(), "test-req")
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)

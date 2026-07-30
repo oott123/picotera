@@ -58,7 +58,7 @@ func (f *gatewayFlow) failMeta(status int32, errMsg string, finishReason int32, 
 	if respHeader != nil {
 		extRespID = matchExternalIDHeader(respHeader, f.h.externalResponseIDHeaders)
 	}
-	f.h.updateRequest(pctx, newRequestUpdate(f.meta.ID, f.meta.CreatedAt).
+	f.updateMeta(pctx, newRequestUpdate(f.meta.ID, f.meta.CreatedAt).
 		StatusCode(pgtype.Int4{Int32: status, Valid: true}).
 		ErrorMessage(pgtype.Text{String: errMsg, Valid: true}).
 		TimeSpentMs(pgtype.Int4{Int32: int32(time.Since(f.startedAt).Milliseconds()), Valid: true}).

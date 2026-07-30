@@ -23,5 +23,12 @@ UPDATE provider
   WHERE id = @id::int
   RETURNING *;
 
+-- name: SetProviderAnnotation :execrows
+UPDATE provider SET annotations = CASE
+    WHEN sqlc.narg('value')::text IS NULL THEN annotations - sqlc.arg('key')::text
+    ELSE annotations || jsonb_build_object(sqlc.arg('key')::text, sqlc.narg('value')::text)
+  END
+WHERE id = sqlc.arg('id')::int;
+
 -- name: DeleteProvider :exec
 DELETE FROM provider WHERE id = $1;

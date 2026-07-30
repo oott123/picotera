@@ -219,6 +219,13 @@ UPDATE request SET
   inferred_model = CASE WHEN sqlc.arg('set_inferred_model')::bool THEN sqlc.narg('inferred_model')::text ELSE inferred_model END,
   inferred_model_source = CASE WHEN sqlc.arg('set_inferred_model_source')::bool THEN sqlc.arg('inferred_model_source')::smallint ELSE inferred_model_source END,
   user_message_preview = CASE WHEN sqlc.arg('set_user_message_preview')::bool THEN sqlc.narg('user_message_preview')::text ELSE user_message_preview END,
-  external_response_id = CASE WHEN sqlc.arg('set_external_response_id')::bool THEN sqlc.narg('external_response_id')::text ELSE external_response_id END,
-  annotations = CASE WHEN sqlc.arg('set_annotations')::bool THEN sqlc.narg('annotations')::jsonb ELSE annotations END
+  external_response_id = CASE WHEN sqlc.arg('set_external_response_id')::bool THEN sqlc.narg('external_response_id')::text ELSE external_response_id END
 WHERE id = sqlc.arg('id')::text AND created_at = sqlc.arg('created_at')::timestamp;
+
+-- name: SetRequestAnnotation :execrows
+UPDATE request SET annotations = CASE
+    WHEN sqlc.narg('value')::text IS NULL
+      THEN NULLIF(COALESCE(annotations, '{}'::jsonb) - sqlc.arg('key')::text, '{}'::jsonb)
+    ELSE COALESCE(annotations, '{}'::jsonb) || jsonb_build_object(sqlc.arg('key')::text, sqlc.narg('value')::text)
+  END
+WHERE id = sqlc.arg('id')::text;

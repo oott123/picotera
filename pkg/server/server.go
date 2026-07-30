@@ -162,7 +162,7 @@ func NewServer(ctx context.Context) (*Server, error) {
 		MemoryLimit:      config.JSMemoryLimit,
 		MaxTotalAttempts: config.JSMaxTotalAttempts,
 		MaxDelay:         config.JSMaxDelay,
-	}, queries, kvStore)
+	}, queries, kvStore, newJSXHostAPI(queries))
 
 	if config.LLMBridgePluginPath != "" {
 		logx.WithContext(ctx).WithFields(logrus.Fields{

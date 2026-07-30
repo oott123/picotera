@@ -126,6 +126,28 @@ func (q *Queries) GetProviders(ctx context.Context) ([]Provider, error) {
 	return items, nil
 }
 
+const setProviderAnnotation = `-- name: SetProviderAnnotation :execrows
+UPDATE provider SET annotations = CASE
+    WHEN $1::text IS NULL THEN annotations - $2::text
+    ELSE annotations || jsonb_build_object($2::text, $1::text)
+  END
+WHERE id = $3::int
+`
+
+type SetProviderAnnotationParams struct {
+	Value pgtype.Text `json:"value"`
+	Key   string      `json:"key"`
+	ID    int32       `json:"id"`
+}
+
+func (q *Queries) SetProviderAnnotation(ctx context.Context, arg SetProviderAnnotationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setProviderAnnotation, arg.Value, arg.Key, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const updateProvider = `-- name: UpdateProvider :one
 UPDATE provider
   SET

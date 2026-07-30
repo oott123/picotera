@@ -2,6 +2,7 @@ package jsx
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -25,60 +26,90 @@ func registerHelpers(s *qjsSession) {
 	registerConsole(s)
 	registerKV(s)
 	registerObjects(s)
-	registerAnnotations(s)
+	registerHostAPI(s)
 }
 
-// registerAnnotations exposes the per-request annotation accumulators to JS.
-// ctx.metaRequest.annotations and ctx.upstreamRequest.annotations are Proxies
-// (see sdk.js __picotera_makeAnnotationsProxy) whose traps forward through these
-// synchronous host functions, routed by slot ("meta" / "upstream"). Functions
-// that can fail return (value, error) so the SDK throws on the error element;
-// void ops return error (null on success). Type validation for values happens on
-// the JS side; the Go set is defensive (rejects an empty key).
-func registerAnnotations(s *qjsSession) {
+// decodeAnnotationValue turns the SDK's JSON-encoded annotation value into the
+// HostAPI's *string: "" means "delete this key", otherwise the payload is the
+// JSON encoding of the string value (so an empty-string value stays
+// distinguishable from a delete).
+func decodeAnnotationValue(key, valueJSON string) (*string, error) {
+	if key == "" {
+		return nil, fmt.Errorf("jsx: annotation key must be a non-empty string")
+	}
+	if valueJSON == "" {
+		return nil, nil
+	}
+	var v string
+	if err := json.Unmarshal([]byte(valueJSON), &v); err != nil {
+		return nil, fmt.Errorf("jsx: decode annotation value: %w", err)
+	}
+	return &v, nil
+}
+
+// registerHostAPI exposes the HostAPI capabilities to JS: annotation writes
+// keyed by row id (picotera.request/provider/apiKey.setAnnotation) and
+// provider / api-key lookups (picotera.provider.get, picotera.apiKey.get).
+// Functions that can fail return (value, error) so the SDK throws on the error
+// element; void ops return error (null on success). Value/id type validation
+// happens on the JS side; the Go side re-checks the key defensively. The get
+// functions return "" for a missing id, which the SDK surfaces as null.
+func registerHostAPI(s *qjsSession) {
 	vm := s.vm
-	// __picotera_anno_get returns the value's JSON encoding (so an empty-string
-	// value stays distinguishable from a missing key, which returns "").
-	_ = vm.RegisterFunc("__picotera_anno_get", func(slot, key string) (string, error) {
-		v, ok, err := s.annoGet(slot, key)
+	host := s.engine.hostAPI
+
+	_ = vm.RegisterFunc("__picotera_anno_request", func(requestID, key, valueJSON string) error {
+		value, err := decodeAnnotationValue(key, valueJSON)
+		if err != nil {
+			return err
+		}
+		return host.SetRequestAnnotation(s.ctx, requestID, key, value)
+	}, false)
+
+	_ = vm.RegisterFunc("__picotera_anno_provider", func(id int, key, valueJSON string) error {
+		value, err := decodeAnnotationValue(key, valueJSON)
+		if err != nil {
+			return err
+		}
+		return host.SetProviderAnnotation(s.ctx, int32(id), key, value)
+	}, false)
+
+	_ = vm.RegisterFunc("__picotera_anno_apikey", func(id int, key, valueJSON string) error {
+		value, err := decodeAnnotationValue(key, valueJSON)
+		if err != nil {
+			return err
+		}
+		return host.SetApiKeyAnnotation(s.ctx, int32(id), key, value)
+	}, false)
+
+	_ = vm.RegisterFunc("__picotera_get_provider", func(id int) (string, error) {
+		p, err := host.GetProvider(s.ctx, int32(id))
 		if err != nil {
 			return "", err
 		}
-		if !ok {
+		if p == nil {
 			return "", nil
 		}
-		b, merr := json.Marshal(v)
+		b, merr := json.Marshal(p)
 		if merr != nil {
 			return "", merr
 		}
 		return string(b), nil
 	}, false)
-	_ = vm.RegisterFunc("__picotera_anno_set", func(slot, key, value string) error {
-		return s.annoSet(slot, key, value)
-	}, false)
-	_ = vm.RegisterFunc("__picotera_anno_del", func(slot, key string) error {
-		return s.annoDel(slot, key)
-	}, false)
-	_ = vm.RegisterFunc("__picotera_anno_keys", func(slot string) (string, error) {
-		keys, err := s.annoKeys(slot)
+
+	_ = vm.RegisterFunc("__picotera_get_apikey", func(id int) (string, error) {
+		k, err := host.GetApiKey(s.ctx, int32(id))
 		if err != nil {
 			return "", err
 		}
-		b, merr := json.Marshal(keys)
+		if k == nil {
+			return "", nil
+		}
+		b, merr := json.Marshal(k)
 		if merr != nil {
 			return "", merr
 		}
 		return string(b), nil
-	}, false)
-	_ = vm.RegisterFunc("__picotera_anno_has", func(slot, key string) (int, error) {
-		ok, err := s.annoHas(slot, key)
-		if err != nil {
-			return 0, err
-		}
-		if ok {
-			return 1, nil
-		}
-		return 0, nil
 	}, false)
 }
 

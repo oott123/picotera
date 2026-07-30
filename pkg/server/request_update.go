@@ -168,14 +168,6 @@ func (u *requestUpdate) ExternalResponseID(v pgtype.Text) *requestUpdate {
 	return u
 }
 
-// Annotations sets the request-level annotations JSONB column. v is the raw JSON
-// object bytes (nil clears the column to NULL).
-func (u *requestUpdate) Annotations(v []byte) *requestUpdate {
-	u.p.SetAnnotations = true
-	u.p.Annotations = v
-	return u
-}
-
 // updateRequest executes the built partial update. Following the existing
 // recording convention, an error is logged but does not affect the response.
 func (s *Server) updateRequest(ctx context.Context, u *requestUpdate) {

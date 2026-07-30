@@ -102,12 +102,10 @@ func (f *gatewayFlow) runSingleAttempt(cand jsx.CandidateView, side gatewayCandi
 	if candAnno == nil {
 		candAnno = side.Annotations
 	}
-	// Clear the upstream annotation accumulator (and, on the first attempt, install
-	// ctx.upstreamRequest) so every annotation a hook writes from beforeRequest
-	// onwards is attributed to this attempt's upstream row. An attempt skipped via
-	// beforeRequest's next=true inserts no row, so its writes are discarded by the
-	// next attempt's reset.
-	if err := f.session.ResetUpstreamAnnotations(); err != nil {
+	// Reset ctx.upstreamRequest to null: beforeRequest runs before this attempt's
+	// upstream row exists, so a hook must not see the previous attempt's identity.
+	// It is filled in right after the row is inserted below.
+	if err := f.session.SetUpstreamRequest(nil); err != nil {
 		f.failHook(err)
 		return false, true
 	}
@@ -138,14 +136,15 @@ func (f *gatewayFlow) runSingleAttempt(cand jsx.CandidateView, side gatewayCandi
 		return false, false
 	}
 	defer f.h.liveRequests.Remove(input.UpstreamID)
-	// Persist this attempt's upstream annotations at every exit below. A closure
-	// (not a bare defer arg) so the snapshot is taken at return time, capturing
-	// writes made by afterUpstreamError (failure paths) and runStreamErrorHook
-	// (success/streaming path), both of which run synchronously before this
-	// function returns.
-	defer func() {
-		f.persistRequestAnnotations(input.UpstreamID, input.UpstreamCreatedAt, f.session.UpstreamAnnotations())
-	}()
+	// The upstream row now exists, so expose its identity: rewriteRequest,
+	// afterUpstreamError and the in-stream error hook can annotate this attempt
+	// via picotera.request.setAnnotation(ctx.upstreamRequest.id, ...).
+	if err := f.session.SetUpstreamRequest(f.requestRef(input.UpstreamID)); err != nil {
+		f.recordAttemptFailure(state, input, side.ProviderID, int32(gatewayHookStatus(err)), err, db.FinishReasonInternal)
+		f.failHook(err)
+		cancel()
+		return true, true
+	}
 	prepared, err := f.buildRewrittenUpstreamRequest(input)
 	if err != nil {
 		var hookErr gatewayHookError

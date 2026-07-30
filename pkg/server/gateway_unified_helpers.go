@@ -295,6 +295,10 @@ type unifiedStreamArgs struct {
 	userID            pgtype.Int8
 	wsCtx             *webSearchContext
 	recordBody        bool
+	// flow is the owning gateway flow, carried so the meta-row updates below go
+	// through flow.updateMeta (which mirrors them into the requestFinished
+	// snapshot) rather than straight to updateRequest.
+	flow *gatewayFlow
 }
 
 func unifiedStreamArgsFromSuccess(input successInput) unifiedStreamArgs {
@@ -312,6 +316,7 @@ func unifiedStreamArgsFromSuccess(input successInput) unifiedStreamArgs {
 		userID:     input.Flow.auth.UserID,
 		wsCtx:      input.Prepared.WebSearch,
 		recordBody: input.Flow.otr.recordBody(),
+		flow:       input.Flow,
 	}
 }
 
@@ -340,7 +345,7 @@ func (h *gatewayHandler) unifiedStreamSuccess(input successInput) {
 
 	// user_id / project_id are intentionally NOT touched here: they were
 	// backfilled post-auth on the meta row and must survive the header update.
-	h.updateRequest(hdrCtx, newRequestUpdate(a.metaID, a.metaCreatedAt).
+	a.flow.updateMeta(hdrCtx, newRequestUpdate(a.metaID, a.metaCreatedAt).
 		ProviderID(pgtype.Int4{Int32: a.providerID, Valid: true}).
 		Model(pgtype.Text{String: a.routedModel, Valid: a.routedModel != ""}).
 		UpstreamModel(pgtype.Text{String: a.upstreamModel, Valid: a.upstreamModel != ""}).
@@ -608,7 +613,7 @@ func (h *gatewayHandler) unifiedStreamSuccess(input successInput) {
 		InferredModelSource(int16(m.InferredModelSource)).
 		ExternalResponseID(matchExternalIDHeader(resp.Header, h.externalResponseIDHeaders)))
 	metaTimeSpent := int32(time.Since(a.gatewayStart).Milliseconds())
-	h.updateRequest(pctx, newRequestUpdate(a.metaID, a.metaCreatedAt).
+	a.flow.updateMeta(pctx, newRequestUpdate(a.metaID, a.metaCreatedAt).
 		StatusCode(pgtype.Int4{Int32: int32(resp.StatusCode), Valid: true}).
 		ErrorMessage(errMsg).
 		TimeSpentMs(pgtype.Int4{Int32: metaTimeSpent, Valid: true}).
@@ -640,7 +645,7 @@ func (h *gatewayHandler) failUnifiedSuccess(ctx context.Context, a unifiedStream
 		FinishReason(pgtype.Int4{Int32: db.FinishReasonInternal, Valid: true}).
 		ExternalResponseID(matchExternalIDHeader(a.resp.Header, h.externalResponseIDHeaders)))
 	respBody := writeGatewayError(a.w, http.StatusBadGateway, "bridge failed: "+errMsg, errorx.UpstreamError.Error())
-	h.updateRequest(ctx, newRequestUpdate(a.metaID, a.metaCreatedAt).
+	a.flow.updateMeta(ctx, newRequestUpdate(a.metaID, a.metaCreatedAt).
 		StatusCode(pgtype.Int4{Int32: http.StatusBadGateway, Valid: true}).
 		ErrorMessage(pgtype.Text{String: errMsg, Valid: true}).
 		TimeSpentMs(pgtype.Int4{Int32: int32(time.Since(a.gatewayStart).Milliseconds()), Valid: true}).
@@ -668,7 +673,7 @@ func (h *gatewayHandler) failUnifiedSuccessCommitted(ctx context.Context, a unif
 		TimeSpentMs(pgtype.Int4{Int32: int32(time.Since(a.attemptStart).Milliseconds()), Valid: true}).
 		FinishReason(pgtype.Int4{Int32: finishReason, Valid: true}).
 		ExternalResponseID(matchExternalIDHeader(a.resp.Header, h.externalResponseIDHeaders)))
-	h.updateRequest(ctx, newRequestUpdate(a.metaID, a.metaCreatedAt).
+	a.flow.updateMeta(ctx, newRequestUpdate(a.metaID, a.metaCreatedAt).
 		StatusCode(pgtype.Int4{Int32: status, Valid: true}).
 		ErrorMessage(pgtype.Text{String: errMsg, Valid: true}).
 		TimeSpentMs(pgtype.Int4{Int32: int32(time.Since(a.gatewayStart).Milliseconds()), Valid: true}).

@@ -580,6 +580,29 @@ func (q *Queries) ListRequestsBySpan(ctx context.Context, arg ListRequestsBySpan
 	return items, nil
 }
 
+const setRequestAnnotation = `-- name: SetRequestAnnotation :execrows
+UPDATE request SET annotations = CASE
+    WHEN $1::text IS NULL
+      THEN NULLIF(COALESCE(annotations, '{}'::jsonb) - $2::text, '{}'::jsonb)
+    ELSE COALESCE(annotations, '{}'::jsonb) || jsonb_build_object($2::text, $1::text)
+  END
+WHERE id = $3::text
+`
+
+type SetRequestAnnotationParams struct {
+	Value pgtype.Text `json:"value"`
+	Key   string      `json:"key"`
+	ID    string      `json:"id"`
+}
+
+func (q *Queries) SetRequestAnnotation(ctx context.Context, arg SetRequestAnnotationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setRequestAnnotation, arg.Value, arg.Key, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const updateRequest = `-- name: UpdateRequest :exec
 UPDATE request SET
   provider_id = CASE WHEN $1::bool THEN $2::int ELSE provider_id END,
@@ -605,9 +628,8 @@ UPDATE request SET
   inferred_model = CASE WHEN $41::bool THEN $42::text ELSE inferred_model END,
   inferred_model_source = CASE WHEN $43::bool THEN $44::smallint ELSE inferred_model_source END,
   user_message_preview = CASE WHEN $45::bool THEN $46::text ELSE user_message_preview END,
-  external_response_id = CASE WHEN $47::bool THEN $48::text ELSE external_response_id END,
-  annotations = CASE WHEN $49::bool THEN $50::jsonb ELSE annotations END
-WHERE id = $51::text AND created_at = $52::timestamp
+  external_response_id = CASE WHEN $47::bool THEN $48::text ELSE external_response_id END
+WHERE id = $49::text AND created_at = $50::timestamp
 `
 
 type UpdateRequestParams struct {
@@ -659,8 +681,6 @@ type UpdateRequestParams struct {
 	UserMessagePreview     pgtype.Text      `json:"userMessagePreview"`
 	SetExternalResponseID  bool             `json:"setExternalResponseId"`
 	ExternalResponseID     pgtype.Text      `json:"externalResponseId"`
-	SetAnnotations         bool             `json:"setAnnotations"`
-	Annotations            []byte           `json:"annotations"`
 	ID                     string           `json:"id"`
 	CreatedAt              pgtype.Timestamp `json:"createdAt"`
 }
@@ -715,8 +735,6 @@ func (q *Queries) UpdateRequest(ctx context.Context, arg UpdateRequestParams) er
 		arg.UserMessagePreview,
 		arg.SetExternalResponseID,
 		arg.ExternalResponseID,
-		arg.SetAnnotations,
-		arg.Annotations,
 		arg.ID,
 		arg.CreatedAt,
 	)
