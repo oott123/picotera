@@ -326,6 +326,58 @@ func (q *Queries) GetOverviewTotals(ctx context.Context, arg GetOverviewTotalsPa
 	return i, err
 }
 
+const getOverviewUpstreamSuccessTotals = `-- name: GetOverviewUpstreamSuccessTotals :one
+SELECT
+  -- success = finish_reason 3 (db.FinishReasonEOF, 正常结束) with non-zero output tokens.
+  COALESCE(SUM(request_count) FILTER (
+    WHERE finish_reason = 3 AND NOT empty_response
+  ), 0)::bigint AS successful,
+  COALESCE(SUM(request_count), 0)::bigint AS total
+FROM request_outcome_bucketed
+WHERE bucket_at >= $1::timestamp
+  AND bucket_at < $2::timestamp
+  AND user_id = $3::bigint
+  AND type = 1
+  AND endpoint_path IN (SELECT path FROM completion_endpoint_path)
+  AND ($4::int IS NULL OR api_key_id = $4::int)
+  AND ($5::text IS NULL OR model = $5::text)
+  AND ($6::text IS NULL OR upstream_model = $6::text)
+  AND ($7::int IS NULL OR provider_id = $7::int)
+  AND ($8::int IS NULL OR project_id = $8::int)
+`
+
+type GetOverviewUpstreamSuccessTotalsParams struct {
+	StartAt       pgtype.Timestamp `json:"startAt"`
+	EndAt         pgtype.Timestamp `json:"endAt"`
+	UserID        int64            `json:"userId"`
+	ApiKeyID      pgtype.Int4      `json:"apiKeyId"`
+	Model         pgtype.Text      `json:"model"`
+	UpstreamModel pgtype.Text      `json:"upstreamModel"`
+	ProviderID    pgtype.Int4      `json:"providerId"`
+	ProjectID     pgtype.Int4      `json:"projectId"`
+}
+
+type GetOverviewUpstreamSuccessTotalsRow struct {
+	Successful int64 `json:"successful"`
+	Total      int64 `json:"total"`
+}
+
+func (q *Queries) GetOverviewUpstreamSuccessTotals(ctx context.Context, arg GetOverviewUpstreamSuccessTotalsParams) (GetOverviewUpstreamSuccessTotalsRow, error) {
+	row := q.db.QueryRow(ctx, getOverviewUpstreamSuccessTotals,
+		arg.StartAt,
+		arg.EndAt,
+		arg.UserID,
+		arg.ApiKeyID,
+		arg.Model,
+		arg.UpstreamModel,
+		arg.ProviderID,
+		arg.ProjectID,
+	)
+	var i GetOverviewUpstreamSuccessTotalsRow
+	err := row.Scan(&i.Successful, &i.Total)
+	return i, err
+}
+
 const listOverviewBreakdownCosts = `-- name: ListOverviewBreakdownCosts :many
 SELECT
   COALESCE(api_key_id, 0)::int          AS api_key_id,
@@ -709,6 +761,93 @@ func (q *Queries) ListOverviewDistributionCosts(ctx context.Context, arg ListOve
 	for rows.Next() {
 		var i ListOverviewDistributionCostsRow
 		if err := rows.Scan(&i.Key, &i.Currency, &i.Amount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOverviewOutcomeSeries = `-- name: ListOverviewOutcomeSeries :many
+SELECT
+  bucket_at::timestamp AS bucket_at,
+  CASE $1::text
+    WHEN 'apiKey' THEN COALESCE(api_key_id::text, '')
+    WHEN 'model' THEN COALESCE(model, '')
+    WHEN 'upstreamModel' THEN COALESCE(upstream_model, '')
+    WHEN 'provider' THEN COALESCE(provider_id::text, '')
+    WHEN 'project' THEN COALESCE(project_id::text, '')
+    ELSE ''
+  END AS group_key,
+  type::int AS request_type,
+  finish_reason::int AS finish_reason,
+  empty_response::bool AS empty_response,
+  SUM(request_count)::bigint AS request_count
+FROM request_outcome_bucketed
+WHERE bucket_at >= $2::timestamp
+  AND bucket_at < $3::timestamp
+  AND user_id = $4::bigint
+  AND endpoint_path IN (SELECT path FROM completion_endpoint_path)
+  AND ($5::int IS NULL OR api_key_id = $5::int)
+  AND ($6::text IS NULL OR model = $6::text)
+  AND ($7::text IS NULL OR upstream_model = $7::text)
+  AND ($8::int IS NULL OR provider_id = $8::int)
+  AND ($9::int IS NULL OR project_id = $9::int)
+GROUP BY bucket_at, group_key, request_type, finish_reason, empty_response
+ORDER BY bucket_at ASC, group_key ASC
+`
+
+type ListOverviewOutcomeSeriesParams struct {
+	Dimension     string           `json:"dimension"`
+	StartAt       pgtype.Timestamp `json:"startAt"`
+	EndAt         pgtype.Timestamp `json:"endAt"`
+	UserID        int64            `json:"userId"`
+	ApiKeyID      pgtype.Int4      `json:"apiKeyId"`
+	Model         pgtype.Text      `json:"model"`
+	UpstreamModel pgtype.Text      `json:"upstreamModel"`
+	ProviderID    pgtype.Int4      `json:"providerId"`
+	ProjectID     pgtype.Int4      `json:"projectId"`
+}
+
+type ListOverviewOutcomeSeriesRow struct {
+	BucketAt      pgtype.Timestamp `json:"bucketAt"`
+	GroupKey      string           `json:"groupKey"`
+	RequestType   int32            `json:"requestType"`
+	FinishReason  int32            `json:"finishReason"`
+	EmptyResponse bool             `json:"emptyResponse"`
+	RequestCount  int64            `json:"requestCount"`
+}
+
+func (q *Queries) ListOverviewOutcomeSeries(ctx context.Context, arg ListOverviewOutcomeSeriesParams) ([]ListOverviewOutcomeSeriesRow, error) {
+	rows, err := q.db.Query(ctx, listOverviewOutcomeSeries,
+		arg.Dimension,
+		arg.StartAt,
+		arg.EndAt,
+		arg.UserID,
+		arg.ApiKeyID,
+		arg.Model,
+		arg.UpstreamModel,
+		arg.ProviderID,
+		arg.ProjectID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOverviewOutcomeSeriesRow
+	for rows.Next() {
+		var i ListOverviewOutcomeSeriesRow
+		if err := rows.Scan(
+			&i.BucketAt,
+			&i.GroupKey,
+			&i.RequestType,
+			&i.FinishReason,
+			&i.EmptyResponse,
+			&i.RequestCount,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

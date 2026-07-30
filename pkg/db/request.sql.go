@@ -299,26 +299,14 @@ WHERE
     )
   )
   -- emptyResponse filter: 'empty response' = completion endpoint with output_tokens 0/NULL.
-  -- completion endpoint types from pkg/contract/endpoint.go; unified routes from pkg/server/unified_routes.go.
+  -- Completion endpoint scope comes from the completion_endpoint_path view
+  -- (db/migrations/045_request_outcome_cagg.sql).
   AND (
     $11::bool IS NULL
     OR NOT $11::bool
     OR (
       (r.output_tokens IS NULL OR r.output_tokens = 0)
-      AND (
-        r.endpoint_path = ANY(ARRAY[
-          '/api/unified/v1/messages',
-          '/api/unified/v1/responses',
-          '/api/unified/v1/chat/completions',
-          '/api/unified/v1beta/models/{model}:generateContent',
-          '/api/unified/v1beta/models/{model}:streamGenerateContent'
-        ]::text[])
-        OR EXISTS (
-          SELECT 1 FROM endpoint e
-          WHERE e.path = r.endpoint_path
-            AND e.endpoint_type = ANY(ARRAY[2,3,4,7,8]::int[])
-        )
-      )
+      AND r.endpoint_path IN (SELECT path FROM completion_endpoint_path)
     )
   )
   -- finishReason filter: exact match on finish-reason values 1..7, or sentinel -1

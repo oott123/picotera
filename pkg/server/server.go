@@ -255,6 +255,7 @@ func (s *Server) register(mgmt, admin *huma.Group) {
 	huma.Register(mgmt, contract.OperationGetOverviewDistribution, s.handleGetOverviewDistribution)
 	huma.Register(mgmt, contract.OperationGetOverviewSeries, s.handleGetOverviewSeries)
 	huma.Register(mgmt, contract.OperationGetOverviewSpeedBoxplot, s.handleGetOverviewSpeedBoxplot)
+	huma.Register(mgmt, contract.OperationGetOverviewOutcomeSeries, s.handleGetOverviewOutcomeSeries)
 	huma.Register(mgmt, contract.OperationListApiKeys, s.handleListApiKeys)
 	huma.Register(mgmt, contract.OperationGetApiKey, s.handleGetApiKey)
 	huma.Register(mgmt, contract.OperationCreateApiKey, s.handleCreateApiKey)

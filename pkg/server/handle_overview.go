@@ -279,6 +279,27 @@ func (s *Server) handleGetOverviewSummary(ctx context.Context, in *contract.GetO
 		return nil, huma.Error500InternalServerError("failed to query breakdown costs", err)
 	}
 
+	successTotals, err := s.queries.GetOverviewUpstreamSuccessTotals(ctx, db.GetOverviewUpstreamSuccessTotalsParams{
+		StartAt:       startTS,
+		EndAt:         endTS,
+		UserID:        u.ID,
+		ApiKeyID:      toPgInt4(in.ApiKeyID),
+		Model:         toPgText(in.Model),
+		UpstreamModel: toPgText(in.UpstreamModel),
+		ProviderID:    toPgInt4(in.ProviderID),
+		ProjectID:     toPgInt4(in.ProjectID),
+	})
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to query success totals", err)
+	}
+	successRate := contract.OverviewSuccessRateView{
+		Successful: successTotals.Successful,
+		Total:      successTotals.Total,
+	}
+	if successTotals.Total > 0 {
+		successRate.Rate = float64(successTotals.Successful) / float64(successTotals.Total)
+	}
+
 	var traceCount int64
 	if hasFilters(in.OverviewCommonRequest) {
 		traceCount, err = s.queries.CountTracesFiltered(ctx, db.CountTracesFilteredParams{
@@ -316,7 +337,8 @@ func (s *Server) handleGetOverviewSummary(ctx context.Context, in *contract.GetO
 				CacheWrite1h: tokenBreakdownRow.CacheWrite1hTokens,
 				Output:       tokenBreakdownRow.OutputTokens,
 			},
-			Breakdown: mergeBreakdown(breakdownTokenRows, breakdownCostRows),
+			Breakdown:       mergeBreakdown(breakdownTokenRows, breakdownCostRows),
+			UpstreamSuccess: successRate,
 		},
 	}, nil
 }

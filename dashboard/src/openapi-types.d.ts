@@ -452,6 +452,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/picotera/overview/outcome-series": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get request outcome rate series for a dimension */
+        get: operations["getOverviewOutcomeSeries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/picotera/overview/series": {
         parameters: {
             query?: never;
@@ -1399,6 +1416,33 @@ export interface components {
             rows: components["schemas"]["OverviewDistributionRowView"][] | null;
             window: components["schemas"]["OverviewWindowView"];
         };
+        OverviewOutcomePointView: {
+            bucketAt: string;
+            category: string;
+            /** Format: int64 */
+            count: number;
+            groupKey: string;
+            metric: string;
+            /** Format: int64 */
+            total: number;
+            /** Format: double */
+            value: number;
+        };
+        OverviewOutcomeSeriesView: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/OverviewOutcomeSeriesView.json
+             */
+            readonly $schema?: string;
+            buckets: string[] | null;
+            dimension: string;
+            downstreamGroups: components["schemas"]["OverviewSeriesGroupView"][] | null;
+            finishReasons: number[] | null;
+            points: components["schemas"]["OverviewOutcomePointView"][] | null;
+            upstreamGroups: components["schemas"]["OverviewSeriesGroupView"][] | null;
+            window: components["schemas"]["OverviewWindowView"];
+        };
         OverviewSeriesGroupView: {
             key: string;
             label: string;
@@ -1451,6 +1495,14 @@ export interface components {
             items: components["schemas"]["OverviewSpeedBoxplotItemView"][] | null;
             window: components["schemas"]["OverviewWindowView"];
         };
+        OverviewSuccessRateView: {
+            /** Format: double */
+            rate: number;
+            /** Format: int64 */
+            successful: number;
+            /** Format: int64 */
+            total: number;
+        };
         OverviewSummaryView: {
             /**
              * Format: uri
@@ -1467,6 +1519,7 @@ export interface components {
             totalTokens: number;
             /** Format: int64 */
             totalTraceCount: number;
+            upstreamSuccess: components["schemas"]["OverviewSuccessRateView"];
             window: components["schemas"]["OverviewWindowView"];
         };
         OverviewTokenBreakdownView: {
@@ -2922,6 +2975,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OverviewDistributionView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    getOverviewOutcomeSeries: {
+        parameters: {
+            query: {
+                range: "1d" | "7d" | "1m" | "custom";
+                startAt?: string;
+                endAt?: string;
+                apiKeyId?: number;
+                model?: string;
+                upstreamModel?: string;
+                providerId?: number;
+                projectId?: number;
+                dimension: "none" | "apiKey" | "model" | "upstreamModel" | "provider" | "project";
+                bucket?: "auto" | "10m" | "1h" | "6h" | "12h" | "24h";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OverviewOutcomeSeriesView"];
                 };
             };
             /** @description Error */

@@ -29,6 +29,10 @@ type AppUser struct {
 	Annotations []byte             `json:"annotations"`
 }
 
+type CompletionEndpointPath struct {
+	Path string `json:"path"`
+}
+
 type Endpoint struct {
 	Path                string `json:"path"`
 	Name                string `json:"name"`
@@ -116,6 +120,21 @@ type Request struct {
 	ExternalRequestID   pgtype.Text      `json:"externalRequestId"`
 	ExternalResponseID  pgtype.Text      `json:"externalResponseId"`
 	Annotations         []byte           `json:"annotations"`
+}
+
+type RequestOutcomeBucketed struct {
+	BucketAt      interface{} `json:"bucketAt"`
+	Type          int32       `json:"type"`
+	EndpointPath  pgtype.Text `json:"endpointPath"`
+	ApiKeyID      pgtype.Int4 `json:"apiKeyId"`
+	Model         pgtype.Text `json:"model"`
+	UpstreamModel pgtype.Text `json:"upstreamModel"`
+	ProviderID    pgtype.Int4 `json:"providerId"`
+	ProjectID     pgtype.Int4 `json:"projectId"`
+	UserID        pgtype.Int8 `json:"userId"`
+	FinishReason  int32       `json:"finishReason"`
+	EmptyResponse bool        `json:"emptyResponse"`
+	RequestCount  int64       `json:"requestCount"`
 }
 
 type RequestOverviewBucketed struct {

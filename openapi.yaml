@@ -747,6 +747,83 @@ components:
         - dimension
         - rows
       type: object
+    OverviewOutcomePointView:
+      additionalProperties: false
+      properties:
+        bucketAt:
+          type: string
+        category:
+          type: string
+        count:
+          format: int64
+          type: integer
+        groupKey:
+          type: string
+        metric:
+          type: string
+        total:
+          format: int64
+          type: integer
+        value:
+          format: double
+          type: number
+      required:
+        - metric
+        - bucketAt
+        - groupKey
+        - category
+        - value
+        - count
+        - total
+      type: object
+    OverviewOutcomeSeriesView:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/OverviewOutcomeSeriesView.json
+          format: uri
+          readOnly: true
+          type: string
+        buckets:
+          items:
+            type: string
+          nullable: true
+          type: array
+        dimension:
+          type: string
+        downstreamGroups:
+          items:
+            $ref: "#/components/schemas/OverviewSeriesGroupView"
+          nullable: true
+          type: array
+        finishReasons:
+          items:
+            format: int32
+            type: integer
+          nullable: true
+          type: array
+        points:
+          items:
+            $ref: "#/components/schemas/OverviewOutcomePointView"
+          nullable: true
+          type: array
+        upstreamGroups:
+          items:
+            $ref: "#/components/schemas/OverviewSeriesGroupView"
+          nullable: true
+          type: array
+        window:
+          $ref: "#/components/schemas/OverviewWindowView"
+      required:
+        - window
+        - dimension
+        - upstreamGroups
+        - downstreamGroups
+        - finishReasons
+        - buckets
+        - points
+      type: object
     OverviewSeriesGroupView:
       additionalProperties: false
       properties:
@@ -872,6 +949,23 @@ components:
         - dimension
         - items
       type: object
+    OverviewSuccessRateView:
+      additionalProperties: false
+      properties:
+        rate:
+          format: double
+          type: number
+        successful:
+          format: int64
+          type: integer
+        total:
+          format: int64
+          type: integer
+      required:
+        - rate
+        - successful
+        - total
+      type: object
     OverviewSummaryView:
       additionalProperties: false
       properties:
@@ -902,6 +996,8 @@ components:
         totalTraceCount:
           format: int64
           type: integer
+        upstreamSuccess:
+          $ref: "#/components/schemas/OverviewSuccessRateView"
         window:
           $ref: "#/components/schemas/OverviewWindowView"
       required:
@@ -912,6 +1008,7 @@ components:
         - costs
         - tokenBreakdown
         - breakdown
+        - upstreamSuccess
       type: object
     OverviewTokenBreakdownView:
       additionalProperties: false
@@ -2772,6 +2869,104 @@ paths:
                 $ref: "#/components/schemas/PicoTeraError"
           description: Error
       summary: Get overview distribution for a dimension
+  /api/picotera/overview/outcome-series:
+    get:
+      operationId: getOverviewOutcomeSeries
+      parameters:
+        - explode: false
+          in: query
+          name: range
+          required: true
+          schema:
+            enum:
+              - 1d
+              - 7d
+              - 1m
+              - custom
+            type: string
+        - explode: false
+          in: query
+          name: startAt
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: endAt
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: apiKeyId
+          schema:
+            format: int32
+            minimum: 1
+            type: integer
+        - explode: false
+          in: query
+          name: model
+          schema:
+            minLength: 1
+            type: string
+        - explode: false
+          in: query
+          name: upstreamModel
+          schema:
+            minLength: 1
+            type: string
+        - explode: false
+          in: query
+          name: providerId
+          schema:
+            format: int32
+            minimum: 1
+            type: integer
+        - explode: false
+          in: query
+          name: projectId
+          schema:
+            format: int32
+            minimum: 1
+            type: integer
+        - explode: false
+          in: query
+          name: dimension
+          required: true
+          schema:
+            enum:
+              - none
+              - apiKey
+              - model
+              - upstreamModel
+              - provider
+              - project
+            type: string
+        - explode: false
+          in: query
+          name: bucket
+          schema:
+            default: auto
+            enum:
+              - auto
+              - 10m
+              - 1h
+              - 6h
+              - 12h
+              - 24h
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OverviewOutcomeSeriesView"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PicoTeraError"
+          description: Error
+      summary: Get request outcome rate series for a dimension
   /api/picotera/overview/series:
     get:
       operationId: getOverviewSeries

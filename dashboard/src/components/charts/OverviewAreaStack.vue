@@ -26,6 +26,8 @@ const props = defineProps<{
   height?: number
   valueFormat?: (value: number) => string
   bucketFormat?: (iso: string) => string
+  /** Pins the y axis top (e.g. 1 for a 100%-share stack). Auto-scaled when omitted. */
+  yMax?: number
 }>()
 
 const hiddenKeys = ref<Set<string>>(new Set())
@@ -135,6 +137,7 @@ const option = computed<EChartsOption>(() => {
     },
     yAxis: {
       type: 'value',
+      ...(props.yMax === undefined ? {} : { max: props.yMax }),
       axisLabel: { color: axis.axisLabel, fontSize: 10, formatter: (v: number) => fmtValue(v) },
       splitLine: { lineStyle: { color: axis.splitLine } },
       axisLine: { show: false },

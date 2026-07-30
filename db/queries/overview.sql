@@ -323,6 +323,53 @@ GROUP BY bucket_at, group_key
 HAVING SUM(prefill_time_sum) > 0 OR SUM(decode_time_sum) > 0
 ORDER BY bucket_at ASC, group_key ASC;
 
+-- name: ListOverviewOutcomeSeries :many
+SELECT
+  bucket_at::timestamp AS bucket_at,
+  CASE sqlc.arg('dimension')::text
+    WHEN 'apiKey' THEN COALESCE(api_key_id::text, '')
+    WHEN 'model' THEN COALESCE(model, '')
+    WHEN 'upstreamModel' THEN COALESCE(upstream_model, '')
+    WHEN 'provider' THEN COALESCE(provider_id::text, '')
+    WHEN 'project' THEN COALESCE(project_id::text, '')
+    ELSE ''
+  END AS group_key,
+  type::int AS request_type,
+  finish_reason::int AS finish_reason,
+  empty_response::bool AS empty_response,
+  SUM(request_count)::bigint AS request_count
+FROM request_outcome_bucketed
+WHERE bucket_at >= sqlc.arg('start_at')::timestamp
+  AND bucket_at < sqlc.arg('end_at')::timestamp
+  AND user_id = sqlc.arg('user_id')::bigint
+  AND endpoint_path IN (SELECT path FROM completion_endpoint_path)
+  AND (sqlc.narg('api_key_id')::int IS NULL OR api_key_id = sqlc.narg('api_key_id')::int)
+  AND (sqlc.narg('model')::text IS NULL OR model = sqlc.narg('model')::text)
+  AND (sqlc.narg('upstream_model')::text IS NULL OR upstream_model = sqlc.narg('upstream_model')::text)
+  AND (sqlc.narg('provider_id')::int IS NULL OR provider_id = sqlc.narg('provider_id')::int)
+  AND (sqlc.narg('project_id')::int IS NULL OR project_id = sqlc.narg('project_id')::int)
+GROUP BY bucket_at, group_key, request_type, finish_reason, empty_response
+ORDER BY bucket_at ASC, group_key ASC;
+
+-- name: GetOverviewUpstreamSuccessTotals :one
+SELECT
+  -- success = finish_reason 3 (db.FinishReasonEOF, 正常结束) with non-zero output tokens.
+  COALESCE(SUM(request_count) FILTER (
+    WHERE finish_reason = 3 AND NOT empty_response
+  ), 0)::bigint AS successful,
+  COALESCE(SUM(request_count), 0)::bigint AS total
+FROM request_outcome_bucketed
+WHERE bucket_at >= sqlc.arg('start_at')::timestamp
+  AND bucket_at < sqlc.arg('end_at')::timestamp
+  AND user_id = sqlc.arg('user_id')::bigint
+  AND type = 1
+  AND endpoint_path IN (SELECT path FROM completion_endpoint_path)
+  AND (sqlc.narg('api_key_id')::int IS NULL OR api_key_id = sqlc.narg('api_key_id')::int)
+  AND (sqlc.narg('model')::text IS NULL OR model = sqlc.narg('model')::text)
+  AND (sqlc.narg('upstream_model')::text IS NULL OR upstream_model = sqlc.narg('upstream_model')::text)
+  AND (sqlc.narg('provider_id')::int IS NULL OR provider_id = sqlc.narg('provider_id')::int)
+  AND (sqlc.narg('project_id')::int IS NULL OR project_id = sqlc.narg('project_id')::int);
+
 -- name: GetOverviewSpeedBoxplot :many
 WITH speeds AS (
   SELECT

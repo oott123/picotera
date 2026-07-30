@@ -3,6 +3,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
 import {
   getOverviewDistribution,
+  getOverviewOutcomeSeries,
   getOverviewSeries,
   getOverviewSpeedBoxplot,
   getOverviewSummary,
@@ -17,11 +18,13 @@ import { queryKeys, type OverviewFilters, type OverviewGranularity } from '@/api
 import type {
   OverviewBreakdownRowView,
   OverviewDimension,
+  OverviewOutcomePointView,
   OverviewRange,
   OverviewSpeedBoxplotItemView,
   OverviewSeriesDimension,
   OverviewSeriesPointView,
 } from '@/api'
+import { finishReasonLabel } from '@/utils/requestLabels'
 import {
   Button,
   DataCard,
@@ -90,6 +93,7 @@ const distributionDimension = ref<OverviewDimension>('provider')
 const seriesDimension = ref<OverviewSeriesDimension>('none')
 const speedDimension = ref<OverviewSeriesDimension>('model')
 const cacheHitRateDimension = ref<OverviewSeriesDimension>('model')
+const outcomeDimension = ref<OverviewSeriesDimension>('none')
 
 type SankeyVariant = 'tokenComposition' | 'tokensIn' | 'tokensOut' | 'costIn' | 'costOut'
 
@@ -257,6 +261,12 @@ const seriesDimensionOptions: { value: OverviewSeriesDimension; label: string }[
   { value: 'upstreamModel', label: '上游模型' },
   { value: 'project', label: '项目' },
 ]
+const outcomeDimensionOptions: { value: OverviewSeriesDimension; label: string }[] = [
+  { value: 'none', label: '全部' },
+  { value: 'provider', label: '渠道' },
+  { value: 'model', label: '请求模型' },
+  { value: 'upstreamModel', label: '上游模型' },
+]
 
 const overviewFilters = computed<OverviewFilters>(() => {
   const out: {
@@ -377,6 +387,15 @@ const cacheHitRateSeriesQuery = useQuery({
   staleTime: OPERATIONAL_STALE_TIME,
 })
 
+const outcomeSeriesQuery = useQuery({
+  queryKey: computed(() =>
+    queryKeys.overview.outcome(overviewFilters.value, outcomeDimension.value, granularity.value),
+  ),
+  queryFn: () =>
+    getOverviewOutcomeSeries(overviewFilters.value, outcomeDimension.value, granularity.value),
+  staleTime: OPERATIONAL_STALE_TIME,
+})
+
 const overviewRefreshing = computed(
   () =>
     summaryQuery.isFetching.value ||
@@ -384,7 +403,8 @@ const overviewRefreshing = computed(
     seriesQuery.isFetching.value ||
     speedSeriesQuery.isFetching.value ||
     speedBoxplotQuery.isFetching.value ||
-    cacheHitRateSeriesQuery.isFetching.value,
+    cacheHitRateSeriesQuery.isFetching.value ||
+    outcomeSeriesQuery.isFetching.value,
 )
 
 function refreshOverview() {
@@ -395,6 +415,7 @@ function refreshOverview() {
     speedSeriesQuery.refetch(),
     speedBoxplotQuery.refetch(),
     cacheHitRateSeriesQuery.refetch(),
+    outcomeSeriesQuery.refetch(),
   ])
 }
 
@@ -591,6 +612,68 @@ const seriesCacheHitRate = computed(() => {
     .filter((p) => p.metric === 'cacheHitRate')
     .map((p) => ({ groupKey: p.groupKey, bucketAt: p.bucketAt, value: p.value }))
 })
+
+const outcomeSeriesData = computed(() => outcomeSeriesQuery.data.value)
+const outcomeUpstreamGroups = computed(() =>
+  (outcomeSeriesData.value?.upstreamGroups ?? []).map((g) => ({
+    key: g.key,
+    label: dimensionLabel(outcomeDimension.value, g.key),
+  })),
+)
+const outcomeDownstreamGroups = computed(() =>
+  (outcomeSeriesData.value?.downstreamGroups ?? []).map((g) => ({
+    key: g.key,
+    label: dimensionLabel(outcomeDimension.value, g.key),
+  })),
+)
+const outcomeBuckets = computed(() => outcomeSeriesData.value?.buckets ?? [])
+
+function outcomePoints(metric: string): SeriesPointVM[] {
+  const points: OverviewOutcomePointView[] = outcomeSeriesData.value?.points ?? []
+  return points
+    .filter((p) => p.metric === metric)
+    .map((p) => ({ groupKey: p.groupKey, bucketAt: p.bucketAt, value: p.value }))
+}
+
+const seriesUpstreamSuccessRate = computed(() => outcomePoints('upstreamSuccessRate'))
+const seriesDownstreamSuccessRate = computed(() => outcomePoints('downstreamSuccessRate'))
+const seriesEmptyResponseRate = computed(() => outcomePoints('emptyResponseRate'))
+
+// 完成原因图按类别（而非分组键）堆叠。
+const seriesFinishReasonShare = computed<SeriesPointVM[]>(() => {
+  const points: OverviewOutcomePointView[] = outcomeSeriesData.value?.points ?? []
+  return points
+    .filter((p) => p.metric === 'finishReasonShare')
+    .map((p) => ({ groupKey: p.category, bucketAt: p.bucketAt, value: p.value }))
+})
+
+// 0 = 进行中 / 未记录；请求列表里 0 是「无筛选」哨兵值，因此不改 finishReasonLabel。
+function outcomeFinishReasonLabel(code: number): string {
+  return code === 0 ? '进行中' : finishReasonLabel(code)
+}
+
+// 成功带落在堆叠底部，其余按错误类型、进行中收尾。
+const FINISH_REASON_DISPLAY_ORDER = [3, 1, 2, 4, 5, 6, 7, 0]
+
+const finishReasonGroups = computed(() => {
+  const present = new Set(outcomeSeriesData.value?.finishReasons ?? [])
+  return FINISH_REASON_DISPLAY_ORDER.filter((code) => present.has(code)).map((code) => ({
+    key: String(code),
+    label: outcomeFinishReasonLabel(code),
+  }))
+})
+
+// meta 行的 provider_id / upstream_model 只在拿到上游响应头时才回填（见
+// gateway_flow_success.go），彻底失败的请求这两列保持 NULL。按这两个维度分组
+// 或筛选时，失败行全落在空分组里，各渠道的分母只剩成功行 —— 成功率会虚高到
+// 接近 100%，所以这张卡整体隐藏。meta 行的 model 是在选渠道之前写的
+// （gateway_flow.go:349），因此无此偏差。
+const downstreamDimensionApplicable = computed(
+  () =>
+    (outcomeDimension.value === 'none' || outcomeDimension.value === 'model') &&
+    !filters.providerId &&
+    !filters.upstreamModel,
+)
 
 function formatSpeed(v: number, skipUnit = false) {
   const unit = skipUnit ? '' : ' tok/s'
@@ -1049,7 +1132,7 @@ function formatCurrencyCompact(v: number, code: string) {
     </div>
 
     <!-- Bento totals -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
       <DataCard class="min-h-20">
         <div class="p-4 min-h-20 flex flex-col gap-1.5">
           <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.03em]"
@@ -1123,6 +1206,32 @@ function formatCurrencyCompact(v: number, code: string) {
           <span v-else class="text-xl font-semibold mono tabular text-ink">{{
             (summaryQuery.data.value?.totalTraceCount ?? 0).toLocaleString()
           }}</span>
+        </div>
+      </DataCard>
+      <DataCard class="min-h-20">
+        <div class="p-4 min-h-20 flex flex-col gap-1.5">
+          <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.03em]"
+            >成功率</span
+          >
+          <StateText v-if="summaryQuery.isLoading.value" compact :dashed="false">加载中…</StateText>
+          <StateText v-else-if="summaryQuery.isError.value" compact :dashed="false">{{
+            (summaryQuery.error.value as Error)?.message ?? '加载失败'
+          }}</StateText>
+          <div
+            v-else-if="!summaryQuery.data.value?.upstreamSuccess.total"
+            class="text-xl text-ink-faint"
+          >
+            —
+          </div>
+          <template v-else>
+            <span class="text-xl font-semibold mono tabular text-ink">{{
+              formatPercent(summaryQuery.data.value.upstreamSuccess.rate)
+            }}</span>
+            <span class="text-2xs text-ink-faint mono tabular"
+              >{{ summaryQuery.data.value.upstreamSuccess.successful.toLocaleString() }} /
+              {{ summaryQuery.data.value.upstreamSuccess.total.toLocaleString() }}</span
+            >
+          </template>
         </div>
       </DataCard>
     </div>
@@ -1616,6 +1725,103 @@ function formatCurrencyCompact(v: number, code: string) {
             :groups="cacheHitRateGroups"
             :buckets="cacheHitRateBuckets"
             :points="seriesCacheHitRate"
+            :value-format="(v) => formatPercent(v)"
+            :bucket-format="formatBucket"
+          />
+        </div>
+      </DataCard>
+    </div>
+
+    <!-- Outcome rates -->
+    <div class="flex flex-wrap items-end gap-3">
+      <div class="flex flex-col gap-1">
+        <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.03em]"
+          >成功率统计</span
+        >
+        <SegmentedControl v-model="outcomeDimension" :options="outcomeDimensionOptions" />
+      </div>
+    </div>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+      <DataCard class="min-h-[17rem]">
+        <div class="p-4 min-h-[17rem] flex flex-col gap-3">
+          <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.03em]"
+            >上游成功率</span
+          >
+          <StateText v-if="outcomeSeriesQuery.isLoading.value" compact :dashed="false"
+            >加载中…</StateText
+          >
+          <StateText v-else-if="outcomeSeriesQuery.isError.value" compact :dashed="false">{{
+            (outcomeSeriesQuery.error.value as Error)?.message ?? '加载失败'
+          }}</StateText>
+          <OverviewLineChart
+            v-else
+            :groups="outcomeUpstreamGroups"
+            :buckets="outcomeBuckets"
+            :points="seriesUpstreamSuccessRate"
+            :value-format="(v) => formatPercent(v)"
+            :bucket-format="formatBucket"
+          />
+        </div>
+      </DataCard>
+      <DataCard v-if="downstreamDimensionApplicable" class="min-h-[17rem]">
+        <div class="p-4 min-h-[17rem] flex flex-col gap-3">
+          <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.03em]"
+            >下游成功率</span
+          >
+          <StateText v-if="outcomeSeriesQuery.isLoading.value" compact :dashed="false"
+            >加载中…</StateText
+          >
+          <StateText v-else-if="outcomeSeriesQuery.isError.value" compact :dashed="false">{{
+            (outcomeSeriesQuery.error.value as Error)?.message ?? '加载失败'
+          }}</StateText>
+          <OverviewLineChart
+            v-else
+            :groups="outcomeDownstreamGroups"
+            :buckets="outcomeBuckets"
+            :points="seriesDownstreamSuccessRate"
+            :value-format="(v) => formatPercent(v)"
+            :bucket-format="formatBucket"
+          />
+        </div>
+      </DataCard>
+      <DataCard class="min-h-[17rem]">
+        <div class="p-4 min-h-[17rem] flex flex-col gap-3">
+          <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.03em]"
+            >空回比例</span
+          >
+          <StateText v-if="outcomeSeriesQuery.isLoading.value" compact :dashed="false"
+            >加载中…</StateText
+          >
+          <StateText v-else-if="outcomeSeriesQuery.isError.value" compact :dashed="false">{{
+            (outcomeSeriesQuery.error.value as Error)?.message ?? '加载失败'
+          }}</StateText>
+          <OverviewLineChart
+            v-else
+            :groups="outcomeUpstreamGroups"
+            :buckets="outcomeBuckets"
+            :points="seriesEmptyResponseRate"
+            :value-format="(v) => formatPercent(v)"
+            :bucket-format="formatBucket"
+          />
+        </div>
+      </DataCard>
+      <DataCard v-if="outcomeDimension === 'none'" class="min-h-[17rem]">
+        <div class="p-4 min-h-[17rem] flex flex-col gap-3">
+          <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.03em]"
+            >完成原因</span
+          >
+          <StateText v-if="outcomeSeriesQuery.isLoading.value" compact :dashed="false"
+            >加载中…</StateText
+          >
+          <StateText v-else-if="outcomeSeriesQuery.isError.value" compact :dashed="false">{{
+            (outcomeSeriesQuery.error.value as Error)?.message ?? '加载失败'
+          }}</StateText>
+          <OverviewAreaStack
+            v-else
+            :groups="finishReasonGroups"
+            :buckets="outcomeBuckets"
+            :points="seriesFinishReasonShare"
+            :y-max="1"
             :value-format="(v) => formatPercent(v)"
             :bucket-format="formatBucket"
           />

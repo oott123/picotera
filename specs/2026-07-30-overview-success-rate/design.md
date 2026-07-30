@@ -113,12 +113,16 @@ SELECT unnest(ARRAY[
 | 卡片 | 图形 | 数据 | 可见性 |
 | --- | --- | --- | --- |
 | 上游成功率 | `OverviewLineChart` | `upstreamSuccessRate` | 始终 |
-| 下游成功率 | `OverviewLineChart` | `downstreamSuccessRate` | 维度 ∈ {全部, 请求模型} 且未启用渠道 / 上游模型筛选 |
+| 下游成功率 | `OverviewLineChart` | `downstreamSuccessRate` | 维度 ∈ {全部, 请求模型} 且未启用渠道 / 上游模型筛选，否则整卡隐藏 |
 | 空回比例 | `OverviewLineChart` | `emptyResponseRate` | 始终 |
 | 完成原因 | `OverviewAreaStack` | `finishReasonShare` | 维度 = 全部 |
 
 - 折线的取值格式化用已有的 `formatPercent`，纵轴自动缩放（与「缓存命中率」一致，便于看出小幅下跌）。
-- **下游成功率的不适用态**：meta 行的 `provider_id` / `upstream_model` 在库里是 NULL（渠道是在 meta 行插入之后才解析的），所以按渠道 / 上游模型分组、或页面级渠道 / 上游模型筛选生效时，这张图查不到任何数据。此时卡片渲染 `StateText`「下游请求不含渠道 / 上游模型，该维度不适用」，而不是画一张空图 —— 空图会被读成「没有下游流量」。
+- **下游成功率的不适用态**（实现期核实后修正）：meta 行的 `provider_id` / `upstream_model` **不是恒为 NULL** —— 它们在拿到上游响应头时由 header update 回填成最终服务该请求的那个渠道（path 路由 `gateway_flow_success.go:120`，unified `gateway_unified_helpers.go:343`）。但所有候选渠道都失败时 `failMeta`（`gateway_flow_errors.go:51`）只写 status / error / finish_reason / time_spent，不碰这两列，于是保持 NULL。
+
+  后果比「查不到数据」更糟：按渠道 / 上游模型分组时**能**查到数据，但失败行全落进 `groupKey = ""`，各渠道的分母只剩成功行 —— 成功率虚高到接近 100%，`""` 组则是一条 0% 线。这是「看起来合理的错数字」，比空图更容易误导。因此按渠道 / 上游模型分组、或页面级这两个筛选生效时，**整张卡片直接不渲染**（`v-if="downstreamDimensionApplicable"`），不留占位文案 —— 与「完成原因」卡在非 `none` 维度下的处理一致。
+
+  `model` 维度不受影响：meta 行的 `model` 在 `resolveAndRewriteModel` 里、**选渠道之前**就写入（`gateway_flow.go:349`，`rewriteModel` 改名后再写一次 `:408`），失败行同样有值。unified 路由复用同一个 `gatewayFlow`，行为一致。
 - **完成原因图**：`OverviewAreaStack` 的 `groups` = 窗口内出现过的完成原因类别，顺序固定为 `正常结束 → 内部错误 → 已取消 → 请求头超时 → 读取超时 → 流式错误 → 控制台打断 → 进行中`（成功带落在堆叠底部）。标签复用 `utils/requestLabels.ts` 的 `finishReasonLabel`，`0` 由视图内的小包装映射成「进行中」（不改 `finishReasonLabel` —— `0` 在请求列表里是「无筛选」哨兵值）。
 - `OverviewAreaStack` 加一个可选 `yMax?: number` prop，本图传 `1`，让纵轴稳定在 0–100%。
 - 顶部卡片行由 `lg:grid-cols-4` 改成 `lg:grid-cols-5`，第五张卡「成功率」：大号百分比 + 下方一行灰色 `成功数 / 总数`；`total = 0` 时显示 `—`。

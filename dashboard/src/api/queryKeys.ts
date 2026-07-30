@@ -149,6 +149,8 @@ export const queryKeys = {
       ['overview', 'speedBoxplot', dim, { ...f }] as const,
     cacheHitRate: (f: OverviewFilters, dim: OverviewSeriesDimension, bucket: OverviewGranularity) =>
       ['overview', 'cacheHitRate', dim, bucket, { ...f }] as const,
+    outcome: (f: OverviewFilters, dim: OverviewSeriesDimension, bucket: OverviewGranularity) =>
+      ['overview', 'outcome', dim, bucket, { ...f }] as const,
   },
   adminOverview: {
     all: ['adminOverview'] as const,

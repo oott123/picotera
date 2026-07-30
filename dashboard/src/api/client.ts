@@ -19,6 +19,7 @@ import type {
   ProjectLabel,
   OverviewDimension,
   OverviewDistributionView,
+  OverviewOutcomeSeriesView,
   OverviewSpeedBoxplotView,
   OverviewSeriesDimension,
   OverviewSeriesView,
@@ -615,6 +616,18 @@ export async function getOverviewSeries(
     params: { query: { ...overviewQuery(filters), dimension, bucket } as never },
   })
   if (error) fail(error, '加载趋势失败')
+  return data
+}
+
+export async function getOverviewOutcomeSeries(
+  filters: OverviewFilters,
+  dimension: OverviewSeriesDimension,
+  bucket: OverviewGranularity,
+): Promise<OverviewOutcomeSeriesView> {
+  const { data, error } = await api.GET('/api/picotera/overview/outcome-series', {
+    params: { query: { ...overviewQuery(filters), dimension, bucket } as never },
+  })
+  if (error) fail(error, '加载成功率统计失败')
   return data
 }
 
