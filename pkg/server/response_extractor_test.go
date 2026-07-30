@@ -1225,6 +1225,129 @@ func TestResponseExtractor_JSON_Gemini_SingleObjectStillWorks(t *testing.T) {
 	}
 }
 
+func TestStreamCompletedOpenAIDone(t *testing.T) {
+	sse := "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\ndata: [DONE]\n\n"
+	extractor := NewResponseExtractor(strings.NewReader(sse), "text/event-stream", time.Now())
+
+	if _, err := io.ReadAll(extractor); err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if !extractor.StreamCompleted() {
+		t.Error("StreamCompleted: got false, want true after [DONE]")
+	}
+}
+
+func TestStreamCompletedAnthropicMessageStop(t *testing.T) {
+	sse := "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+	extractor := NewResponseExtractor(strings.NewReader(sse), "text/event-stream", time.Now())
+
+	if _, err := io.ReadAll(extractor); err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if !extractor.StreamCompleted() {
+		t.Error("StreamCompleted: got false, want true after message_stop")
+	}
+}
+
+func TestStreamCompletedOpenAIResponses(t *testing.T) {
+	tests := []struct {
+		name  string
+		event string
+	}{
+		{"completed", "response.completed"},
+		{"incomplete", "response.incomplete"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sse := "data: {\"type\":\"" + tt.event + "\",\"response\":{\"id\":\"resp_1\"}}\n\n"
+			extractor := NewResponseExtractor(strings.NewReader(sse), "text/event-stream", time.Now())
+
+			if _, err := io.ReadAll(extractor); err != nil {
+				t.Fatalf("ReadAll: %v", err)
+			}
+			if !extractor.StreamCompleted() {
+				t.Errorf("StreamCompleted: got false, want true after %s", tt.event)
+			}
+		})
+	}
+}
+
+func TestStreamCompletedGeminiSSE(t *testing.T) {
+	first := "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"Hello\"}],\"role\":\"model\"}}]}\n\n"
+	last := "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"!\"}],\"role\":\"model\"},\"finishReason\":\"STOP\"}]}\n\n"
+
+	extractor := NewResponseExtractor(strings.NewReader(first), "text/event-stream", time.Now())
+	if _, err := io.ReadAll(extractor); err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if extractor.StreamCompleted() {
+		t.Error("StreamCompleted: got true, want false for a chunk without finishReason")
+	}
+
+	extractor = NewResponseExtractor(strings.NewReader(first+last), "text/event-stream", time.Now())
+	if _, err := io.ReadAll(extractor); err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if !extractor.StreamCompleted() {
+		t.Error("StreamCompleted: got false, want true after a finishReason chunk")
+	}
+}
+
+func TestStreamCompletedGeminiJSONArray(t *testing.T) {
+	t.Run("elementFinishReason", func(t *testing.T) {
+		// Fed in chunks that split mid-element, and stopping before the closing
+		// ']' so only the element's finishReason can set the flag.
+		chunks := []string{
+			`[{"candidates":[{"content":{"parts":[{"text":"Hel`,
+			`lo"}],"role":"model"}}]},`,
+			`{"candidates":[{"content":{"parts":[{"text":"!"}],"role":"model"},"fini`,
+			`shReason":"STOP"}]}`,
+		}
+		extractor := NewResponseExtractor(&chunkReader{chunks: chunks}, "application/json", time.Now())
+		if _, err := io.ReadAll(extractor); err != nil {
+			t.Fatalf("ReadAll: %v", err)
+		}
+		if !extractor.StreamCompleted() {
+			t.Error("StreamCompleted: got false, want true after an element with finishReason")
+		}
+	})
+
+	t.Run("arrayClosedWithoutFinishReason", func(t *testing.T) {
+		data := `[{"candidates":[{"content":{"parts":[{"text":"Hello"}],"role":"model"}}]}]`
+		extractor := NewResponseExtractor(strings.NewReader(data), "application/json", time.Now())
+		if _, err := io.ReadAll(extractor); err != nil {
+			t.Fatalf("ReadAll: %v", err)
+		}
+		if !extractor.StreamCompleted() {
+			t.Error("StreamCompleted: got false, want true once the array closes")
+		}
+	})
+}
+
+func TestStreamNotCompletedTruncatedSSE(t *testing.T) {
+	sse := "data: {\"choices\":[{\"delta\":{\"content\":\"He\"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"llo\"}}]}\n\n"
+	extractor := NewResponseExtractor(strings.NewReader(sse), "text/event-stream", time.Now())
+
+	if _, err := io.ReadAll(extractor); err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if extractor.StreamCompleted() {
+		t.Error("StreamCompleted: got true, want false for a stream missing its terminating event")
+	}
+}
+
+func TestStreamNotCompletedNonStreamJSON(t *testing.T) {
+	jsonData := `{"id":"chatcmpl-1","choices":[{"message":{"content":"Hello"},"finish_reason":"stop"}],"usage":{"prompt_tokens":9,"completion_tokens":11}}`
+	extractor := NewResponseExtractor(strings.NewReader(jsonData), "application/json", time.Now())
+
+	if _, err := io.ReadAll(extractor); err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if extractor.StreamCompleted() {
+		t.Error("StreamCompleted: got true, want false for a non-stream JSON body")
+	}
+}
+
 func buildSignaturePayload(model string) string {
 	// Build a protobuf message whose [2][1][6] path contains `model`.
 	inner := protowire.AppendTag(nil, 6, protowire.BytesType)

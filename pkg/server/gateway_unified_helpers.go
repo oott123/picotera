@@ -568,7 +568,7 @@ func (h *gatewayHandler) unifiedStreamSuccess(input successInput) {
 	}
 	h.uploadResponseArtifactWithAggregation(pctx, a.upstreamID, a.upstreamCreatedAt, resp.StatusCode, resp.Header.Clone(), upstreamBytes, upstreamAggregated, upstreamTimings)
 	h.uploadMetaResponseArtifactWithAggregation(pctx, a.metaID, a.metaCreatedAt, http.StatusOK, metaRespHeader, clientBytes, a.metaLogs, metaAggregated, metaTimings)
-	finishReason := classifyStreamFinishReason(finalReadErr, r.Context())
+	finishReason := classifyStreamFinishReason(finalReadErr, r.Context(), extractor.StreamCompleted())
 
 	m := extractor.Metrics()
 	ttftMs, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, cacheWrite1hTokens := metricsToPG(m)

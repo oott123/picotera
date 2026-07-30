@@ -57,6 +57,11 @@ type ResponseExtractor struct {
 	// payload (empty means no error). Detected independently of metrics.
 	streamError string
 
+	// streamCompleted records whether the upstream stream reached its
+	// terminating event (OpenAI [DONE], Anthropic message_stop, OpenAI
+	// Responses response.completed/incomplete, Gemini finishReason). Sticky.
+	streamCompleted bool
+
 	// Inference accumulators. Once non-empty they are locked (first hit wins).
 	inferredProvider string
 	sigModel         string
@@ -97,6 +102,12 @@ func (e *ResponseExtractor) Metrics() ResponseMetrics {
 // or "" if the stream carried no in-stream error. Call after the Read loop.
 func (e *ResponseExtractor) StreamError() string {
 	return e.streamError
+}
+
+// StreamCompleted reports whether the upstream stream reached its terminating
+// event. Call after the Read loop. Always false for non-stream JSON bodies.
+func (e *ResponseExtractor) StreamCompleted() bool {
+	return e.streamCompleted
 }
 
 // Read implements io.Reader. Bytes are forwarded to the caller unchanged.
@@ -161,14 +172,17 @@ func (e *ResponseExtractor) processSSEEvent(eventBytes []byte) {
 	}
 	payload := strings.Join(dataPayloads, "\n")
 
-	// Skip [DONE] sentinel
+	// [DONE] sentinel: terminating event for OpenAI Chat Completions and
+	// compatible providers. Mark completion before skipping the payload.
 	if payload == "[DONE]" {
+		e.streamCompleted = true
 		return
 	}
 
 	// Detect in-stream errors (HTTP 200 with an error event). Independent of
 	// metric extraction — metrics already pulled from the stream still count.
 	e.detectStreamError(payload)
+	e.detectStreamCompletion(payload)
 
 	// Try OpenAI Chat Completions format
 	e.extractOpenAISSE(payload)
@@ -227,6 +241,27 @@ func (e *ResponseExtractor) detectStreamError(payload string) {
 	switch finishReason.String() {
 	case "network_error", "model_context_window_exceeded":
 		e.streamError = finishReason.String()
+	}
+}
+
+// detectStreamCompletion marks the stream complete when an SSE data payload
+// carries the terminating event of any supported upstream format. The OpenAI
+// Chat Completions [DONE] sentinel is handled by its caller (it is not JSON).
+// response.failed is deliberately absent: it always carries
+// response.error.message, so detectStreamError already covers it and the
+// resulting finish reason is overridden to FinishReasonStreamError anyway.
+func (e *ResponseExtractor) detectStreamCompletion(payload string) {
+	if e.streamCompleted {
+		return
+	}
+	result := gjson.Parse(payload)
+	switch result.Get("type").String() {
+	case "message_stop", "response.completed", "response.incomplete":
+		e.streamCompleted = true
+		return
+	}
+	if v := result.Get("candidates.0.finishReason"); v.Exists() && v.Type == gjson.String && v.String() != "" {
+		e.streamCompleted = true
 	}
 }
 
@@ -401,7 +436,8 @@ func (e *ResponseExtractor) feedJSONArray(data []byte) {
 			break
 		}
 		if e.jaBuf[cur] == ']' {
-			// Array closed; ignore any trailing bytes.
+			// Array closed; the stream ended normally. Ignore any trailing bytes.
+			e.streamCompleted = true
 			e.jaBuf = nil
 			return
 		}
@@ -433,6 +469,7 @@ func (e *ResponseExtractor) processGeminiArrayElement(elem []byte) {
 	e.setGeminiUsage(result.Get("usageMetadata"))
 	e.inferModelField(payload)
 	e.detectStreamError(payload)
+	e.detectStreamCompletion(payload)
 	e.inferProvider(payload)
 }
 

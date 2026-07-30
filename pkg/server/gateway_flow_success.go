@@ -230,7 +230,7 @@ func (h *gatewayHandler) pipePathResponse(input successInput, responseWriter *lo
 	}
 	input.Cancel()
 	closeDecodedInternalResponseReader(internalBody, resp)
-	return extractor, progress, classifyStreamFinishReason(finalReadErr, input.Flow.ctxs.Request)
+	return extractor, progress, classifyStreamFinishReason(finalReadErr, input.Flow.ctxs.Request, extractor.StreamCompleted())
 }
 
 func (h *gatewayHandler) aggregatePathResponse(input successInput, metaRespHeader http.Header, respBytes []byte, timings []float64) {
@@ -307,14 +307,21 @@ func (h *gatewayHandler) completeGatewaySuccess(input successInput, m ResponseMe
 		ExternalResponseID(matchExternalIDHeader(input.Response.Header, h.externalResponseIDHeaders)))
 }
 
-func classifyStreamFinishReason(readErr error, reqCtx context.Context) int32 {
+// classifyStreamFinishReason derives the finish reason from how the upstream
+// read loop ended. streamCompleted (ResponseExtractor.StreamCompleted) reports
+// whether the upstream already emitted the stream's terminating event: many
+// clients close the connection the moment they see it, which cancels the
+// request context — that is a normal EOF, not a cancellation. The idle-timeout
+// check stays ahead of the cancel check, so an upstream that emits the
+// terminating event but never closes the connection is still a read timeout.
+func classifyStreamFinishReason(readErr error, reqCtx context.Context, streamCompleted bool) int32 {
 	if errors.Is(readErr, io.EOF) {
 		return db.FinishReasonEOF
 	}
 	if errors.Is(readErr, errReadIdleTimeout) {
 		return db.FinishReasonReadTimeout
 	}
-	if reqCtx.Err() != nil {
+	if reqCtx.Err() != nil && !streamCompleted {
 		return db.FinishReasonCancelled
 	}
 	return db.FinishReasonEOF

@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -192,5 +194,34 @@ func TestPersistContextKeepsRequestValues(t *testing.T) {
 	defer pcancel()
 	if got := pctx.Value(key("trace")); got != "value" {
 		t.Fatalf("persist context value = %v, want value", got)
+	}
+}
+
+func TestClassifyStreamFinishReason(t *testing.T) {
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	idleTimeout := fmt.Errorf("%w after %v: %w", errReadIdleTimeout, time.Minute, context.DeadlineExceeded)
+
+	tests := []struct {
+		name            string
+		readErr         error
+		reqCtx          context.Context
+		streamCompleted bool
+		want            int32
+	}{
+		{"eof", io.EOF, context.Background(), false, db.FinishReasonEOF},
+		{"eofWhileCanceled", io.EOF, canceled, false, db.FinishReasonEOF},
+		{"idleTimeout", idleTimeout, context.Background(), false, db.FinishReasonReadTimeout},
+		{"idleTimeoutAfterCompletion", idleTimeout, canceled, true, db.FinishReasonReadTimeout},
+		{"canceledMidStream", context.Canceled, canceled, false, db.FinishReasonCancelled},
+		{"canceledAfterCompletion", context.Canceled, canceled, true, db.FinishReasonEOF},
+		{"otherError", errors.New("connection reset"), context.Background(), false, db.FinishReasonEOF},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := classifyStreamFinishReason(tt.readErr, tt.reqCtx, tt.streamCompleted); got != tt.want {
+				t.Errorf("classifyStreamFinishReason = %d, want %d", got, tt.want)
+			}
+		})
 	}
 }
