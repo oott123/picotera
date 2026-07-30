@@ -17,32 +17,32 @@ picotera.hooks.rewriteRequest.tap('add-effort', function (ctx, pending) {
 
   switch (ctx.format) {
     case 'openaiResponses': {
-      if ('reasoning' in ctx.body) {
-        ctx.body.reasoning.effort = effort
+      if ('reasoning' in pending.body) {
+        pending.body.reasoning.effort = effort
       } else {
-        ctx.body.reasoning = { effort }
+        pending.body.reasoning = { effort }
       }
       break
     }
     case 'openaiChatCompletions': {
-      ctx.body.reasoning_effort = effort
+      pending.body.reasoning_effort = effort
       break
     }
     case 'anthropicMessages':
     case 'anthropicCountTokens': {
-      if ('output_config' in ctx.body) {
-        ctx.body.output_config.effort = effort
+      if ('output_config' in pending.body) {
+        pending.body.output_config.effort = effort
       } else {
-        ctx.body.output_config = { effort }
+        pending.body.output_config = { effort }
       }
       break
     }
     case 'geminiGenerateContent':
     case 'geminiStreamGenerateContent': {
-      if ('generation_config' in ctx.body) {
-        ctx.body.generation_config.thinking_level = effort
+      if ('generation_config' in pending.body) {
+        pending.body.generation_config.thinking_level = effort
       } else {
-        ctx.body.generation_config = { thinking_level: effort }
+        pending.body.generation_config = { thinking_level: effort }
       }
       break
     }
