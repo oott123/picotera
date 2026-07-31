@@ -1227,10 +1227,6 @@ function formatCurrencyCompact(v: number, code: string) {
             <span class="text-xl font-semibold mono tabular text-ink">{{
               formatPercent(summaryQuery.data.value.upstreamSuccess.rate)
             }}</span>
-            <span class="text-2xs text-ink-faint mono tabular"
-              >{{ summaryQuery.data.value.upstreamSuccess.successful.toLocaleString() }} /
-              {{ summaryQuery.data.value.upstreamSuccess.total.toLocaleString() }}</span
-            >
           </template>
         </div>
       </DataCard>
