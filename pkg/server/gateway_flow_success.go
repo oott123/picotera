@@ -165,7 +165,10 @@ func (h *gatewayHandler) openPathInternalReader(input successInput) (*lockedResp
 		return nil, nil, false
 	}
 	internalBody := internalReader.Body
-	w.WriteHeader(http.StatusOK)
+	// Commit the headers to the wire before the client writer starts: the client
+	// must learn we succeeded now, not when the upstream's first chunk arrives.
+	markSSENoBuffering(w.Header(), w.Header().Get("Content-Type"))
+	commitResponseHeaders(w, http.StatusOK)
 	if err := internalReader.StartClientWrite(); err != nil {
 		input.Cancel()
 		bgCtx, cancel := input.Flow.ctxs.Persist()

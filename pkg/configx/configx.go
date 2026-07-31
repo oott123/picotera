@@ -24,6 +24,9 @@ type Config struct {
 	GatewayDialKeepAlive             time.Duration `mapstructure:"gateway_dial_keep_alive"`
 	GatewayHTTP2ReadIdleTimeout      time.Duration `mapstructure:"gateway_http2_read_idle_timeout"`
 	GatewayHTTP2PingTimeout          time.Duration `mapstructure:"gateway_http2_ping_timeout"`
+	GatewayDisableKeepAlives         bool          `mapstructure:"gateway_disable_keep_alives"`
+	GatewayDisableHTTP2              bool          `mapstructure:"gateway_disable_http2"`
+	GatewayEphemeralTransport        bool          `mapstructure:"gateway_ephemeral_transport"`
 	GatewayExternalRequestIDHeaders  string        `mapstructure:"gateway_external_request_id_headers"`
 	GatewayExternalResponseIDHeaders string        `mapstructure:"gateway_external_response_id_headers"`
 	S3                               S3Config      `mapstructure:"s3"`
@@ -89,6 +92,9 @@ func Parse() (*Config, error) {
 	viper.SetDefault("gateway_response_header_timeout", 91*time.Second)
 	viper.SetDefault("gateway_http2_read_idle_timeout", 13*time.Second)
 	viper.SetDefault("gateway_http2_ping_timeout", 6*time.Second)
+	viper.SetDefault("gateway_disable_keep_alives", false)
+	viper.SetDefault("gateway_disable_http2", false)
+	viper.SetDefault("gateway_ephemeral_transport", false)
 	viper.SetDefault("gateway_external_request_id_headers", "X-PicoTera-Request-Id,X-Request-Id,X-Ot-Span-Context,X-DataDog-Trace-Id,X-Amzn-Trace-Id,X-Client-Trace-Id,X-Log-Id,Cf-Ray")
 	viper.SetDefault("gateway_external_response_id_headers", "X-Request-Id,X-Trace-Id,X-Kong-Request-Id,X-Oneapi-Request-Id,X-Zenmux-RequestId,X-Log-Id,Cf-Ray")
 	viper.SetDefault("s3.region", "us-east-1")

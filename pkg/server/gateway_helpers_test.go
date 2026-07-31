@@ -2,9 +2,14 @@ package server
 
 import (
 	"context"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
+
+	"picotera/pkg/configx"
 )
 
 func TestBuildUpstreamRequestSkipsAuthHeader(t *testing.T) {
@@ -250,6 +255,102 @@ func TestRedactResponseHeaders(t *testing.T) {
 		}
 		if v := got.Values("Set-Cookie")[0]; v != "session=[REDACTED]; Path=/" {
 			t.Errorf("Set-Cookie = %q, want %q", v, "session=[REDACTED]; Path=/")
+		}
+	})
+}
+
+// newEphemeralTestServer builds a Server whose forwardRequest path is driven by
+// the GatewayEphemeralTransport switch, with keep-alives otherwise on so the
+// cached-transport case really does reuse connections.
+func newEphemeralTestServer(ephemeral bool) *Server {
+	config := &configx.Config{
+		GatewayResponseHeaderTimeout: 5 * time.Second,
+		GatewayReadTimeout:           5 * time.Second,
+		GatewayEphemeralTransport:    ephemeral,
+	}
+	streamBase, streamH2 := newGatewayTransport(config, config.GatewayResponseHeaderTimeout)
+	nonStreamBase, nonStreamH2 := newGatewayTransport(config, config.GatewayReadTimeout)
+	return &Server{
+		config:         config,
+		proxyCache:     newProxyTransportCache(streamBase, nonStreamBase, streamH2, nonStreamH2),
+		connQuarantine: newConnQuarantine(),
+	}
+}
+
+func TestForwardRequestEphemeralTransport(t *testing.T) {
+	var remoteAddrs []string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		remoteAddrs = append(remoteAddrs, r.RemoteAddr)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	}))
+	defer upstream.Close()
+
+	twoRequests := func(t *testing.T, s *Server) []string {
+		t.Helper()
+		remoteAddrs = nil
+		for range 2 {
+			resp, err := s.forwardRequest(mustRequest(t, upstream.URL), "direct", false)
+			if err != nil {
+				t.Fatalf("forwardRequest: %v", err)
+			}
+			if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+				t.Fatalf("drain body: %v", err)
+			}
+			if err := resp.Body.Close(); err != nil {
+				t.Fatalf("close body: %v", err)
+			}
+		}
+		if len(remoteAddrs) != 2 {
+			t.Fatalf("upstream saw %d requests, want 2", len(remoteAddrs))
+		}
+		return remoteAddrs
+	}
+
+	t.Run("ephemeral does not reuse the connection", func(t *testing.T) {
+		got := twoRequests(t, newEphemeralTestServer(true))
+		if got[0] == got[1] {
+			t.Fatalf("both attempts came from %s; an ephemeral transport must not reuse the connection", got[0])
+		}
+	})
+
+	t.Run("cached transport reuses the connection", func(t *testing.T) {
+		got := twoRequests(t, newEphemeralTestServer(false))
+		if got[0] != got[1] {
+			t.Fatalf("attempts came from %s and %s; the cached transport should reuse the connection", got[0], got[1])
+		}
+	})
+
+	t.Run("ephemeral body recycles the transport on close", func(t *testing.T) {
+		resp, err := newEphemeralTestServer(true).forwardRequest(mustRequest(t, upstream.URL), "direct", false)
+		if err != nil {
+			t.Fatalf("forwardRequest: %v", err)
+		}
+		body, ok := resp.Body.(*closeIdleOnCloseBody)
+		if !ok {
+			t.Fatalf("resp.Body = %T, want *closeIdleOnCloseBody", resp.Body)
+		}
+		if _, err := io.Copy(io.Discard, body); err != nil {
+			t.Fatalf("drain body: %v", err)
+		}
+		if err := body.Close(); err != nil {
+			t.Fatalf("close body: %v", err)
+		}
+		// The sync.Once makes a second Close (the gateway's deferred close after
+		// an explicit one) harmless.
+		if err := body.Close(); err != nil {
+			t.Fatalf("second close: %v", err)
+		}
+	})
+
+	t.Run("cached transport body is not wrapped", func(t *testing.T) {
+		resp, err := newEphemeralTestServer(false).forwardRequest(mustRequest(t, upstream.URL), "direct", false)
+		if err != nil {
+			t.Fatalf("forwardRequest: %v", err)
+		}
+		defer resp.Body.Close()
+		if _, ok := resp.Body.(*closeIdleOnCloseBody); ok {
+			t.Fatal("cached-transport response body should not carry the recycling wrapper")
 		}
 	})
 }

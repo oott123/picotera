@@ -435,7 +435,14 @@ func (h *gatewayHandler) unifiedStreamSuccess(input successInput) {
 		return
 	}
 	internalBody := internalReader.Body
-	w.WriteHeader(http.StatusOK)
+	// Commit the headers to the wire before the client writer starts. On the
+	// bridging path the first client chunk waits for llmbridge to convert the
+	// upstream's first native event, so without this flush the client's
+	// response-header timer would cover that whole conversion latency.
+	if streamMode {
+		markSSENoBuffering(w.Header(), clientCT)
+	}
+	commitResponseHeaders(w, http.StatusOK)
 	if err := internalReader.StartClientWrite(); err != nil {
 		cancel()
 		closeDecodedInternalResponseReader(internalBody, resp)

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -40,6 +41,7 @@ type Server struct {
 	config                    *configx.Config
 	httpClient                *http.Client
 	proxyCache                *proxyTransportCache
+	connQuarantine            *connQuarantine
 	artifacts                 artifacts.Sink
 	jsxEngine                 jsx.Engine
 	kvStore                   kv.Store
@@ -60,25 +62,52 @@ type Server struct {
 // keepalive PINGs are enabled so dead connections — especially silently dropped
 // CONNECT proxy tunnels — are detected and evicted instead of being reused,
 // which otherwise surfaces as "http2: timeout awaiting response headers".
-func newGatewayTransport(config *configx.Config, responseHeaderTimeout time.Duration) *http.Transport {
+//
+// The *http2.Transport handle is returned alongside the *http.Transport (nil if
+// ConfigureTransports failed, or if HTTP/2 is disabled): std's
+// CloseIdleConnections only reaches the h2 pool through the unexported altProto
+// map, which Transport.Clone does not copy, so evicting idle h2 connections (see
+// proxyTransportCache.closeIdle) requires calling CloseIdleConnections on this
+// handle directly.
+//
+// With config.GatewayDisableHTTP2 the transport never gets an h2 layer at all:
+// a non-nil but empty TLSNextProto is std's documented way to turn off automatic
+// HTTP/2, and Transport.Clone copies a non-nil TLSNextProto, so every proxy
+// variant cloned off this base stays HTTP/1.1 too. The h2 keepalive PINGs are
+// configured on the h2 handle, so they are simply absent in that mode.
+func newGatewayTransport(config *configx.Config, responseHeaderTimeout time.Duration) (*http.Transport, *http2.Transport) {
 	t := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
 			Timeout:   config.GatewayDialTimeout,
 			KeepAlive: config.GatewayDialKeepAlive,
 		}).DialContext,
-		ForceAttemptHTTP2:     true,
-		MaxIdleConns:          100,
+		ForceAttemptHTTP2: true,
+		MaxIdleConns:      100,
+		// std defaults to 2 idle connections per host, which would make a single
+		// busy upstream host churn connections — especially with HTTP/2 off,
+		// where every concurrent request needs its own connection.
+		MaxIdleConnsPerHost:   100,
 		IdleConnTimeout:       config.GatewayIdleConnTimeout,
 		TLSHandshakeTimeout:   config.GatewayTLSHandshakeTimeout,
 		ExpectContinueTimeout: config.GatewayExpectContinueTimeout,
 		ResponseHeaderTimeout: responseHeaderTimeout,
+		// Emergency stop-gap: one connection per request (h2 singleUse, h1 no
+		// keepalive), inherited by every proxy variant via Clone.
+		DisableKeepAlives: config.GatewayDisableKeepAlives,
 	}
-	if h2, err := http2.ConfigureTransports(t); err == nil {
-		h2.ReadIdleTimeout = config.GatewayHTTP2ReadIdleTimeout
-		h2.PingTimeout = config.GatewayHTTP2PingTimeout
+	if config.GatewayDisableHTTP2 {
+		t.ForceAttemptHTTP2 = false
+		t.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
+		return t, nil
 	}
-	return t
+	h2, err := http2.ConfigureTransports(t)
+	if err != nil {
+		return t, nil
+	}
+	h2.ReadIdleTimeout = config.GatewayHTTP2ReadIdleTimeout
+	h2.PingTimeout = config.GatewayHTTP2PingTimeout
+	return t, h2
 }
 
 func NewServer(ctx context.Context) (*Server, error) {
@@ -116,7 +145,7 @@ func NewServer(ctx context.Context) (*Server, error) {
 
 	logx.WithContext(ctx).Info("connected to database")
 
-	baseTransport := newGatewayTransport(config, config.GatewayResponseHeaderTimeout)
+	baseTransport, streamH2 := newGatewayTransport(config, config.GatewayResponseHeaderTimeout)
 	httpClient := &http.Client{Transport: baseTransport}
 	// Non-streaming requests get a more lenient header timeout: the upstream
 	// may buffer the whole response and return headers late, so raise the header
@@ -132,8 +161,8 @@ func NewServer(ctx context.Context) (*Server, error) {
 	// 91s header timeout. ResponseHeaderTimeout is a connection-level transport
 	// field and cannot be overridden per request, so the cache keys on the
 	// streaming flag and keeps both bases.
-	nonStreamBase := newGatewayTransport(config, config.GatewayReadTimeout)
-	proxyCache := newProxyTransportCache(baseTransport, nonStreamBase)
+	nonStreamBase, nonStreamH2 := newGatewayTransport(config, config.GatewayReadTimeout)
+	proxyCache := newProxyTransportCache(baseTransport, nonStreamBase, streamH2, nonStreamH2)
 
 	sink, err := artifacts.NewSink(config.S3, logx.WithContext(ctx))
 	if err != nil {
@@ -195,6 +224,7 @@ func NewServer(ctx context.Context) (*Server, error) {
 		api:                       api,
 		httpClient:                httpClient,
 		proxyCache:                proxyCache,
+		connQuarantine:            newConnQuarantine(),
 		artifacts:                 sink,
 		jsxEngine:                 jsxEngine,
 		kvStore:                   kvStore,

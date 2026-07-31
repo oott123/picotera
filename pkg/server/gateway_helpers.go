@@ -9,10 +9,12 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"picotera/pkg/contract"
@@ -24,8 +26,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/xid"
+	"github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"golang.org/x/net/http2"
 )
 
 // gatewayError represents an error that should be returned to the client
@@ -75,6 +79,29 @@ func writeGatewayError(w http.ResponseWriter, status int, message, code string) 
 	body = append(body, '\n')
 	w.Write(body)
 	return body
+}
+
+// commitResponseHeaders writes the status line and immediately flushes it to
+// the wire. Without the flush, Go's http server buffers the header block until
+// the first body flush — a downstream client's response-header timer then covers
+// our whole time-to-first-chunk (which for a thinking model, or a stacked
+// gateway retrying upstreams, can run into minutes) instead of stopping when we
+// commit to the response.
+func commitResponseHeaders(w http.ResponseWriter, status int) {
+	w.WriteHeader(status)
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+// markSSENoBuffering sets X-Accel-Buffering: no when contentType is
+// text/event-stream, telling nginx-style reverse proxies in front of us not to
+// buffer the stream (headers included) — otherwise our flush stops at the next
+// hop. It is a standard hop-by-hop hint, ignored by proxies that don't know it.
+func markSSENoBuffering(h http.Header, contentType string) {
+	if strings.Contains(strings.ToLower(contentType), "text/event-stream") {
+		h.Set("X-Accel-Buffering", "no")
+	}
 }
 
 // handleGatewayErr writes a gateway error response. If err is a *gatewayError,
@@ -710,14 +737,153 @@ func redactSetCookieValue(v string) string {
 	return name + "=" + redactedPlaceholder + attrs
 }
 
+// isAwaitHeadersTimeout matches HTTP/2's "http2: timeout awaiting response
+// headers" and HTTP/1.1's "net/http: timeout awaiting response headers". Both
+// are unexported error types with no sentinel to compare against, so substring
+// matching on the shared tail is the only option — it deliberately does not
+// match dial timeouts, TLS handshake timeouts or context cancellation.
+func isAwaitHeadersTimeout(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "timeout awaiting response headers")
+}
+
+// newEphemeralTransport builds a one-shot transport for a single attempt:
+// full gateway config, proxy applied, keep-alives forced off so the connection
+// dies with the request instead of lingering in an idle pool no later request
+// can reach. Used when GatewayEphemeralTransport is set — an isolation
+// experiment that removes every bit of client-side sharing between attempts,
+// at the cost of a TCP+TLS handshake per request.
+func (s *Server) newEphemeralTransport(proxyURL string, streaming bool) (*http.Transport, *http2.Transport) {
+	// Mirrors the two cached bases: streaming keeps the header timeout,
+	// non-streaming raises it to the global read timeout.
+	responseHeaderTimeout := s.config.GatewayResponseHeaderTimeout
+	if !streaming {
+		responseHeaderTimeout = s.config.GatewayReadTimeout
+	}
+	t, h2 := newGatewayTransport(s.config, responseHeaderTimeout)
+	t.DisableKeepAlives = true
+	applyProxyConfig(t, proxyURL)
+	return t, h2
+}
+
+// closeIdleOnCloseBody releases an ephemeral transport's connections once the
+// response body is done with them. Without it the transport becomes garbage
+// while its connection sits idle until IdleConnTimeout.
+type closeIdleOnCloseBody struct {
+	io.ReadCloser
+	t1   *http.Transport
+	h2   *http2.Transport
+	once sync.Once
+}
+
+func (b *closeIdleOnCloseBody) Close() error {
+	err := b.ReadCloser.Close()
+	b.once.Do(func() {
+		b.t1.CloseIdleConnections()
+		if b.h2 != nil {
+			b.h2.CloseIdleConnections()
+		}
+	})
+	return err
+}
+
 // forwardRequest sends the request to the upstream provider using the
 // transport selected by proxyURL. Empty string uses environment proxy;
 // "direct" bypasses all proxies; a URL string uses that proxy.
 // Streaming requests use the default ResponseHeaderTimeout; non-streaming
 // requests use the more lenient GatewayReadTimeout as their header-timeout
 // upper bound (the cache keys transports on the streaming flag).
+//
+// It is also the single choke point for connection-reuse hygiene: every attempt
+// carries an httptrace so the connection it landed on is observable, and a
+// header timeout quarantines the host so following attempts stop riding the same
+// broken connection (see connQuarantine).
 func (s *Server) forwardRequest(req *http.Request, proxyURL string, streaming bool) (*http.Response, error) {
-	return s.proxyCache.get(proxyURL, streaming).RoundTrip(req)
+	var (
+		t         *http.Transport
+		h2        *http2.Transport
+		ephemeral = s.config.GatewayEphemeralTransport
+	)
+	if ephemeral {
+		t, h2 = s.newEphemeralTransport(proxyURL, streaming)
+	} else {
+		t = s.proxyCache.get(proxyURL, streaming)
+	}
+	host := req.URL.Host
+
+	if s.connQuarantine.active(proxyURL, streaming, host) {
+		// Retire whichever connection this request lands on: h2 marks it
+		// doNotReuse, h1 sends "Connection: close".
+		req.Close = true
+		logx.WithContext(req.Context()).WithFields(logrus.Fields{
+			"host":      host,
+			"proxy":     proxyURL,
+			"streaming": streaming,
+		}).Debug("upstream host quarantined, disabling connection reuse for this attempt")
+	}
+
+	var connLocal, connRemote string
+	var wroteRequestAt, gotFirstByteAt time.Time
+	trace := &httptrace.ClientTrace{
+		GotConn: func(info httptrace.GotConnInfo) {
+			if info.Conn != nil {
+				connLocal = info.Conn.LocalAddr().String()
+				connRemote = info.Conn.RemoteAddr().String()
+			}
+			logx.WithContext(req.Context()).WithFields(logrus.Fields{
+				"conn_reused":    info.Reused,
+				"conn_was_idle":  info.WasIdle,
+				"conn_idle_time": info.IdleTime,
+				"conn_local":     connLocal,
+				"conn_remote":    connRemote,
+			}).Debug("got upstream connection")
+		},
+		// The two timestamps below separate "request written, then silence on the
+		// response path" (a header timeout with wrote_request_ago ≈ the whole
+		// timeout and got_first_byte=false) from "the request body itself never
+		// got out" (no WroteRequest at all — flow control or a stalled connection).
+		WroteRequest: func(httptrace.WroteRequestInfo) {
+			wroteRequestAt = time.Now()
+		},
+		GotFirstResponseByte: func() {
+			gotFirstByteAt = time.Now()
+		},
+	}
+	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+
+	resp, err := t.RoundTrip(req)
+	if err == nil {
+		if ephemeral {
+			resp.Body = &closeIdleOnCloseBody{ReadCloser: resp.Body, t1: t, h2: h2}
+		}
+		return resp, nil
+	}
+	if ephemeral {
+		t.CloseIdleConnections()
+		if h2 != nil {
+			h2.CloseIdleConnections()
+		}
+	}
+
+	var wroteRequestAgo time.Duration
+	if !wroteRequestAt.IsZero() {
+		wroteRequestAgo = time.Since(wroteRequestAt)
+	}
+	log := logx.WithContext(req.Context()).WithError(err).WithFields(logrus.Fields{
+		"host":              host,
+		"proxy":             proxyURL,
+		"streaming":         streaming,
+		"conn_local":        connLocal,
+		"conn_remote":       connRemote,
+		"wrote_request_ago": wroteRequestAgo,
+		"got_first_byte":    !gotFirstByteAt.IsZero(),
+	})
+	log.Warn("upstream request failed")
+	if isAwaitHeadersTimeout(err) {
+		s.connQuarantine.mark(proxyURL, streaming, host)
+		s.proxyCache.closeIdle(proxyURL, streaming)
+		log.WithField("ttl", connQuarantineTTL).Warn("quarantined upstream host after response-header timeout")
+	}
+	return resp, err
 }
 
 // insertRequest inserts a request record and returns the inserted created_at.

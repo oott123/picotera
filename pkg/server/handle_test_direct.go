@@ -130,7 +130,7 @@ func (s *Server) handleTestDirect(w http.ResponseWriter, r *http.Request) {
 	if ct := resp.Header.Get("Content-Type"); ct != "" {
 		w.Header().Set("Content-Type", ct)
 	}
-	w.WriteHeader(resp.StatusCode)
+	commitResponseHeaders(w, resp.StatusCode)
 
 	flusher, _ := w.(http.Flusher)
 	buf := make([]byte, 32*1024)
