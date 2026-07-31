@@ -1,10 +1,21 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
-import type { ModelView, PricingMatchCandidate } from '@/api'
+import type { ModelView, PricingMatchCandidate, PricingTier } from '@/api'
 import { invalidateModels, matchPricing, upsertModel } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
-import { Button, DataTable, SidePanel, StateText, Td, Th, Tr, Icon } from '@/ui'
+import { useCurrencyContext } from '@/composables/useCurrencyContext'
+import {
+  Button,
+  DataTable,
+  MoneyDisplay,
+  SidePanel,
+  StateText,
+  Td,
+  Th,
+  Tr,
+  Icon,
+} from '@/ui'
 
 const props = defineProps<{
   model: ModelView
@@ -29,6 +40,85 @@ const loading = computed(() => candidatesQuery.isLoading.value || candidatesQuer
 const saving = computed(() => saveMutation.isPending.value)
 
 const selected = computed(() => candidates.value[selectedIndex.value] ?? null)
+const currentPricing = computed(() => {
+  const pricing = props.model.pricing
+  return pricing?.tiers?.length ? pricing : null
+})
+const hasCurrentPricing = computed(() => currentPricing.value !== null)
+const comparisonTiers = computed(() => {
+  const currentTiers = currentPricing.value?.tiers ?? []
+  const targetTiers = selected.value?.pricing.tiers ?? []
+  const minInputTokens = Array.from(
+    new Set([
+      ...currentTiers.map((tier) => tier.minInputTokens),
+      ...targetTiers.map((tier) => tier.minInputTokens),
+    ]),
+  ).sort((a, b) => a - b)
+  return minInputTokens.map((minTokens) => ({
+    current: currentTiers.find((tier) => tier.minInputTokens === minTokens) ?? null,
+    target: targetTiers.find((tier) => tier.minInputTokens === minTokens) ?? null,
+  }))
+})
+
+const priceFields: { key: keyof PricingTier; label: string }[] = [
+  { key: 'input', label: '输入' },
+  { key: 'output', label: '输出' },
+  { key: 'cacheRead', label: '缓存读取' },
+  { key: 'cacheWrite', label: '缓存写入' },
+  { key: 'cacheWrite1h', label: '1h 缓存写入' },
+  { key: 'implicitCacheRead', label: '隐式缓存读取' },
+]
+const currency = useCurrencyContext()
+
+function hasEqualPrices(keyA: keyof PricingTier, keyB: keyof PricingTier) {
+  const pricingList = [currentPricing.value, selected.value?.pricing].filter(
+    (pricing): pricing is NonNullable<typeof pricing> => pricing != null,
+  )
+  return pricingList.every((pricing) =>
+    (pricing.tiers ?? []).every((tier) => tier[keyA] === tier[keyB]),
+  )
+}
+
+const visiblePriceFields = computed(() =>
+  priceFields.filter((field) => {
+    if (field.key === 'cacheWrite1h') return !hasEqualPrices('cacheWrite', field.key)
+    if (field.key === 'implicitCacheRead') return !hasEqualPrices('cacheRead', field.key)
+    return true
+  }),
+)
+
+type PriceComparison = 'higher' | 'lower' | 'same' | 'none'
+
+function comparePrice(
+  current: PricingTier | null,
+  target: PricingTier | null,
+  key: keyof PricingTier,
+): PriceComparison {
+  if (!current || !target || !currentPricing.value || !selected.value?.pricing) return 'none'
+  const currentValue = current[key]
+  const targetValue = target[key]
+  const converted = currency.convertTo(
+    currentValue,
+    currentPricing.value.currency,
+    selected.value.pricing.currency,
+  )
+  if (
+    currentPricing.value.currency !== selected.value.pricing.currency &&
+    !converted.converted
+  ) {
+    return 'none'
+  }
+  if (targetValue > converted.amount) return 'higher'
+  if (targetValue < converted.amount) return 'lower'
+  return 'same'
+}
+
+function formatTierThreshold(tier: { current: PricingTier | null; target: PricingTier | null }) {
+  const current = tier.current?.minInputTokens
+  const target = tier.target?.minInputTokens
+  if (current != null && current === target) return `≥ ${current.toLocaleString()} 输入 tokens`
+  return `当前 ≥ ${current?.toLocaleString() ?? '—'} · 目标 ≥ ${target?.toLocaleString() ?? '—'} 输入 tokens`
+}
 
 type DiffSegment = {
   text: string
@@ -165,6 +255,58 @@ async function save() {
               <span class="font-medium">{{ candidate.providerName }}</span>
             </Td>
           </Tr>
+        </tbody>
+      </DataTable>
+    </section>
+
+    <section v-if="selected" class="flex flex-col gap-2 mt-4">
+      <div class="flex items-baseline justify-between">
+        <span class="text-xs font-medium text-ink-muted uppercase tracking-[0.03em]">价格对比</span>
+        <span class="text-2xs text-ink-faint">{{ selected.pricing.currency }}</span>
+      </div>
+      <DataTable>
+        <thead>
+          <tr>
+            <Th>价格项目</Th>
+            <Th v-if="hasCurrentPricing">当前价格 · {{ currentPricing?.currency }}</Th>
+            <Th>目标价格 · {{ selected.pricing.currency }}</Th>
+          </tr>
+        </thead>
+        <tbody>
+          <template v-for="(tier, tierIndex) in comparisonTiers" :key="tierIndex">
+            <tr>
+              <td
+                :colspan="hasCurrentPricing ? 3 : 2"
+                class="px-4 pt-3 pb-1 text-2xs font-medium text-ink-muted uppercase tracking-[0.03em]"
+              >
+                阶梯 {{ tierIndex + 1 }} · {{ formatTierThreshold(tier) }}
+              </td>
+            </tr>
+            <tr v-for="field in visiblePriceFields" :key="`${tierIndex}:${field.key}`">
+              <Td>{{ field.label }}</Td>
+              <Td v-if="hasCurrentPricing">
+                <MoneyDisplay
+                  :amount="tier.current?.[field.key] ?? null"
+                  :currency="currentPricing?.currency"
+                  :max-digits="6"
+                />
+              </Td>
+              <Td>
+                <span
+                  :class="{
+                    'text-err-ink': comparePrice(tier.current, tier.target, field.key) === 'higher',
+                    'text-ok-ink': comparePrice(tier.current, tier.target, field.key) === 'lower',
+                  }"
+                >
+                  <MoneyDisplay
+                    :amount="tier.target?.[field.key] ?? null"
+                    :currency="selected.pricing.currency"
+                    :max-digits="6"
+                  />
+                </span>
+              </Td>
+            </tr>
+          </template>
         </tbody>
       </DataTable>
     </section>
