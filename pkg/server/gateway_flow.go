@@ -176,6 +176,9 @@ func (f *gatewayFlow) run() {
 	if !ok {
 		return
 	}
+	if f.runBeforeMetaRequest() {
+		return
+	}
 	result := f.runAttempts(sorted, sidecars)
 	if result.Handled {
 		return

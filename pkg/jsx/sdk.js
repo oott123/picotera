@@ -59,6 +59,7 @@
   globalThis.picotera = {
     hooks: {
       sortProviders: new Waterfall(),
+      beforeMetaRequest: new Waterfall(),
       beforeRequest: new Waterfall(),
       beforeTransform: new Waterfall(),
       rewriteRequest: new Waterfall(),

@@ -376,6 +376,147 @@ func (s *qjsSession) RunSortProviders(initial []CandidateView) ([]CandidateView,
 	return out, nil
 }
 
+// RunBeforeMetaRequest runs the beforeMetaRequest waterfall after sortProviders
+// and before the first upstream attempt. It returns nil for passthrough
+// (undefined / null) and a fully validated response otherwise; the contract is
+// strict because the result is written straight to the client.
+//
+// As in RunRewriteRequest, the body is handed back out-of-band through
+// globalThis.__picotera_bmr_out so a large body is never re-escaped into the
+// marshaled meta result. The glue stringifies without markerReplacer, so a body
+// Proxy (e.g. body: ctx.request.body) is fully materialized into plain JSON —
+// the same semantics as a script calling JSON.stringify(proxy) itself.
+func (s *qjsSession) RunBeforeMetaRequest() (*ResponseShape, error) {
+	expr := `(function () {
+		var r = picotera.hooks.beforeMetaRequest.runWaterfall(globalThis.ctx, undefined);
+		if (r === globalThis.ctx || typeof r === 'undefined' || r === null) return undefined;
+		if (typeof r !== 'object' || Array.isArray(r)) {
+			throw new Error("jsx: beforeMetaRequest result must be an object");
+		}
+		if (!Number.isInteger(r.statusCode) || r.statusCode < 100 || r.statusCode > 599) {
+			throw new Error("jsx: beforeMetaRequest statusCode must be an integer in [100, 599]");
+		}
+		var headers = {};
+		if (typeof r.headers !== 'undefined' && r.headers !== null) {
+			if (typeof r.headers !== 'object' || Array.isArray(r.headers)) {
+				throw new Error("jsx: beforeMetaRequest headers must be an object");
+			}
+			var keys = Object.keys(r.headers);
+			for (var i = 0; i < keys.length; i++) {
+				var k = keys[i], v = r.headers[k];
+				if (typeof v === 'string') { headers[k] = [v]; continue; }
+				if (Array.isArray(v)) {
+					var ok = true;
+					for (var j = 0; j < v.length; j++) { if (typeof v[j] !== 'string') { ok = false; break; } }
+					if (ok) { headers[k] = v.slice(); continue; }
+				}
+				throw new Error("jsx: beforeMetaRequest header " + k + " must be a string or string[]");
+			}
+		}
+		var tokens = null;
+		if (typeof r.tokens !== 'undefined' && r.tokens !== null) {
+			if (typeof r.tokens !== 'object' || Array.isArray(r.tokens)) {
+				throw new Error("jsx: beforeMetaRequest tokens must be an object");
+			}
+			var allowed = ['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens', 'cacheWrite1hTokens'];
+			tokens = {};
+			var tkeys = Object.keys(r.tokens);
+			for (var m = 0; m < tkeys.length; m++) {
+				var tk = tkeys[m];
+				if (allowed.indexOf(tk) < 0) {
+					throw new Error("jsx: beforeMetaRequest unknown tokens key " + tk);
+				}
+				var tv = r.tokens[tk];
+				if (typeof tv === 'undefined' || tv === null) continue;
+				if (!Number.isInteger(tv) || tv < 0 || tv > 2147483647) {
+					throw new Error("jsx: beforeMetaRequest tokens." + tk + " must be an integer in [0, 2147483647]");
+				}
+				tokens[tk] = tv;
+			}
+		}
+		globalThis.__picotera_bmr_out = '';
+		var b = r.body, bodyState;
+		if (typeof b === 'undefined' || b === null) {
+			bodyState = 'none';
+		} else if (typeof b === 'string') {
+			bodyState = 'raw';
+			globalThis.__picotera_bmr_out = b;
+		} else if (typeof b === 'object') {
+			bodyState = 'json';
+			globalThis.__picotera_bmr_out = JSON.stringify(b);
+		} else {
+			throw new Error("jsx: beforeMetaRequest body must be a string, object, array, null, or undefined");
+		}
+		return { statusCode: r.statusCode, headers: headers, bodyState: bodyState, tokens: tokens };
+	})()`
+	data, undef, err := s.evalJSON("beforeMetaRequest", internalFilename("hook-beforeMetaRequest.js"), expr)
+	if err != nil || undef {
+		return nil, err
+	}
+	var meta struct {
+		StatusCode int                 `json:"statusCode"`
+		Headers    map[string][]string `json:"headers"`
+		BodyState  string              `json:"bodyState"`
+		Tokens     *ResponseTokens     `json:"tokens"`
+	}
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return nil, fmt.Errorf("jsx: beforeMetaRequest decode: %w", err)
+	}
+	out := &ResponseShape{StatusCode: meta.StatusCode, Headers: meta.Headers, Tokens: meta.Tokens}
+	if out.Headers == nil {
+		out.Headers = map[string][]string{}
+	}
+	switch meta.BodyState {
+	case "none":
+		// No body: leave Body nil so the response is written empty.
+	case "raw", "json":
+		final, err := s.readGlobalString("__picotera_bmr_out")
+		if err != nil {
+			return nil, fmt.Errorf("jsx: beforeMetaRequest read body: %w", err)
+		}
+		out.Body = []byte(final)
+	default:
+		return nil, fmt.Errorf("jsx: beforeMetaRequest: unexpected bodyState %q", meta.BodyState)
+	}
+	// Defensive re-validation: the glue already rejected all of this, but the
+	// result drives a downstream response, so re-check on the host side too.
+	if err := validateResponseShape(out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// responseShapeForbiddenHeaders are computed by the Go http layer; a script that
+// sets them would desync the framing from the body we actually write.
+var responseShapeForbiddenHeaders = []string{"Content-Length", "Transfer-Encoding"}
+
+func validateResponseShape(resp *ResponseShape) error {
+	if resp.StatusCode < 100 || resp.StatusCode > 599 {
+		return fmt.Errorf("jsx: beforeMetaRequest: statusCode %d out of range [100, 599]", resp.StatusCode)
+	}
+	for k := range resp.Headers {
+		for _, forbidden := range responseShapeForbiddenHeaders {
+			if strings.EqualFold(k, forbidden) {
+				return fmt.Errorf("jsx: beforeMetaRequest: header %q is not allowed", k)
+			}
+		}
+	}
+	if resp.Tokens != nil {
+		for name, v := range map[string]*int32{
+			"inputTokens":        resp.Tokens.InputTokens,
+			"outputTokens":       resp.Tokens.OutputTokens,
+			"cacheReadTokens":    resp.Tokens.CacheReadTokens,
+			"cacheWriteTokens":   resp.Tokens.CacheWriteTokens,
+			"cacheWrite1hTokens": resp.Tokens.CacheWrite1hTokens,
+		} {
+			if v != nil && *v < 0 {
+				return fmt.Errorf("jsx: beforeMetaRequest: tokens.%s must not be negative", name)
+			}
+		}
+	}
+	return nil
+}
+
 // RunBeforeRequest runs the beforeRequest waterfall. Passthrough keeps the
 // initial decision. A non-string upstreamModel is dropped at the JS boundary.
 func (s *qjsSession) RunBeforeRequest(initial BeforeRequestDecision) (BeforeRequestDecision, error) {

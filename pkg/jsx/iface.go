@@ -32,6 +32,12 @@ type Session interface {
 
 	RunRewriteModel(initial string) (string, error)
 	RunSortProviders(initial []CandidateView) ([]CandidateView, error)
+	// RunBeforeMetaRequest runs the beforeMetaRequest waterfall after
+	// sortProviders and before the first upstream attempt (it runs even when no
+	// candidate survived sorting). A nil result means passthrough; a non-nil one
+	// is a validated response the gateway writes to the client instead of
+	// attempting any upstream.
+	RunBeforeMetaRequest() (*ResponseShape, error)
 	RunBeforeRequest(initial BeforeRequestDecision) (BeforeRequestDecision, error)
 	// RunRewriteRequest runs the rewriteRequest waterfall. body is the raw
 	// upstream body bytes the hook may read/mutate via pending.body (nil = no

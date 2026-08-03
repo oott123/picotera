@@ -1,6 +1,6 @@
 # PicoTera 脚本开发文档
 
-PicoTera 支持用 JavaScript 脚本定制网关行为：在请求处理的各个阶段执行脚本逻辑，实现路由定制、请求改写、熔断重试、用量记账等。脚本由管理员在仪表盘「脚本」页面维护；本文档面向脚本作者，描述脚本可用的全部接口：八个 hook 的执行顺序与输入输出、全局上下文 `ctx` 的字段，以及 `picotera` 全局对象下的各个 API。
+PicoTera 支持用 JavaScript 脚本定制网关行为：在请求处理的各个阶段执行脚本逻辑，实现路由定制、请求改写、熔断重试、用量记账等。脚本由管理员在仪表盘「脚本」页面维护；本文档面向脚本作者，描述脚本可用的全部接口：九个 hook 的执行顺序与输入输出、全局上下文 `ctx` 的字段，以及 `picotera` 全局对象下的各个 API。
 
 文中类型标注采用 TypeScript 风格（如 `Record<string, string>` 表示字符串键值对对象），仅用于说明，脚本本身是普通 JavaScript。
 
@@ -19,12 +19,13 @@ PicoTera 支持用 JavaScript 脚本定制网关行为：在请求处理的各�
 
 ## Hook 一览与执行顺序
 
-八个 hook：
+九个 hook：
 
 | Hook | 概要 |
 | --- | --- |
 | `rewriteModel` | 改写客户端请求的模型名（每请求一次） |
 | `sortProviders` | 对候选渠道排序/过滤（每请求一次） |
+| `beforeMetaRequest` | 首次上游尝试前：可直接返回响应短路整个请求（每请求一次） |
 | `beforeRequest` | 每次上游尝试前：决定发起/跳过/延迟/覆盖上游模型 |
 | `beforeTransform` | 统一网关的跨格式转换前：定制出站转换配置 |
 | `rewriteRequest` | 改写即将发出的上游请求（URL、请求头、请求体） |
@@ -38,7 +39,9 @@ PicoTera 支持用 JavaScript 脚本定制网关行为：在请求处理的各�
 flowchart TD
     A[网关请求] --> B[rewriteModel]
     B --> C[sortProviders]
-    C --> D{尝试循环}
+    C --> N[beforeMetaRequest]
+    N -->|"返回 ResponseShape"| O[直接响应客户端]
+    N -->|"返回 undefined"| D{尝试循环}
     D --> E[beforeRequest]
     E -->|next: true 跳过| D
     E --> F[构建上游请求]
@@ -51,14 +54,16 @@ flowchart TD
     K -->|"break: false"| D
     J --> M[requestFinished]
     L --> M
+    O --> M
 ```
 
 1. **`rewriteModel`**：改写模型名。返回不同值后，请求体中的模型字段、`ctx.request.model`、`ctx.routedModel`、`ctx.annotations` 都会随之更新。
 2. **`sortProviders`**：拿到全部候选渠道，返回数组即为后续尝试顺序。
-3. **尝试循环**：按排序结果逐候选尝试。每次尝试执行 `beforeRequest` → 构建上游请求（统一网关外加 `beforeTransform` 与格式转换）→ `rewriteRequest` → 发送。
+3. **`beforeMetaRequest`**：尝试循环开始前执行一次。返回 `undefined` 照常继续；返回 `ResponseShape` 则该响应直接写给客户端，完全不发起上游请求。
+4. **尝试循环**：按排序结果逐候选尝试。每次尝试执行 `beforeRequest` → 构建上游请求（统一网关外加 `beforeTransform` 与格式转换）→ `rewriteRequest` → 发送。
    - **重试**：一次失败且未中断时，循环回到同一候选，此时 `beforeRequest` 输入的 `next` 默认为 `true`（前进到下一候选）；返回 `next: false` 即原地重试。`ctx.attempt.currentRetryCount` / `totalAttemptCount` 供决策。
    - 尝试总次数有上限（默认 50 次）。
-4. **`requestFinished`**：请求进入终态后执行一次，返回值被忽略，用于记账、打注解等观察性用途。
+5. **`requestFinished`**：请求进入终态后执行一次，返回值被忽略，用于记账、打注解等观察性用途。
 
 「获取模型列表」（在渠道表单中向上游拉取模型名）是一条独立管理链路，与上述流程无关，只执行 `rewriteProviderModels` 一次。
 
@@ -106,6 +111,77 @@ picotera.hooks.sortProviders.tap('by-priority', function (ctx, candidates) {
   return candidates
     .filter(c => c.annotations['team'] === 'core')
     .sort((a, b) => b.provider.priority - a.provider.priority)
+})
+```
+
+### beforeMetaRequest
+
+**时机**：每次请求一次，在 `sortProviders` 之后、第一次上游尝试之前。`sortProviders` 返回空数组（无可用渠道）时同样执行。「获取模型列表」链路不执行。
+
+执行时 `ctx.provider`、`ctx.providerModel`、`ctx.attempt`、`ctx.upstreamRequest` 均为 `null`（尚未进入尝试循环），其余字段（`endpoint`、`request`、`apiKey`、`user`、`routedModel`、`annotations`、`metaRequest`、`stream`、`sourceFormat`、`format`）已就绪。
+
+**输入 / 返回**：waterfall 初值为 `undefined`。
+
+```ts
+type BeforeMetaRequestResult = undefined | ResponseShape
+
+interface ResponseShape {
+  statusCode: number                              // 整数，100–599
+  headers?: Record<string, string | string[]>     // 可选
+  body?: string | object | Array<unknown> | null  // 可选
+  tokens?: ResponseTokens                         // 可选，用量记账
+}
+
+interface ResponseTokens {
+  inputTokens?: number
+  outputTokens?: number
+  cacheReadTokens?: number
+  cacheWriteTokens?: number
+  cacheWrite1hTokens?: number
+}
+```
+
+- 返回 `undefined` / `null`：不干预，正常继续后续流程。
+- 返回 `ResponseShape`：网关直接把它写给客户端，**不发起任何上游请求**。
+  - `body` 为字符串：原样写出（流式场景可自行返回 `text/event-stream` 加手工拼接的 SSE 文本）。
+  - `body` 为对象/数组（包含 `ctx.request.body` 这类 Proxy）：`JSON.stringify` 后写出。
+  - `body` 缺省 / `null`：空响应体。
+  - **Content-Type**：响应体非空且 `headers` 未指定时默认 `application/json`；指定了则以脚本为准。
+  - `tokens`：填哪个记哪个，未填的列保持空；填了 `tokens` 时按当前模型的 pricing 自动计算并记录费用。
+
+**校验规则（严格，违反即请求失败）**：
+
+- 返回值必须是 `undefined`、`null` 或普通对象；数组、字符串、数字均报错。
+- `statusCode` 必须是 `[100, 599]` 内的整数。
+- `headers` 若存在必须是普通对象，值必须是 `string` 或 `string[]`。
+- 不允许设置 `Content-Length` / `Transfer-Encoding`（大小写不敏感），由服务端计算。
+- `body` 只接受 `string` / 对象 / 数组 / `null` / `undefined`；number、boolean、function 报错。
+- `tokens` 若存在必须是普通对象，键只能是上述五个之一（拼错即报错），值必须是 `[0, 2147483647]` 内的整数。
+
+校验失败与 hook 抛错同等对待：请求立即失败（502；hook 超时 503），不再尝试任何渠道。
+
+**记录语义**：
+
+- 不产生上游请求记录；`provider_id`、`upstream_model`、ttft 均为空，请求列表中这类请求的特征是只有主记录、没有上游子记录。
+- 非 2xx 时错误信息记为响应体文本；2xx 时不记。
+- `requestFinished` 照常触发，其输入中未发生的字段为 0（填了 `tokens` 则能读到）。
+- 成功率统计要求 `finishReason = 3` 且 `outputTokens` 非零，因此 2xx 快速响应只有填了非零 `outputTokens` 才计为成功，否则计入「空回复」。
+
+```js
+// 命中缓存直接返回（Anthropic Messages 格式）
+picotera.hooks.beforeMetaRequest.tap('cache', function (ctx) {
+  if (ctx.stream) return
+  const hit = picotera.kv.get('resp:' + ctx.routedModel.name + ':' + ctx.request.body.messages.at(-1).content)
+  if (!hit) return
+  return {
+    statusCode: 200,
+    headers: { 'X-PicoTera-Cache': 'hit' },
+    body: hit,
+    tokens: {
+      inputTokens: hit.usage.input_tokens,
+      outputTokens: hit.usage.output_tokens,
+    },
+  }
 })
 ```
 
@@ -404,7 +480,7 @@ interface ProviderModel {
 
 注解有五个来源层次，优先级从低到高：**模型（model）< 渠道（provider）< 渠道模型条目 < 用户（user）< API key**，同名字段高优先级覆盖低优先级。`ctx.annotations` 的范围随阶段变化：
 
-- `rewriteModel`、`sortProviders` 阶段：只合并了「模型 < 用户 < API key」三层；
+- `rewriteModel`、`sortProviders`、`beforeMetaRequest` 阶段：只合并了「模型 < 用户 < API key」三层；
 - `beforeRequest` 起（切换到具体候选后）：完整五层合并。
 
 `Candidate.annotations` 始终是完整五层合并结果。

@@ -147,6 +147,28 @@ type AfterUpstreamErrorDecision struct {
 	Message    string `json:"message"`
 }
 
+// ResponseShape is the waterfall value for the beforeMetaRequest hook: a
+// complete downstream response authored by a script, short-circuiting the
+// upstream attempt loop. Body never crosses the JSON boundary (json:"-"): it is
+// handed back out-of-band and carries the final response bytes (nil = empty
+// body).
+type ResponseShape struct {
+	StatusCode int                 `json:"statusCode"`
+	Headers    map[string][]string `json:"headers"`
+	Body       []byte              `json:"-"`
+	Tokens     *ResponseTokens     `json:"tokens"`
+}
+
+// ResponseTokens is the optional usage block of ResponseShape. A nil field means
+// the script did not report that counter and the column stays NULL.
+type ResponseTokens struct {
+	InputTokens        *int32 `json:"inputTokens,omitempty"`
+	OutputTokens       *int32 `json:"outputTokens,omitempty"`
+	CacheReadTokens    *int32 `json:"cacheReadTokens,omitempty"`
+	CacheWriteTokens   *int32 `json:"cacheWriteTokens,omitempty"`
+	CacheWrite1hTokens *int32 `json:"cacheWrite1hTokens,omitempty"`
+}
+
 // OutboundProfile is the waterfall value for the beforeTransform hook: the
 // axonhub outbound transformer selection for a unified gateway attempt.
 type OutboundProfile struct {
