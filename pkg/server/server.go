@@ -158,7 +158,7 @@ func NewServer(ctx context.Context) (*Server, error) {
 	// Clone() only shallow-copies TLSNextProto, whose "h2" entry still points at
 	// baseTransport's http2.Transport — so a cloned transport's raised
 	// ResponseHeaderTimeout is ignored for h2 upstreams and they'd still trip the
-	// 91s header timeout. ResponseHeaderTimeout is a connection-level transport
+	// streaming header timeout. ResponseHeaderTimeout is a connection-level transport
 	// field and cannot be overridden per request, so the cache keys on the
 	// streaming flag and keeps both bases.
 	nonStreamBase, nonStreamH2 := newGatewayTransport(config, config.GatewayReadTimeout)

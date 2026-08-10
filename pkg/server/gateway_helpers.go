@@ -749,9 +749,9 @@ func isAwaitHeadersTimeout(err error) bool {
 // newEphemeralTransport builds a one-shot transport for a single attempt:
 // full gateway config, proxy applied, keep-alives forced off so the connection
 // dies with the request instead of lingering in an idle pool no later request
-// can reach. Used when GatewayEphemeralTransport is set — an isolation
-// experiment that removes every bit of client-side sharing between attempts,
-// at the cost of a TCP+TLS handshake per request.
+// can reach. Used when GatewayEphemeralTransport is set (the default) — it
+// removes every bit of client-side sharing between attempts, at the cost of a
+// TCP+TLS handshake per request.
 func (s *Server) newEphemeralTransport(proxyURL string, streaming bool) (*http.Transport, *http2.Transport) {
 	// Mirrors the two cached bases: streaming keeps the header timeout,
 	// non-streaming raises it to the global read timeout.
