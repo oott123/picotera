@@ -182,8 +182,9 @@ func (s *minioSink) upload(j job) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	_, err := s.client.PutObject(ctx, s.bucket, j.key, bytes.NewReader(j.payload), int64(len(j.payload)), minio.PutObjectOptions{
-		ContentType:     "application/json",
-		ContentEncoding: "zstd",
+		ContentType:          "application/json",
+		ContentEncoding:      "zstd",
+		DisableContentSha256: true,
 	})
 	if err != nil {
 		s.logger.WithError(err).WithField("key", j.key).Warn("artifact: upload failed")
