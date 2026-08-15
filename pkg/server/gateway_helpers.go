@@ -441,6 +441,7 @@ type providerCandidateRow struct {
 	UpstreamURL             string
 	SendCredentialsResolver int32
 	ProxyURL                pgtype.Text
+	InsecureTLS             bool
 	ProviderAnnotations     []byte
 	ModelAnnotations        []byte
 	ModelName               string
@@ -459,6 +460,7 @@ func fromModelRoutedRow(r db.GetProvidersByEndpointAndModelRow) providerCandidat
 		UpstreamURL:             r.UpstreamUrl,
 		SendCredentialsResolver: r.SendCredentialsResolver,
 		ProxyURL:                r.ProxyUrl,
+		InsecureTLS:             r.InsecureTls,
 		ProviderAnnotations:     r.ProviderAnnotations,
 		ModelAnnotations:        r.ModelAnnotations,
 		ModelName:               r.ModelName,
@@ -478,6 +480,7 @@ func fromNoModelRow(r db.GetProvidersByEndpointRow) providerCandidateRow {
 		UpstreamURL:             r.UpstreamUrl,
 		SendCredentialsResolver: r.SendCredentialsResolver,
 		ProxyURL:                r.ProxyUrl,
+		InsecureTLS:             r.InsecureTls,
 		ProviderAnnotations:     r.ProviderAnnotations,
 		ModelAnnotations:        r.ModelAnnotations,
 		ModelName:               r.ModelName,
@@ -752,16 +755,16 @@ func isAwaitHeadersTimeout(err error) bool {
 // can reach. Used when GatewayEphemeralTransport is set (the default) — it
 // removes every bit of client-side sharing between attempts, at the cost of a
 // TCP+TLS handshake per request.
-func (s *Server) newEphemeralTransport(proxyURL string, streaming bool) (*http.Transport, *http2.Transport) {
-	// Mirrors the two cached bases: streaming keeps the header timeout,
+func (s *Server) newEphemeralTransport(profile transportProfile, streaming bool) (*http.Transport, *http2.Transport) {
+	// Mirrors the cached transports: streaming keeps the header timeout,
 	// non-streaming raises it to the global read timeout.
 	responseHeaderTimeout := s.config.GatewayResponseHeaderTimeout
 	if !streaming {
 		responseHeaderTimeout = s.config.GatewayReadTimeout
 	}
-	t, h2 := newGatewayTransport(s.config, responseHeaderTimeout)
+	t, h2 := newGatewayTransport(s.config, responseHeaderTimeout, profile.InsecureTLS)
 	t.DisableKeepAlives = true
-	applyProxyConfig(t, proxyURL)
+	applyProxyConfig(t, profile.ProxyURL)
 	return t, h2
 }
 
@@ -786,9 +789,10 @@ func (b *closeIdleOnCloseBody) Close() error {
 	return err
 }
 
-// forwardRequest sends the request to the upstream provider using the
-// transport selected by proxyURL. Empty string uses environment proxy;
-// "direct" bypasses all proxies; a URL string uses that proxy.
+// forwardRequest sends the request to the upstream provider using the transport
+// selected by the connection profile. profile.ProxyURL: empty string uses the
+// environment proxy, "direct" bypasses all proxies, a URL string uses that
+// proxy; profile.InsecureTLS skips upstream certificate verification.
 // Streaming requests use the default ResponseHeaderTimeout; non-streaming
 // requests use the more lenient GatewayReadTimeout as their header-timeout
 // upper bound (the cache keys transports on the streaming flag).
@@ -797,27 +801,28 @@ func (b *closeIdleOnCloseBody) Close() error {
 // carries an httptrace so the connection it landed on is observable, and a
 // header timeout quarantines the host so following attempts stop riding the same
 // broken connection (see connQuarantine).
-func (s *Server) forwardRequest(req *http.Request, proxyURL string, streaming bool) (*http.Response, error) {
+func (s *Server) forwardRequest(req *http.Request, profile transportProfile, streaming bool) (*http.Response, error) {
 	var (
 		t         *http.Transport
 		h2        *http2.Transport
 		ephemeral = s.config.GatewayEphemeralTransport
 	)
 	if ephemeral {
-		t, h2 = s.newEphemeralTransport(proxyURL, streaming)
+		t, h2 = s.newEphemeralTransport(profile, streaming)
 	} else {
-		t = s.proxyCache.get(proxyURL, streaming)
+		t = s.proxyCache.get(profile, streaming)
 	}
 	host := req.URL.Host
 
-	if s.connQuarantine.active(proxyURL, streaming, host) {
+	if s.connQuarantine.active(profile, streaming, host) {
 		// Retire whichever connection this request lands on: h2 marks it
 		// doNotReuse, h1 sends "Connection: close".
 		req.Close = true
 		logx.WithContext(req.Context()).WithFields(logrus.Fields{
-			"host":      host,
-			"proxy":     proxyURL,
-			"streaming": streaming,
+			"host":         host,
+			"proxy":        profile.ProxyURL,
+			"insecure_tls": profile.InsecureTLS,
+			"streaming":    streaming,
 		}).Debug("upstream host quarantined, disabling connection reuse for this attempt")
 	}
 
@@ -870,7 +875,8 @@ func (s *Server) forwardRequest(req *http.Request, proxyURL string, streaming bo
 	}
 	log := logx.WithContext(req.Context()).WithError(err).WithFields(logrus.Fields{
 		"host":              host,
-		"proxy":             proxyURL,
+		"proxy":             profile.ProxyURL,
+		"insecure_tls":      profile.InsecureTLS,
 		"streaming":         streaming,
 		"conn_local":        connLocal,
 		"conn_remote":       connRemote,
@@ -879,8 +885,8 @@ func (s *Server) forwardRequest(req *http.Request, proxyURL string, streaming bo
 	})
 	log.Warn("upstream request failed")
 	if isAwaitHeadersTimeout(err) {
-		s.connQuarantine.mark(proxyURL, streaming, host)
-		s.proxyCache.closeIdle(proxyURL, streaming)
+		s.connQuarantine.mark(profile, streaming, host)
+		s.proxyCache.closeIdle(profile, streaming)
 		log.WithField("ttl", connQuarantineTTL).Warn("quarantined upstream host after response-header timeout")
 	}
 	return resp, err

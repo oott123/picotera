@@ -42,6 +42,7 @@ SELECT
   pe.upstream_url,
   pe.credentials_resolver AS send_credentials_resolver,
   p.proxy_url,
+  p.insecure_tls,
   p.annotations AS provider_annotations,
   '{}'::jsonb AS model_annotations
 FROM provider AS p
@@ -63,6 +64,7 @@ type GetProvidersByEndpointRow struct {
 	UpstreamUrl             string      `json:"upstreamUrl"`
 	SendCredentialsResolver int32       `json:"sendCredentialsResolver"`
 	ProxyUrl                pgtype.Text `json:"proxyUrl"`
+	InsecureTls             bool        `json:"insecureTls"`
 	ProviderAnnotations     []byte      `json:"providerAnnotations"`
 	ModelAnnotations        []byte      `json:"modelAnnotations"`
 }
@@ -93,6 +95,7 @@ func (q *Queries) GetProvidersByEndpoint(ctx context.Context, endpointPath strin
 			&i.UpstreamUrl,
 			&i.SendCredentialsResolver,
 			&i.ProxyUrl,
+			&i.InsecureTls,
 			&i.ProviderAnnotations,
 			&i.ModelAnnotations,
 		); err != nil {
@@ -120,6 +123,7 @@ SELECT
   pe.upstream_url,
   pe.credentials_resolver AS send_credentials_resolver,
   p.proxy_url,
+  p.insecure_tls,
   p.annotations AS provider_annotations,
   m.annotations AS model_annotations
 FROM provider AS p
@@ -158,6 +162,7 @@ type GetProvidersByEndpointAndModelRow struct {
 	UpstreamUrl             string      `json:"upstreamUrl"`
 	SendCredentialsResolver int32       `json:"sendCredentialsResolver"`
 	ProxyUrl                pgtype.Text `json:"proxyUrl"`
+	InsecureTls             bool        `json:"insecureTls"`
 	ProviderAnnotations     []byte      `json:"providerAnnotations"`
 	ModelAnnotations        []byte      `json:"modelAnnotations"`
 }
@@ -184,6 +189,7 @@ func (q *Queries) GetProvidersByEndpointAndModel(ctx context.Context, arg GetPro
 			&i.UpstreamUrl,
 			&i.SendCredentialsResolver,
 			&i.ProxyUrl,
+			&i.InsecureTls,
 			&i.ProviderAnnotations,
 			&i.ModelAnnotations,
 		); err != nil {
@@ -212,6 +218,7 @@ SELECT
   pe.upstream_url,
   pe.credentials_resolver AS send_credentials_resolver,
   p.proxy_url,
+  p.insecure_tls,
   p.annotations AS provider_annotations,
   m.annotations AS model_annotations,
   p.supports_native_web_search
@@ -253,6 +260,7 @@ type GetProvidersByEndpointTypesAndModelRow struct {
 	UpstreamUrl             string      `json:"upstreamUrl"`
 	SendCredentialsResolver int32       `json:"sendCredentialsResolver"`
 	ProxyUrl                pgtype.Text `json:"proxyUrl"`
+	InsecureTls             bool        `json:"insecureTls"`
 	ProviderAnnotations     []byte      `json:"providerAnnotations"`
 	ModelAnnotations        []byte      `json:"modelAnnotations"`
 	SupportsNativeWebSearch bool        `json:"supportsNativeWebSearch"`
@@ -287,6 +295,7 @@ func (q *Queries) GetProvidersByEndpointTypesAndModel(ctx context.Context, arg G
 			&i.UpstreamUrl,
 			&i.SendCredentialsResolver,
 			&i.ProxyUrl,
+			&i.InsecureTls,
 			&i.ProviderAnnotations,
 			&i.ModelAnnotations,
 			&i.SupportsNativeWebSearch,

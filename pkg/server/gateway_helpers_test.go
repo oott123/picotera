@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"picotera/pkg/configx"
+
+	"golang.org/x/net/http2"
 )
 
 func TestBuildUpstreamRequestSkipsAuthHeader(t *testing.T) {
@@ -268,11 +270,17 @@ func newEphemeralTestServer(ephemeral bool) *Server {
 		GatewayReadTimeout:           5 * time.Second,
 		GatewayEphemeralTransport:    ephemeral,
 	}
-	streamBase, streamH2 := newGatewayTransport(config, config.GatewayResponseHeaderTimeout)
-	nonStreamBase, nonStreamH2 := newGatewayTransport(config, config.GatewayReadTimeout)
 	return &Server{
-		config:         config,
-		proxyCache:     newProxyTransportCache(streamBase, nonStreamBase, streamH2, nonStreamH2),
+		config: config,
+		proxyCache: newProxyTransportCache(func(profile transportProfile, streaming bool) (*http.Transport, *http2.Transport) {
+			responseHeaderTimeout := config.GatewayResponseHeaderTimeout
+			if !streaming {
+				responseHeaderTimeout = config.GatewayReadTimeout
+			}
+			t, h2 := newGatewayTransport(config, responseHeaderTimeout, profile.InsecureTLS)
+			applyProxyConfig(t, profile.ProxyURL)
+			return t, h2
+		}),
 		connQuarantine: newConnQuarantine(),
 	}
 }
@@ -290,7 +298,7 @@ func TestForwardRequestEphemeralTransport(t *testing.T) {
 		t.Helper()
 		remoteAddrs = nil
 		for range 2 {
-			resp, err := s.forwardRequest(mustRequest(t, upstream.URL), "direct", false)
+			resp, err := s.forwardRequest(mustRequest(t, upstream.URL), transportProfile{ProxyURL: "direct"}, false)
 			if err != nil {
 				t.Fatalf("forwardRequest: %v", err)
 			}
@@ -322,7 +330,7 @@ func TestForwardRequestEphemeralTransport(t *testing.T) {
 	})
 
 	t.Run("ephemeral body recycles the transport on close", func(t *testing.T) {
-		resp, err := newEphemeralTestServer(true).forwardRequest(mustRequest(t, upstream.URL), "direct", false)
+		resp, err := newEphemeralTestServer(true).forwardRequest(mustRequest(t, upstream.URL), transportProfile{ProxyURL: "direct"}, false)
 		if err != nil {
 			t.Fatalf("forwardRequest: %v", err)
 		}
@@ -344,7 +352,7 @@ func TestForwardRequestEphemeralTransport(t *testing.T) {
 	})
 
 	t.Run("cached transport body is not wrapped", func(t *testing.T) {
-		resp, err := newEphemeralTestServer(false).forwardRequest(mustRequest(t, upstream.URL), "direct", false)
+		resp, err := newEphemeralTestServer(false).forwardRequest(mustRequest(t, upstream.URL), transportProfile{ProxyURL: "direct"}, false)
 		if err != nil {
 			t.Fatalf("forwardRequest: %v", err)
 		}

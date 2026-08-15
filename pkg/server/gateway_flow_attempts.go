@@ -167,7 +167,7 @@ func (f *gatewayFlow) runSingleAttempt(cand jsx.CandidateView, side gatewayCandi
 	f.h.uploadRequestArtifact(reqArtifactCtx, input.UpstreamID, input.UpstreamCreatedAt, prepared.Request.Method, redactedURL, redactedHeader, f.artifactBody(prepared.RequestBody))
 	reqArtifactCancel()
 	upstreamStart := time.Now()
-	resp, err := f.h.forwardRequest(prepared.Request, side.ProxyURL, f.model.Mode.Streaming)
+	resp, err := f.h.forwardRequest(prepared.Request, side.transport(), f.model.Mode.Streaming)
 	if err != nil {
 		f.recordAttemptFailure(state, input, side.ProviderID, 0, err, f.finishReasonFor(input.UpstreamID, classifyForwardError(err, f.ctxs.Request)))
 		cancel()

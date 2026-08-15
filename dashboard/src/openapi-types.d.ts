@@ -1112,6 +1112,7 @@ export interface components {
             };
             credentials: string;
             disabled: boolean;
+            insecureTls: boolean;
             /** @enum {string} */
             modelsEndpointResolver?: "unknown" | "followRequest" | "bearerToken" | "xApiKey" | "searchKey" | "googApiKey";
             modelsEndpointUrl?: string;
@@ -1687,6 +1688,7 @@ export interface components {
             disabled: boolean;
             /** Format: int32 */
             id: number;
+            insecureTls: boolean;
             /** @enum {string} */
             modelsEndpointResolver?: "unknown" | "followRequest" | "bearerToken" | "xApiKey" | "searchKey" | "googApiKey";
             modelsEndpointUrl?: string;
@@ -1869,6 +1871,7 @@ export interface components {
             disabled: boolean;
             /** Format: int32 */
             id?: number;
+            insecureTls: boolean;
             /** @enum {string} */
             modelsEndpointResolver?: "unknown" | "followRequest" | "bearerToken" | "xApiKey" | "searchKey" | "googApiKey";
             modelsEndpointUrl?: string;

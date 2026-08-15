@@ -8,82 +8,82 @@ import (
 	"golang.org/x/net/http2"
 )
 
-// transportKey identifies a cached *http.Transport by its proxy configuration
-// and whether it carries the streaming header timeout.
+// transportProfile is the connection-level identity of an upstream transport.
+// Both fields are properties of the connection itself — neither can be
+// overridden per request — so they jointly decide which connection pool a
+// request may reuse. Two providers pointing at the same host but disagreeing on
+// certificate verification therefore land on different transports and never
+// share a connection.
+type transportProfile struct {
+	// ProxyURL is "" for the environment proxy, "direct" for no proxy at all,
+	// or a proxy URL string.
+	ProxyURL    string
+	InsecureTLS bool
+}
+
+// transportKey identifies a cached transport by its connection profile and
+// whether it carries the streaming header timeout.
 type transportKey struct {
-	proxy     string
+	profile   transportProfile
 	streaming bool
 }
 
-// proxyTransportCache lazily creates and caches *http.Transport instances
-// keyed by (proxy configuration, streaming) — streaming and non-streaming
-// requests use bases with different ResponseHeaderTimeout.
+// transportEntry keeps the *http.Transport together with the *http2.Transport
+// bound to it by http2.ConfigureTransports. The h2 handle is needed because
+// std's CloseIdleConnections only reaches the h2 pool through the unexported
+// altProto map.
+type transportEntry struct {
+	t1 *http.Transport
+	h2 *http2.Transport
+}
+
+// proxyTransportCache lazily creates and caches transports keyed by
+// (connection profile, streaming) — streaming and non-streaming requests use
+// transports with a different ResponseHeaderTimeout.
 //
-// The two *http2.Transport handles are the ones bound to the bases by
-// http2.ConfigureTransports. They are kept because that binding is where every
-// h2 connection actually lives: Clone shares TLSNextProto, so a proxy variant's
-// h2 connections land in its base's h2 pool, and a variant's
-// CloseIdleConnections cannot reach that pool (Clone drops the unexported
-// altProto map). closeIdle therefore has to call them explicitly.
+// Every key gets a freshly built transport with its own
+// http2.ConfigureTransports call; entries are never cloned off a shared base,
+// so no two keys can end up sharing an h2 connection pool.
 type proxyTransportCache struct {
-	streamBase    *http.Transport
-	nonStreamBase *http.Transport
-	streamH2      *http2.Transport
-	nonStreamH2   *http2.Transport
-	mu            sync.RWMutex
-	cache         map[transportKey]*http.Transport
+	build func(profile transportProfile, streaming bool) (*http.Transport, *http2.Transport)
+	mu    sync.RWMutex
+	cache map[transportKey]transportEntry
 }
 
-func newProxyTransportCache(streamBase, nonStreamBase *http.Transport, streamH2, nonStreamH2 *http2.Transport) *proxyTransportCache {
+func newProxyTransportCache(build func(profile transportProfile, streaming bool) (*http.Transport, *http2.Transport)) *proxyTransportCache {
 	return &proxyTransportCache{
-		streamBase:    streamBase,
-		nonStreamBase: nonStreamBase,
-		streamH2:      streamH2,
-		nonStreamH2:   nonStreamH2,
-		cache:         make(map[transportKey]*http.Transport),
+		build: build,
+		cache: make(map[transportKey]transportEntry),
 	}
 }
 
-func (c *proxyTransportCache) base(streaming bool) *http.Transport {
-	if streaming {
-		return c.streamBase
-	}
-	return c.nonStreamBase
-}
-
-// get returns an http.Transport configured for the given proxy URL and
-// streaming flag.
-//   - "" (empty) → ProxyFromEnvironment (default behavior, uses base transport)
-//   - "direct"   → no proxy; connect directly
-//   - URL string → use that URL as the proxy (e.g. "http://proxy:8080")
-//
-// The streaming flag selects between the streaming and non-streaming bases,
-// which differ only in ResponseHeaderTimeout.
-func (c *proxyTransportCache) get(proxyURL string, streaming bool) *http.Transport {
-	base := c.base(streaming)
-	if proxyURL == "" {
-		return base
-	}
-
-	key := transportKey{proxy: proxyURL, streaming: streaming}
+// entry returns the cached transport for the key, building it on first use.
+func (c *proxyTransportCache) entry(profile transportProfile, streaming bool) transportEntry {
+	key := transportKey{profile: profile, streaming: streaming}
 	c.mu.RLock()
-	t, ok := c.cache[key]
+	e, ok := c.cache[key]
 	c.mu.RUnlock()
 	if ok {
-		return t
+		return e
 	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	// Double-check after acquiring write lock.
-	if t, ok = c.cache[key]; ok {
-		return t
+	if e, ok = c.cache[key]; ok {
+		return e
 	}
 
-	cloned := base.Clone()
-	applyProxyConfig(cloned, proxyURL)
-	c.cache[key] = cloned
-	return cloned
+	t1, h2 := c.build(profile, streaming)
+	e = transportEntry{t1: t1, h2: h2}
+	c.cache[key] = e
+	return e
+}
+
+// get returns an http.Transport configured for the given connection profile and
+// streaming flag.
+func (c *proxyTransportCache) get(profile transportProfile, streaming bool) *http.Transport {
+	return c.entry(profile, streaming).t1
 }
 
 // applyProxyConfig sets t.Proxy per the proxyURL semantics shared by the
@@ -107,17 +107,13 @@ func applyProxyConfig(t *http.Transport, proxyURL string) {
 }
 
 // closeIdle drops the idle connections of the transport variant selected by
-// (proxyURL, streaming), including the h2 pool the variant shares with its base.
-// Used to evict a connection that just produced a header timeout; connections
-// still carrying an active stream survive and are retired by the quarantine's
-// req.Close instead.
-func (c *proxyTransportCache) closeIdle(proxyURL string, streaming bool) {
-	c.get(proxyURL, streaming).CloseIdleConnections()
-	h2 := c.nonStreamH2
-	if streaming {
-		h2 = c.streamH2
-	}
-	if h2 != nil {
-		h2.CloseIdleConnections()
+// (profile, streaming), including its h2 pool. Used to evict a connection that
+// just produced a header timeout; connections still carrying an active stream
+// survive and are retired by the quarantine's req.Close instead.
+func (c *proxyTransportCache) closeIdle(profile transportProfile, streaming bool) {
+	e := c.entry(profile, streaming)
+	e.t1.CloseIdleConnections()
+	if e.h2 != nil {
+		e.h2.CloseIdleConnections()
 	}
 }

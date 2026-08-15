@@ -21,11 +21,18 @@ type gatewayCandidateSidecar struct {
 	Credentials             string
 	SendResolver            int32
 	ProxyURL                string
+	InsecureTLS             bool
 	EndpointPath            string
 	EndpointType            int32
 	UpstreamFormat          llmbridge.Format
 	Annotations             map[string]string
 	SupportsNativeWebSearch bool
+}
+
+// transport is the connection-level profile the candidate's upstream requests
+// must use — proxy and TLS verification policy both come from the provider row.
+func (s gatewayCandidateSidecar) transport() transportProfile {
+	return transportProfile{ProxyURL: s.ProxyURL, InsecureTLS: s.InsecureTLS}
 }
 
 type candidateSet struct {
@@ -64,12 +71,13 @@ func buildPathCandidateSet(providers []providerCandidateRow, userAnno map[string
 		out.Items = append(out.Items, gatewayCandidate{
 			Candidate: cand,
 			Sidecar: gatewayCandidateSidecar{
-				Key:          key,
-				ProviderID:   row.ProviderID,
-				UpstreamURL:  row.UpstreamURL,
-				Credentials:  row.ProviderCredentials,
-				SendResolver: effectiveSendResolver(endpoint.CredentialsResolver, row.SendCredentialsResolver),
+				Key:            key,
+				ProviderID:     row.ProviderID,
+				UpstreamURL:    row.UpstreamURL,
+				Credentials:    row.ProviderCredentials,
+				SendResolver:   effectiveSendResolver(endpoint.CredentialsResolver, row.SendCredentialsResolver),
 				ProxyURL:       proxyURL,
+				InsecureTLS:    row.InsecureTLS,
 				EndpointPath:   endpoint.Path,
 				EndpointType:   endpoint.EndpointType,
 				UpstreamFormat: upstreamFormat,
@@ -114,6 +122,7 @@ func buildUnifiedCandidateSet(providers []db.GetProvidersByEndpointTypesAndModel
 				Credentials:             row.ProviderCredentials,
 				SendResolver:            effectiveSendResolver(virtualEndpoint.CredentialsResolver, row.SendCredentialsResolver),
 				ProxyURL:                proxyURL,
+				InsecureTLS:             row.InsecureTls,
 				EndpointPath:            row.EndpointPath,
 				EndpointType:            row.EndpointType,
 				UpstreamFormat:          upstreamFormatFor(row.EndpointType),
@@ -163,4 +172,3 @@ func lookupCandidateSidecar(kind gatewayRouteKind, sidecars map[string]gatewayCa
 	side, ok := sidecars[candidateKey(kind, cand)]
 	return side, ok
 }
-

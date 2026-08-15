@@ -117,7 +117,7 @@ func (s *Server) handleTestDirect(w http.ResponseWriter, r *http.Request) {
 	// request writes credentials per the resolver, forced last.
 	applyCredentials(req, provider.Credentials, sendResolver, nil)
 
-	resp, err := s.forwardRequest(req, provider.ProxyUrl.String, in.Stream)
+	resp, err := s.forwardRequest(req, transportProfile{ProxyURL: provider.ProxyUrl.String, InsecureTLS: provider.InsecureTls}, in.Stream)
 	if err != nil {
 		writeTestError(w, http.StatusBadGateway, err.Error())
 		return

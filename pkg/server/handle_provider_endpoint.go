@@ -93,7 +93,7 @@ func (s *Server) handleFetchModels(ctx context.Context, input *contract.FetchMod
 	if provider.ProxyUrl.Valid {
 		proxyURL = provider.ProxyUrl.String
 	}
-	resp, err := s.forwardRequest(req, proxyURL, true)
+	resp, err := s.forwardRequest(req, transportProfile{ProxyURL: proxyURL, InsecureTLS: provider.InsecureTls}, true)
 	if err != nil {
 		return nil, huma.Error502BadGateway("upstream request failed: " + err.Error())
 	}

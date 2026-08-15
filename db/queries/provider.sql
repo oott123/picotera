@@ -5,7 +5,7 @@ SELECT * FROM provider WHERE id = $1 LIMIT 1;
 SELECT * FROM provider ORDER BY priority DESC, id DESC;
 
 -- name: CreateProvider :one
-INSERT INTO provider (name, credentials, priority, provider_models, annotations, disabled, proxy_url, models_endpoint_url, models_endpoint_resolver, supports_native_web_search) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *;
+INSERT INTO provider (name, credentials, priority, provider_models, annotations, disabled, proxy_url, models_endpoint_url, models_endpoint_resolver, supports_native_web_search, insecure_tls) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *;
 
 -- name: UpdateProvider :one
 UPDATE provider
@@ -19,7 +19,8 @@ UPDATE provider
     proxy_url = CASE WHEN @set_proxy_url::bool THEN @proxy_url::text ELSE proxy_url END,
     models_endpoint_url = CASE WHEN @set_models_endpoint_url::bool THEN @models_endpoint_url::text ELSE models_endpoint_url END,
     models_endpoint_resolver = CASE WHEN @set_models_endpoint_resolver::bool THEN @models_endpoint_resolver::int ELSE models_endpoint_resolver END,
-    supports_native_web_search = CASE WHEN @set_supports_native_web_search::bool THEN @supports_native_web_search::bool ELSE supports_native_web_search END
+    supports_native_web_search = CASE WHEN @set_supports_native_web_search::bool THEN @supports_native_web_search::bool ELSE supports_native_web_search END,
+    insecure_tls = CASE WHEN @set_insecure_tls::bool THEN @insecure_tls::bool ELSE insecure_tls END
   WHERE id = @id::int
   RETURNING *;
 

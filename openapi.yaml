@@ -162,6 +162,8 @@ components:
           type: string
         disabled:
           type: boolean
+        insecureTls:
+          type: boolean
         modelsEndpointResolver:
           enum:
             - unknown
@@ -195,6 +197,7 @@ components:
         - annotations
         - disabled
         - supportsNativeWebSearch
+        - insecureTls
       type: object
     DeleteApiKeyRequestBody:
       additionalProperties: false
@@ -1356,6 +1359,8 @@ components:
         id:
           format: int32
           type: integer
+        insecureTls:
+          type: boolean
         modelsEndpointResolver:
           enum:
             - unknown
@@ -1390,6 +1395,7 @@ components:
         - annotations
         - disabled
         - supportsNativeWebSearch
+        - insecureTls
       type: object
     RequestLiveView:
       additionalProperties: false
@@ -1712,6 +1718,8 @@ components:
         id:
           format: int32
           type: integer
+        insecureTls:
+          type: boolean
         modelsEndpointResolver:
           enum:
             - unknown
@@ -1745,6 +1753,7 @@ components:
         - annotations
         - disabled
         - supportsNativeWebSearch
+        - insecureTls
       type: object
     UpsertUserSettingRequestBody:
       additionalProperties: false

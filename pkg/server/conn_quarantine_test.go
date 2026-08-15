@@ -13,6 +13,8 @@ import (
 
 	"picotera/pkg/configx"
 
+	"golang.org/x/net/http2"
+
 	"github.com/sirupsen/logrus"
 	"github.com/sirupsen/logrus/hooks/test"
 )
@@ -56,38 +58,41 @@ func newTestQuarantine() (*connQuarantine, *time.Time) {
 func TestConnQuarantineMarkAndActive(t *testing.T) {
 	q, _ := newTestQuarantine()
 
-	if q.active("", true, "api.example.com") {
+	if q.active(transportProfile{}, true, "api.example.com") {
 		t.Fatal("fresh quarantine should not be active")
 	}
 
-	q.mark("", true, "api.example.com")
-	if !q.active("", true, "api.example.com") {
+	q.mark(transportProfile{}, true, "api.example.com")
+	if !q.active(transportProfile{}, true, "api.example.com") {
 		t.Fatal("marked key should be active")
 	}
 
 	// Different host / proxy / streaming flag are separate pools.
-	if q.active("", true, "other.example.com") {
+	if q.active(transportProfile{}, true, "other.example.com") {
 		t.Error("different host should not be quarantined")
 	}
-	if q.active("http://proxy:8080", true, "api.example.com") {
+	if q.active(transportProfile{ProxyURL: "http://proxy:8080"}, true, "api.example.com") {
 		t.Error("different proxy should not be quarantined")
 	}
-	if q.active("", false, "api.example.com") {
+	if q.active(transportProfile{InsecureTLS: true}, true, "api.example.com") {
+		t.Error("different TLS policy should not be quarantined")
+	}
+	if q.active(transportProfile{}, false, "api.example.com") {
 		t.Error("different streaming flag should not be quarantined")
 	}
 }
 
 func TestConnQuarantineExpiry(t *testing.T) {
 	q, now := newTestQuarantine()
-	q.mark("", false, "api.example.com")
+	q.mark(transportProfile{}, false, "api.example.com")
 
 	*now = now.Add(connQuarantineTTL - time.Second)
-	if !q.active("", false, "api.example.com") {
+	if !q.active(transportProfile{}, false, "api.example.com") {
 		t.Fatal("should still be active before TTL")
 	}
 
 	*now = now.Add(2 * time.Second) // past TTL
-	if q.active("", false, "api.example.com") {
+	if q.active(transportProfile{}, false, "api.example.com") {
 		t.Fatal("should have expired")
 	}
 	q.mu.Lock()
@@ -100,10 +105,10 @@ func TestConnQuarantineExpiry(t *testing.T) {
 
 func TestConnQuarantineMarkSweepsExpired(t *testing.T) {
 	q, now := newTestQuarantine()
-	q.mark("", false, "stale.example.com")
+	q.mark(transportProfile{}, false, "stale.example.com")
 
 	*now = now.Add(connQuarantineTTL + time.Second)
-	q.mark("", false, "fresh.example.com")
+	q.mark(transportProfile{}, false, "fresh.example.com")
 
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -120,11 +125,13 @@ func TestConnQuarantineMarkSweepsExpired(t *testing.T) {
 func newForwardTestServer(t *testing.T) *Server {
 	t.Helper()
 	config := &configx.Config{}
-	streamBase, streamH2 := newGatewayTransport(config, 5*time.Second)
-	nonStreamBase, nonStreamH2 := newGatewayTransport(config, 5*time.Second)
 	return &Server{
-		config:         config,
-		proxyCache:     newProxyTransportCache(streamBase, nonStreamBase, streamH2, nonStreamH2),
+		config: config,
+		proxyCache: newProxyTransportCache(func(profile transportProfile, streaming bool) (*http.Transport, *http2.Transport) {
+			t, h2 := newGatewayTransport(config, 5*time.Second, profile.InsecureTLS)
+			applyProxyConfig(t, profile.ProxyURL)
+			return t, h2
+		}),
 		connQuarantine: newConnQuarantine(),
 	}
 }
@@ -141,7 +148,7 @@ func TestForwardRequestQuarantineClosesConnection(t *testing.T) {
 
 	t.Run("not quarantined", func(t *testing.T) {
 		s := newForwardTestServer(t)
-		resp, err := s.forwardRequest(mustRequest(t, upstream.URL), "direct", false)
+		resp, err := s.forwardRequest(mustRequest(t, upstream.URL), transportProfile{ProxyURL: "direct"}, false)
 		if err != nil {
 			t.Fatalf("forwardRequest: %v", err)
 		}
@@ -153,8 +160,8 @@ func TestForwardRequestQuarantineClosesConnection(t *testing.T) {
 
 	t.Run("quarantined", func(t *testing.T) {
 		s := newForwardTestServer(t)
-		s.connQuarantine.mark("direct", false, host)
-		resp, err := s.forwardRequest(mustRequest(t, upstream.URL), "direct", false)
+		s.connQuarantine.mark(transportProfile{ProxyURL: "direct"}, false, host)
+		resp, err := s.forwardRequest(mustRequest(t, upstream.URL), transportProfile{ProxyURL: "direct"}, false)
 		if err != nil {
 			t.Fatalf("forwardRequest: %v", err)
 		}
@@ -178,21 +185,24 @@ func TestForwardRequestQuarantinesOnHeaderTimeout(t *testing.T) {
 	}()
 
 	config := &configx.Config{}
-	base, h2 := newGatewayTransport(config, 50*time.Millisecond)
 	s := &Server{
-		config:         config,
-		proxyCache:     newProxyTransportCache(base, base, h2, h2),
+		config: config,
+		proxyCache: newProxyTransportCache(func(profile transportProfile, streaming bool) (*http.Transport, *http2.Transport) {
+			t, h2 := newGatewayTransport(config, 50*time.Millisecond, profile.InsecureTLS)
+			applyProxyConfig(t, profile.ProxyURL)
+			return t, h2
+		}),
 		connQuarantine: newConnQuarantine(),
 	}
 
-	_, err := s.forwardRequest(mustRequest(t, upstream.URL), "direct", true)
+	_, err := s.forwardRequest(mustRequest(t, upstream.URL), transportProfile{ProxyURL: "direct"}, true)
 	if err == nil {
 		t.Fatal("expected a header timeout")
 	}
 	if !isAwaitHeadersTimeout(err) {
 		t.Fatalf("expected an await-headers timeout, got %v", err)
 	}
-	if !s.connQuarantine.active("direct", true, mustHost(t, upstream.URL)) {
+	if !s.connQuarantine.active(transportProfile{ProxyURL: "direct"}, true, mustHost(t, upstream.URL)) {
 		t.Fatal("header timeout should quarantine the host")
 	}
 }
@@ -207,7 +217,7 @@ func TestForwardRequestLogsConnectionIdentity(t *testing.T) {
 	defer hook.Reset()
 
 	s := newForwardTestServer(t)
-	resp, err := s.forwardRequest(mustRequest(t, upstream.URL), "direct", false)
+	resp, err := s.forwardRequest(mustRequest(t, upstream.URL), transportProfile{ProxyURL: "direct"}, false)
 	if err != nil {
 		t.Fatalf("forwardRequest: %v", err)
 	}

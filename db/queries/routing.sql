@@ -39,6 +39,7 @@ SELECT
   pe.upstream_url,
   pe.credentials_resolver AS send_credentials_resolver,
   p.proxy_url,
+  p.insecure_tls,
   p.annotations AS provider_annotations,
   m.annotations AS model_annotations
 FROM provider AS p
@@ -79,6 +80,7 @@ SELECT
   pe.upstream_url,
   pe.credentials_resolver AS send_credentials_resolver,
   p.proxy_url,
+  p.insecure_tls,
   p.annotations AS provider_annotations,
   m.annotations AS model_annotations,
   p.supports_native_web_search
@@ -118,6 +120,7 @@ SELECT
   pe.upstream_url,
   pe.credentials_resolver AS send_credentials_resolver,
   p.proxy_url,
+  p.insecure_tls,
   p.annotations AS provider_annotations,
   '{}'::jsonb AS model_annotations
 FROM provider AS p

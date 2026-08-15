@@ -83,6 +83,7 @@ func (s *Server) handleCreateProvider(ctx context.Context, input *contract.Creat
 		ModelsEndpointUrl:       input.Body.ModelsEndpointUrl,
 		ModelsEndpointResolver:  contract.ToCredentialsResolver(input.Body.ModelsEndpointResolver),
 		SupportsNativeWebSearch: input.Body.SupportsNativeWebSearch,
+		InsecureTls:             input.Body.InsecureTls,
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to create provider", err)
@@ -131,6 +132,7 @@ func (s *Server) handleUpsertProvider(ctx context.Context, input *contract.Upser
 			ModelsEndpointUrl:       input.Body.ModelsEndpointUrl,
 			ModelsEndpointResolver:  contract.ToCredentialsResolver(input.Body.ModelsEndpointResolver),
 			SupportsNativeWebSearch: input.Body.SupportsNativeWebSearch,
+			InsecureTls:             input.Body.InsecureTls,
 		})
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to create provider", err)
@@ -164,6 +166,8 @@ func (s *Server) handleUpsertProvider(ctx context.Context, input *contract.Upser
 		ModelsEndpointResolver:     contract.ToCredentialsResolver(input.Body.ModelsEndpointResolver),
 		SetSupportsNativeWebSearch: true,
 		SupportsNativeWebSearch:    input.Body.SupportsNativeWebSearch,
+		SetInsecureTls:             true,
+		InsecureTls:                input.Body.InsecureTls,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

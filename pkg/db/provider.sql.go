@@ -12,7 +12,7 @@ import (
 )
 
 const createProvider = `-- name: CreateProvider :one
-INSERT INTO provider (name, credentials, priority, provider_models, annotations, disabled, proxy_url, models_endpoint_url, models_endpoint_resolver, supports_native_web_search) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id, name, credentials, priority, provider_models, annotations, disabled, proxy_url, models_endpoint_url, models_endpoint_resolver, supports_native_web_search
+INSERT INTO provider (name, credentials, priority, provider_models, annotations, disabled, proxy_url, models_endpoint_url, models_endpoint_resolver, supports_native_web_search, insecure_tls) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id, name, credentials, priority, provider_models, annotations, disabled, proxy_url, models_endpoint_url, models_endpoint_resolver, supports_native_web_search, insecure_tls
 `
 
 type CreateProviderParams struct {
@@ -26,6 +26,7 @@ type CreateProviderParams struct {
 	ModelsEndpointUrl       string      `json:"modelsEndpointUrl"`
 	ModelsEndpointResolver  int32       `json:"modelsEndpointResolver"`
 	SupportsNativeWebSearch bool        `json:"supportsNativeWebSearch"`
+	InsecureTls             bool        `json:"insecureTls"`
 }
 
 func (q *Queries) CreateProvider(ctx context.Context, arg CreateProviderParams) (Provider, error) {
@@ -40,6 +41,7 @@ func (q *Queries) CreateProvider(ctx context.Context, arg CreateProviderParams) 
 		arg.ModelsEndpointUrl,
 		arg.ModelsEndpointResolver,
 		arg.SupportsNativeWebSearch,
+		arg.InsecureTls,
 	)
 	var i Provider
 	err := row.Scan(
@@ -54,6 +56,7 @@ func (q *Queries) CreateProvider(ctx context.Context, arg CreateProviderParams) 
 		&i.ModelsEndpointUrl,
 		&i.ModelsEndpointResolver,
 		&i.SupportsNativeWebSearch,
+		&i.InsecureTls,
 	)
 	return i, err
 }
@@ -68,7 +71,7 @@ func (q *Queries) DeleteProvider(ctx context.Context, id int32) error {
 }
 
 const getProviderByID = `-- name: GetProviderByID :one
-SELECT id, name, credentials, priority, provider_models, annotations, disabled, proxy_url, models_endpoint_url, models_endpoint_resolver, supports_native_web_search FROM provider WHERE id = $1 LIMIT 1
+SELECT id, name, credentials, priority, provider_models, annotations, disabled, proxy_url, models_endpoint_url, models_endpoint_resolver, supports_native_web_search, insecure_tls FROM provider WHERE id = $1 LIMIT 1
 `
 
 func (q *Queries) GetProviderByID(ctx context.Context, id int32) (Provider, error) {
@@ -86,12 +89,13 @@ func (q *Queries) GetProviderByID(ctx context.Context, id int32) (Provider, erro
 		&i.ModelsEndpointUrl,
 		&i.ModelsEndpointResolver,
 		&i.SupportsNativeWebSearch,
+		&i.InsecureTls,
 	)
 	return i, err
 }
 
 const getProviders = `-- name: GetProviders :many
-SELECT id, name, credentials, priority, provider_models, annotations, disabled, proxy_url, models_endpoint_url, models_endpoint_resolver, supports_native_web_search FROM provider ORDER BY priority DESC, id DESC
+SELECT id, name, credentials, priority, provider_models, annotations, disabled, proxy_url, models_endpoint_url, models_endpoint_resolver, supports_native_web_search, insecure_tls FROM provider ORDER BY priority DESC, id DESC
 `
 
 func (q *Queries) GetProviders(ctx context.Context) ([]Provider, error) {
@@ -115,6 +119,7 @@ func (q *Queries) GetProviders(ctx context.Context) ([]Provider, error) {
 			&i.ModelsEndpointUrl,
 			&i.ModelsEndpointResolver,
 			&i.SupportsNativeWebSearch,
+			&i.InsecureTls,
 		); err != nil {
 			return nil, err
 		}
@@ -160,9 +165,10 @@ UPDATE provider
     proxy_url = CASE WHEN $13::bool THEN $14::text ELSE proxy_url END,
     models_endpoint_url = CASE WHEN $15::bool THEN $16::text ELSE models_endpoint_url END,
     models_endpoint_resolver = CASE WHEN $17::bool THEN $18::int ELSE models_endpoint_resolver END,
-    supports_native_web_search = CASE WHEN $19::bool THEN $20::bool ELSE supports_native_web_search END
-  WHERE id = $21::int
-  RETURNING id, name, credentials, priority, provider_models, annotations, disabled, proxy_url, models_endpoint_url, models_endpoint_resolver, supports_native_web_search
+    supports_native_web_search = CASE WHEN $19::bool THEN $20::bool ELSE supports_native_web_search END,
+    insecure_tls = CASE WHEN $21::bool THEN $22::bool ELSE insecure_tls END
+  WHERE id = $23::int
+  RETURNING id, name, credentials, priority, provider_models, annotations, disabled, proxy_url, models_endpoint_url, models_endpoint_resolver, supports_native_web_search, insecure_tls
 `
 
 type UpdateProviderParams struct {
@@ -186,6 +192,8 @@ type UpdateProviderParams struct {
 	ModelsEndpointResolver     int32  `json:"modelsEndpointResolver"`
 	SetSupportsNativeWebSearch bool   `json:"setSupportsNativeWebSearch"`
 	SupportsNativeWebSearch    bool   `json:"supportsNativeWebSearch"`
+	SetInsecureTls             bool   `json:"setInsecureTls"`
+	InsecureTls                bool   `json:"insecureTls"`
 	ID                         int32  `json:"id"`
 }
 
@@ -211,6 +219,8 @@ func (q *Queries) UpdateProvider(ctx context.Context, arg UpdateProviderParams) 
 		arg.ModelsEndpointResolver,
 		arg.SetSupportsNativeWebSearch,
 		arg.SupportsNativeWebSearch,
+		arg.SetInsecureTls,
+		arg.InsecureTls,
 		arg.ID,
 	)
 	var i Provider
@@ -226,6 +236,7 @@ func (q *Queries) UpdateProvider(ctx context.Context, arg UpdateProviderParams) 
 		&i.ModelsEndpointUrl,
 		&i.ModelsEndpointResolver,
 		&i.SupportsNativeWebSearch,
+		&i.InsecureTls,
 	)
 	return i, err
 }

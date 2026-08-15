@@ -27,6 +27,7 @@ const form = ref({
   annotations: { ...props.provider?.annotations } as Record<string, string>,
   disabled: props.provider?.disabled ?? false,
   proxyUrl: props.provider?.proxyUrl ?? '',
+  insecureTls: props.provider?.insecureTls ?? false,
   modelsEndpointUrl: props.provider?.modelsEndpointUrl ?? '',
   modelsEndpointResolver: props.provider?.modelsEndpointResolver ?? 'followRequest',
   supportsNativeWebSearch: props.provider?.supportsNativeWebSearch ?? false,
@@ -50,6 +51,7 @@ async function submit() {
     annotations: form.value.annotations,
     disabled: form.value.disabled,
     ...(form.value.proxyUrl ? { proxyUrl: form.value.proxyUrl } : {}),
+    insecureTls: form.value.insecureTls,
     modelsEndpointUrl: form.value.modelsEndpointUrl,
     modelsEndpointResolver: form.value.modelsEndpointResolver,
     supportsNativeWebSearch: form.value.supportsNativeWebSearch,
@@ -92,6 +94,12 @@ async function submit() {
       </Field>
       <Field label="代理 URL">
         <Input v-model="form.proxyUrl" placeholder="留空使用环境代理，填 direct 禁用代理" />
+      </Field>
+      <Field label="TLS" as="div">
+        <label class="inline-flex items-center gap-2 text-sm cursor-pointer">
+          <input v-model="form.insecureTls" type="checkbox" class="cursor-pointer" />
+          <span>不校验上游 HTTPS 证书（仅用于自签名证书的私有部署）</span>
+        </label>
       </Field>
       <Field label="模型列表 URL">
         <Input v-model="form.modelsEndpointUrl" placeholder="https://api.openai.com/v1/models" />

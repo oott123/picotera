@@ -39,7 +39,6 @@ type Server struct {
 	mgmtRouter                chi.Router
 	api                       huma.API
 	config                    *configx.Config
-	httpClient                *http.Client
 	proxyCache                *proxyTransportCache
 	connQuarantine            *connQuarantine
 	artifacts                 artifacts.Sink
@@ -58,7 +57,7 @@ type Server struct {
 // newGatewayTransport builds an HTTP transport for upstream gateway requests
 // with its own http2.ConfigureTransports call so that responseHeaderTimeout is
 // bound to this exact transport (the HTTP/2 transport reads it from its bound
-// *http.Transport — see the nonStreamBase comment in NewServer). HTTP/2
+// *http.Transport — see the transport-cache build closure in NewServer). HTTP/2
 // keepalive PINGs are enabled so dead connections — especially silently dropped
 // CONNECT proxy tunnels — are detected and evicted instead of being reused,
 // which otherwise surfaces as "http2: timeout awaiting response headers".
@@ -66,16 +65,19 @@ type Server struct {
 // The *http2.Transport handle is returned alongside the *http.Transport (nil if
 // ConfigureTransports failed, or if HTTP/2 is disabled): std's
 // CloseIdleConnections only reaches the h2 pool through the unexported altProto
-// map, which Transport.Clone does not copy, so evicting idle h2 connections (see
-// proxyTransportCache.closeIdle) requires calling CloseIdleConnections on this
-// handle directly.
+// map, so evicting idle h2 connections (see proxyTransportCache.closeIdle)
+// requires calling CloseIdleConnections on this handle directly.
+//
+// insecureTLS skips upstream certificate verification for every connection this
+// transport makes (provider.insecure_tls). Because TLS is negotiated by the
+// *http.Transport and only then handed to h2 via TLSNextProto["h2"], setting it
+// here covers h2 upstreams too.
 //
 // With config.GatewayDisableHTTP2 the transport never gets an h2 layer at all:
 // a non-nil but empty TLSNextProto is std's documented way to turn off automatic
-// HTTP/2, and Transport.Clone copies a non-nil TLSNextProto, so every proxy
-// variant cloned off this base stays HTTP/1.1 too. The h2 keepalive PINGs are
-// configured on the h2 handle, so they are simply absent in that mode.
-func newGatewayTransport(config *configx.Config, responseHeaderTimeout time.Duration) (*http.Transport, *http2.Transport) {
+// HTTP/2. The h2 keepalive PINGs are configured on the h2 handle, so they are
+// simply absent in that mode.
+func newGatewayTransport(config *configx.Config, responseHeaderTimeout time.Duration, insecureTLS bool) (*http.Transport, *http2.Transport) {
 	t := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
@@ -93,8 +95,15 @@ func newGatewayTransport(config *configx.Config, responseHeaderTimeout time.Dura
 		ExpectContinueTimeout: config.GatewayExpectContinueTimeout,
 		ResponseHeaderTimeout: responseHeaderTimeout,
 		// Emergency stop-gap: one connection per request (h2 singleUse, h1 no
-		// keepalive), inherited by every proxy variant via Clone.
+		// keepalive), applied to every transport variant.
 		DisableKeepAlives: config.GatewayDisableKeepAlives,
+	}
+	// MUST be set before http2.ConfigureTransports: that call appends "h2" and
+	// "http/1.1" to t.TLSClientConfig.NextProtos, so replacing the config
+	// afterwards would leave an empty ALPN list and silently downgrade every
+	// HTTPS upstream to HTTP/1.1.
+	if insecureTLS {
+		t.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // opt-in per provider
 	}
 	if config.GatewayDisableHTTP2 {
 		t.ForceAttemptHTTP2 = false
@@ -145,24 +154,30 @@ func NewServer(ctx context.Context) (*Server, error) {
 
 	logx.WithContext(ctx).Info("connected to database")
 
-	baseTransport, streamH2 := newGatewayTransport(config, config.GatewayResponseHeaderTimeout)
-	httpClient := &http.Client{Transport: baseTransport}
-	// Non-streaming requests get a more lenient header timeout: the upstream
-	// may buffer the whole response and return headers late, so raise the header
-	// timeout to the global read timeout (a hard upper bound, not unlimited).
+	// Every cache key builds its own transport through its own
+	// http2.ConfigureTransports call. That is required, not merely tidy: under
+	// HTTP/2 the response-header timeout is read from the *http.Transport bound
+	// to the *http2.Transport at ConfigureTransports time (see x/net/http2
+	// responseHeaderTimeout -> cc.t.t1.ResponseHeaderTimeout), and a Clone only
+	// shallow-copies TLSNextProto, whose "h2" entry would still point at the
+	// original's http2.Transport — so the clone's timeout (and its TLS policy)
+	// would be ignored for h2 upstreams while its connections landed in the
+	// original's pool. Both ResponseHeaderTimeout and TLSClientConfig are
+	// connection-level fields that cannot be overridden per request, hence they
+	// are part of the cache key instead.
 	//
-	// This MUST be a transport built by its own http2.ConfigureTransports call,
-	// not baseTransport.Clone(): under HTTP/2 the response-header timeout is read
-	// from the *http.Transport bound to the *http2.Transport at ConfigureTransports
-	// time (see x/net/http2 responseHeaderTimeout -> cc.t.t1.ResponseHeaderTimeout).
-	// Clone() only shallow-copies TLSNextProto, whose "h2" entry still points at
-	// baseTransport's http2.Transport — so a cloned transport's raised
-	// ResponseHeaderTimeout is ignored for h2 upstreams and they'd still trip the
-	// streaming header timeout. ResponseHeaderTimeout is a connection-level transport
-	// field and cannot be overridden per request, so the cache keys on the
-	// streaming flag and keeps both bases.
-	nonStreamBase, nonStreamH2 := newGatewayTransport(config, config.GatewayReadTimeout)
-	proxyCache := newProxyTransportCache(baseTransport, nonStreamBase, streamH2, nonStreamH2)
+	// Non-streaming requests get a more lenient header timeout: the upstream may
+	// buffer the whole response and return headers late, so raise the header
+	// timeout to the global read timeout (a hard upper bound, not unlimited).
+	proxyCache := newProxyTransportCache(func(profile transportProfile, streaming bool) (*http.Transport, *http2.Transport) {
+		responseHeaderTimeout := config.GatewayResponseHeaderTimeout
+		if !streaming {
+			responseHeaderTimeout = config.GatewayReadTimeout
+		}
+		t, h2 := newGatewayTransport(config, responseHeaderTimeout, profile.InsecureTLS)
+		applyProxyConfig(t, profile.ProxyURL)
+		return t, h2
+	})
 
 	sink, err := artifacts.NewSink(config.S3, logx.WithContext(ctx))
 	if err != nil {
@@ -222,7 +237,6 @@ func NewServer(ctx context.Context) (*Server, error) {
 		router:                    router,
 		mgmtRouter:                mgmtRouter,
 		api:                       api,
-		httpClient:                httpClient,
 		proxyCache:                proxyCache,
 		connQuarantine:            newConnQuarantine(),
 		artifacts:                 sink,

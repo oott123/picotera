@@ -79,6 +79,7 @@ type Provider struct {
 	ModelsEndpointUrl       string      `json:"modelsEndpointUrl"`
 	ModelsEndpointResolver  int32       `json:"modelsEndpointResolver"`
 	SupportsNativeWebSearch bool        `json:"supportsNativeWebSearch"`
+	InsecureTls             bool        `json:"insecureTls"`
 }
 
 type ProviderEndpoint struct {

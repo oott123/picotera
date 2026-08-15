@@ -11,10 +11,11 @@ import (
 const connQuarantineTTL = 60 * time.Second
 
 // quarantineKey identifies the connection pool slice a quarantine applies to:
-// the same host reached through a different proxy or with a different streaming
-// flag uses a different transport, hence a different pool.
+// the same host reached through a different connection profile (proxy / TLS
+// verification) or with a different streaming flag uses a different transport,
+// hence a different pool.
 type quarantineKey struct {
-	proxy     string
+	profile   transportProfile
 	streaming bool
 	host      string
 }
@@ -41,7 +42,7 @@ func newConnQuarantine() *connQuarantine {
 }
 
 // mark quarantines the key for connQuarantineTTL, sweeping expired entries.
-func (q *connQuarantine) mark(proxy string, streaming bool, host string) {
+func (q *connQuarantine) mark(profile transportProfile, streaming bool, host string) {
 	now := q.now()
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -50,13 +51,13 @@ func (q *connQuarantine) mark(proxy string, streaming bool, host string) {
 			delete(q.until, k)
 		}
 	}
-	q.until[quarantineKey{proxy: proxy, streaming: streaming, host: host}] = now.Add(connQuarantineTTL)
+	q.until[quarantineKey{profile: profile, streaming: streaming, host: host}] = now.Add(connQuarantineTTL)
 }
 
 // active reports whether the key is currently quarantined, dropping the entry
 // if it has expired.
-func (q *connQuarantine) active(proxy string, streaming bool, host string) bool {
-	key := quarantineKey{proxy: proxy, streaming: streaming, host: host}
+func (q *connQuarantine) active(profile transportProfile, streaming bool, host string) bool {
+	key := quarantineKey{profile: profile, streaming: streaming, host: host}
 	now := q.now()
 	q.mu.Lock()
 	defer q.mu.Unlock()
