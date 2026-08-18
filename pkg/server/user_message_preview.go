@@ -39,6 +39,8 @@ func extractUserMessage(body []byte, endpointType int32) (string, bool) {
 		}
 	case contract.EndpointType_ExaSearch, contract.EndpointType_CodexSearchV1Alpha:
 		return extractQueryUserMessage(body)
+	case contract.EndpointType_OpenAIEmbedding:
+		return extractEmbeddingUserMessage(body)
 	default:
 		for _, fn := range []func([]byte) (string, bool){
 			extractOpenAIChatUserMessage,
@@ -65,6 +67,33 @@ func extractQueryUserMessage(body []byte) (string, bool) {
 		return "", false
 	}
 	return q, true
+}
+
+// extractEmbeddingUserMessage pulls a preview out of an OpenAI Embeddings
+// body. `input` is either a single string or an array; for an array we take the
+// first non-empty string element, so a token-id array yields no preview.
+// Deliberately not routed through extractOpenAIResponsesUserMessage: that one
+// also accepts a string `input`, but its array branch looks for {role: "user"}
+// objects and comes up empty on an array of plain strings.
+func extractEmbeddingUserMessage(body []byte) (string, bool) {
+	root, ok := decodeJSONObject(body)
+	if !ok {
+		return "", false
+	}
+	switch input := root["input"].(type) {
+	case string:
+		if input == "" {
+			return "", false
+		}
+		return input, true
+	case []any:
+		for _, item := range input {
+			if s, ok := item.(string); ok && s != "" {
+				return s, true
+			}
+		}
+	}
+	return "", false
 }
 
 func shortenUserMessagePreview(text string) string {

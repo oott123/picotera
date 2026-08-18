@@ -63,6 +63,18 @@ func TestExtractUserMessagePreviewSupportedFormats(t *testing.T) {
 			body:         `{"contents":[{"role":"user","parts":[{"text":"stream last"}]}]}`,
 			want:         "stream last",
 		},
+		{
+			name:         "embedding string input",
+			endpointType: contract.EndpointType_OpenAIEmbedding,
+			body:         `{"model":"text-embedding-3-small","input":"embed me"}`,
+			want:         "embed me",
+		},
+		{
+			name:         "embedding array input takes first non-empty string",
+			endpointType: contract.EndpointType_OpenAIEmbedding,
+			body:         `{"model":"text-embedding-3-small","input":["","first","second"]}`,
+			want:         "first",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -112,6 +124,16 @@ func TestExtractUserMessagePreviewNoPreview(t *testing.T) {
 			name:         "gemini no text parts",
 			endpointType: contract.EndpointType_GeminiGenerateContent,
 			body:         `{"contents":[{"role":"user","parts":[{"inlineData":{"mimeType":"image/png"}}]}]}`,
+		},
+		{
+			name:         "embedding token id array",
+			endpointType: contract.EndpointType_OpenAIEmbedding,
+			body:         `{"model":"text-embedding-3-small","input":[464,3502,373]}`,
+		},
+		{
+			name:         "embedding missing input",
+			endpointType: contract.EndpointType_OpenAIEmbedding,
+			body:         `{"model":"text-embedding-3-small"}`,
 		},
 	}
 	for _, tc := range cases {

@@ -378,6 +378,7 @@ components:
             - modelList
             - codexCompact
             - codexSearchV1Alpha
+            - openaiEmbedding
             - unknown
           type: string
         name:
@@ -420,6 +421,7 @@ components:
             - modelList
             - codexCompact
             - codexSearchV1Alpha
+            - openaiEmbedding
             - unknown
           type: string
         modelPath:

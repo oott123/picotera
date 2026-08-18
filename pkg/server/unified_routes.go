@@ -30,6 +30,11 @@ var unifiedRoutes = []unifiedRoute{
 	{Path: "/api/unified/codex/responses", Name: "Unified Codex Responses", Format: llmbridge.FormatOpenAIResponses, SourceType: contract.EndpointType_OpenAIResponses},
 	{Path: "/api/unified/codex/responses/compact", Name: "Unified Codex Compact", Format: llmbridge.FormatUnknown, SourceType: contract.EndpointType_CodexCompact},
 	{Path: "/api/unified/v1/alpha/search", Name: "Unified Codex Search v1alpha", Format: llmbridge.FormatUnknown, SourceType: contract.EndpointType_CodexSearchV1Alpha},
+	// OpenAI Embeddings: llmbridge has no embedding format (and needs none) —
+	// request and response bytes are forwarded verbatim. Non-streaming only;
+	// the body carries no `stream` field so detectStreaming is always false,
+	// and a passthrough route's candidate set ignores the flag anyway.
+	{Path: "/api/unified/v1/embeddings", Name: "Unified OpenAI Embeddings", Format: llmbridge.FormatUnknown, SourceType: contract.EndpointType_OpenAIEmbedding},
 }
 
 type unifiedRoute struct {

@@ -71,6 +71,7 @@ func TestUnifiedRoutesTable(t *testing.T) {
 		{"/api/unified/codex/responses", llmbridge.FormatOpenAIResponses, contract.EndpointType_OpenAIResponses, false},
 		{"/api/unified/codex/responses/compact", llmbridge.FormatUnknown, contract.EndpointType_CodexCompact, true},
 		{"/api/unified/v1/alpha/search", llmbridge.FormatUnknown, contract.EndpointType_CodexSearchV1Alpha, true},
+		{"/api/unified/v1/embeddings", llmbridge.FormatUnknown, contract.EndpointType_OpenAIEmbedding, true},
 	}
 	if len(cases) != len(unifiedRoutes) {
 		t.Fatalf("route table has %d entries, test covers %d", len(unifiedRoutes), len(cases))
@@ -223,14 +224,15 @@ func TestCandidateEndpointTypes(t *testing.T) {
 	}
 }
 
-// TestCandidateEndpointTypesPassthrough pins that the Codex passthrough routes
-// only ever consider an upstream of their own endpoint type — there is no
-// converter, so nothing else can serve them — and that the stream flag has no
-// say in it (there is no Gemini variant to choose).
+// TestCandidateEndpointTypesPassthrough pins that the passthrough routes only
+// ever consider an upstream of their own endpoint type — there is no converter,
+// so nothing else can serve them — and that the stream flag has no say in it
+// (there is no Gemini variant to choose).
 func TestCandidateEndpointTypesPassthrough(t *testing.T) {
 	cases := map[string]int32{
 		"/api/unified/codex/responses/compact": contract.EndpointType_CodexCompact,
 		"/api/unified/v1/alpha/search":         contract.EndpointType_CodexSearchV1Alpha,
+		"/api/unified/v1/embeddings":           contract.EndpointType_OpenAIEmbedding,
 	}
 	for path, wantType := range cases {
 		route := unifiedRouteByPath(t, path)
@@ -261,19 +263,27 @@ func TestExtractUnifiedModel_BodyFormats(t *testing.T) {
 	}
 }
 
-// TestExtractUnifiedModel_Passthrough pins that the Codex passthrough routes
-// route by the body's `model` like every non-Gemini route — that is what makes
+// TestExtractUnifiedModel_Passthrough pins that the passthrough routes route by
+// the body's `model` like every non-Gemini route — that is what makes
 // rewriteModel and the beforeRequest upstreamModel override work on them.
 func TestExtractUnifiedModel_Passthrough(t *testing.T) {
-	for _, path := range []string{"/api/unified/codex/responses/compact", "/api/unified/v1/alpha/search"} {
+	cases := map[string]struct {
+		body      string
+		wantModel string
+	}{
+		"/api/unified/codex/responses/compact": {`{"model":"gpt-5-codex","query":"hi"}`, "gpt-5-codex"},
+		"/api/unified/v1/alpha/search":         {`{"model":"gpt-5-codex","query":"hi"}`, "gpt-5-codex"},
+		"/api/unified/v1/embeddings":           {`{"model":"text-embedding-3-small","input":"hi"}`, "text-embedding-3-small"},
+	}
+	for path, tc := range cases {
 		route := unifiedRouteByPath(t, path)
 		r := httptest.NewRequest("POST", path, nil)
-		model, err := extractUnifiedModel(route, r, []byte(`{"model":"gpt-5-codex","query":"hi"}`))
+		model, err := extractUnifiedModel(route, r, []byte(tc.body))
 		if err != nil {
 			t.Fatalf("%s: %v", path, err)
 		}
-		if model != "gpt-5-codex" {
-			t.Errorf("%s: got model=%q, want gpt-5-codex", path, model)
+		if model != tc.wantModel {
+			t.Errorf("%s: got model=%q, want %s", path, model, tc.wantModel)
 		}
 
 		// Missing / empty model is a 400, not a fallback.
@@ -375,7 +385,7 @@ func TestSetUnifiedModel(t *testing.T) {
 // reaches the wire on the passthrough routes: the body is forwarded verbatim
 // apart from this one field.
 func TestSetUnifiedModelPassthrough(t *testing.T) {
-	for _, path := range []string{"/api/unified/codex/responses/compact", "/api/unified/v1/alpha/search"} {
+	for _, path := range []string{"/api/unified/codex/responses/compact", "/api/unified/v1/alpha/search", "/api/unified/v1/embeddings"} {
 		out, err := setUnifiedModel(unifiedRouteByPath(t, path), []byte(`{"model":"old","query":"hi"}`), "upstream-model")
 		if err != nil {
 			t.Fatalf("%s: %v", path, err)

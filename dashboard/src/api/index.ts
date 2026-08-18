@@ -75,6 +75,7 @@ export const ENDPOINT_TYPES_MODEL_ROUTED: EndpointType[] = [
   'geminiStreamGenerateContent',
   'codexCompact',
   'codexSearchV1Alpha',
+  'openaiEmbedding',
 ]
 export const ENDPOINT_TYPE_LABELS: Record<EndpointType, string> = {
   general: '通用',
@@ -88,5 +89,6 @@ export const ENDPOINT_TYPE_LABELS: Record<EndpointType, string> = {
   modelList: '模型列表',
   codexCompact: 'Codex 压缩',
   codexSearchV1Alpha: 'Codex 搜索 v1alpha',
+  openaiEmbedding: 'OpenAI 特征提取',
   unknown: '未知',
 }

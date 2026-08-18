@@ -243,6 +243,44 @@ func TestResponseExtractor_JSON_OpenAI(t *testing.T) {
 	}
 }
 
+// TestResponseExtractor_JSON_OpenAIEmbedding pins that an OpenAI Embeddings
+// response needs no dedicated extraction branch: its usage shape is
+// {prompt_tokens, total_tokens}, and the existing prompt_tokens path already
+// yields the input count. total_tokens is deliberately not read — for
+// embeddings it is identical to prompt_tokens. There is no output and no first
+// token, so OutputTokens and TTFTMs stay nil, which is what lands as NULL on
+// the request row.
+func TestResponseExtractor_JSON_OpenAIEmbedding(t *testing.T) {
+	jsonData := `{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.0023,-0.0092]}],"model":"text-embedding-3-small","usage":{"prompt_tokens":8,"total_tokens":8}}`
+	inner := strings.NewReader(jsonData)
+	extractor := NewResponseExtractor(inner, "application/json", time.Now())
+
+	_, _ = io.ReadAll(extractor)
+
+	m := extractor.Metrics()
+	if m.InputTokens == nil || *m.InputTokens != 8 {
+		t.Errorf("InputTokens: got %v, want 8", m.InputTokens)
+	}
+	if m.OutputTokens != nil {
+		t.Errorf("OutputTokens should be nil (embeddings have no output), got %v", *m.OutputTokens)
+	}
+	if m.CacheReadTokens != nil {
+		t.Errorf("CacheReadTokens should be nil, got %v", *m.CacheReadTokens)
+	}
+	if m.CacheWriteTokens != nil {
+		t.Errorf("CacheWriteTokens should be nil, got %v", *m.CacheWriteTokens)
+	}
+	if m.TTFTMs != nil {
+		t.Errorf("TTFTMs should be nil for non-streaming JSON, got %v", *m.TTFTMs)
+	}
+	if m.InferredModel != "text-embedding-3-small" {
+		t.Errorf("InferredModel: got %q, want text-embedding-3-small", m.InferredModel)
+	}
+	if m.InferredModelSource != db.InferredModelSourceResponse {
+		t.Errorf("InferredModelSource: got %d, want %d", m.InferredModelSource, db.InferredModelSourceResponse)
+	}
+}
+
 func TestResponseExtractor_JSON_Anthropic(t *testing.T) {
 	jsonData := `{"id":"msg_1","type":"message","content":[{"type":"text","text":"Hi"}],"usage":{"input_tokens":300,"output_tokens":100,"cache_read_input_tokens":60,"cache_creation_input_tokens":15}}`
 	inner := strings.NewReader(jsonData)

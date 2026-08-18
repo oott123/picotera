@@ -20,8 +20,8 @@ export interface TestFields {
 
 // endpointTypeToFormat maps an endpoint's endpointType onto a TestFormat. Types
 // that the test view cannot build a body for (general, exaSearch, modelList,
-// anthropicCountTokens, codexCompact, codexSearchV1Alpha, unknown) return null
-// so the caller can disable sending.
+// anthropicCountTokens, codexCompact, codexSearchV1Alpha, openaiEmbedding,
+// unknown) return null so the caller can disable sending.
 export function endpointTypeToFormat(endpointType: EndpointView['endpointType']): TestFormat | null {
   switch (endpointType) {
     case 'anthropicMessages':

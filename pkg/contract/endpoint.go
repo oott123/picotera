@@ -29,6 +29,7 @@ const (
 	EndpointType_ModelList                   int32 = 10
 	EndpointType_CodexCompact                int32 = 11
 	EndpointType_CodexSearchV1Alpha          int32 = 12
+	EndpointType_OpenAIEmbedding             int32 = 13
 )
 
 func ToEndpointType(s string) int32 {
@@ -57,6 +58,8 @@ func ToEndpointType(s string) int32 {
 		return EndpointType_CodexCompact
 	case "codexSearchV1Alpha":
 		return EndpointType_CodexSearchV1Alpha
+	case "openaiEmbedding":
+		return EndpointType_OpenAIEmbedding
 	default:
 		return EndpointType_Unknown
 	}
@@ -88,6 +91,8 @@ func FromEndpointType(t int32) string {
 		return "codexCompact"
 	case EndpointType_CodexSearchV1Alpha:
 		return "codexSearchV1Alpha"
+	case EndpointType_OpenAIEmbedding:
+		return "openaiEmbedding"
 	default:
 		return "unknown"
 	}
@@ -136,7 +141,7 @@ type EndpointView struct {
 	Path                string `json:"path"`
 	ModelPath           string `json:"modelPath"`
 	CredentialsResolver string `json:"credentialsResolver" enum:"followRequest,bearerToken,xApiKey,searchKey,googApiKey,unknown"`
-	EndpointType        string `json:"endpointType" enum:"general,openaiChatCompletions,openaiResponses,anthropicMessages,anthropicCountTokens,geminiGenerateContent,geminiStreamGenerateContent,exaSearch,modelList,codexCompact,codexSearchV1Alpha,unknown"`
+	EndpointType        string `json:"endpointType" enum:"general,openaiChatCompletions,openaiResponses,anthropicMessages,anthropicCountTokens,geminiGenerateContent,geminiStreamGenerateContent,exaSearch,modelList,codexCompact,codexSearchV1Alpha,openaiEmbedding,unknown"`
 }
 
 func ToEndpointView(endpoint *db.Endpoint) (*EndpointView, error) {
