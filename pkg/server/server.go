@@ -391,7 +391,7 @@ func (s *Server) registerEndpoints() {
 	s.router.Group(func(r chi.Router) {
 		r.Use(corsMiddleware)
 		for _, route := range unifiedRoutes {
-			h := s.handleUnifiedGenerate(route.Format)
+			h := s.handleUnifiedGenerate(route)
 			r.Post(route.Path, h)
 			r.Options(route.Path, h)
 		}

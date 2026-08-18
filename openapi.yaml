@@ -376,6 +376,8 @@ components:
             - geminiStreamGenerateContent
             - exaSearch
             - modelList
+            - codexCompact
+            - codexSearchV1Alpha
             - unknown
           type: string
         name:
@@ -416,6 +418,8 @@ components:
             - geminiStreamGenerateContent
             - exaSearch
             - modelList
+            - codexCompact
+            - codexSearchV1Alpha
             - unknown
           type: string
         modelPath:

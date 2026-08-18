@@ -28,7 +28,8 @@ func extractUserMessage(body []byte, endpointType int32) (string, bool) {
 		if text, ok := extractAnthropicUserMessage(body); ok {
 			return text, true
 		}
-	case contract.EndpointType_OpenAIResponses:
+	case contract.EndpointType_OpenAIResponses, contract.EndpointType_CodexCompact:
+		// Codex compact bodies are Responses-shaped.
 		if text, ok := extractOpenAIResponsesUserMessage(body); ok {
 			return text, true
 		}
@@ -36,7 +37,7 @@ func extractUserMessage(body []byte, endpointType int32) (string, bool) {
 		if text, ok := extractGeminiUserMessage(body); ok {
 			return text, true
 		}
-	case contract.EndpointType_ExaSearch:
+	case contract.EndpointType_ExaSearch, contract.EndpointType_CodexSearchV1Alpha:
 		return extractQueryUserMessage(body)
 	default:
 		for _, fn := range []func([]byte) (string, bool){

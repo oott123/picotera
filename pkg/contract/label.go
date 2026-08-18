@@ -26,7 +26,7 @@ type ModelLabel struct {
 type EndpointLabel struct {
 	Path         string `json:"path"`
 	Name         string `json:"name"`
-	EndpointType string `json:"endpointType" enum:"general,openaiChatCompletions,openaiResponses,anthropicMessages,anthropicCountTokens,geminiGenerateContent,geminiStreamGenerateContent,exaSearch,modelList,unknown"`
+	EndpointType string `json:"endpointType" enum:"general,openaiChatCompletions,openaiResponses,anthropicMessages,anthropicCountTokens,geminiGenerateContent,geminiStreamGenerateContent,exaSearch,modelList,codexCompact,codexSearchV1Alpha,unknown"`
 }
 
 type ProjectLabel struct {

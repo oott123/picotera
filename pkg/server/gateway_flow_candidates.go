@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"picotera/pkg/annotations"
+	"picotera/pkg/contract"
 	"picotera/pkg/db"
 	"picotera/pkg/jsx"
 	"picotera/pkg/llmbridge"
@@ -54,6 +55,11 @@ func buildPathCandidateSet(providers []providerCandidateRow, userAnno map[string
 	// Path-route candidates all share the route's single endpoint, so the
 	// upstream format is loop-invariant.
 	upstreamFormat := upstreamFormatFor(endpoint.EndpointType)
+	// The JS-visible upstreamFormat is the endpoint type's own string rather
+	// than the bridge format's: identical for the five generation types, but
+	// meaningful ("codexCompact", "exaSearch", …) for types llmbridge has no
+	// format for, which would otherwise all read as "unknown".
+	jsUpstreamFormat := contract.FromEndpointType(endpoint.EndpointType)
 	out := candidateSet{Items: make([]gatewayCandidate, 0, len(providers)), ModelAnno: modelAnno}
 	for _, row := range providers {
 		entryAnno, _ := annotations.Decode(row.EntryAnnotations)
@@ -64,7 +70,7 @@ func buildPathCandidateSet(providers []providerCandidateRow, userAnno map[string
 		}
 		cand := jsx.CandidateView{
 			Provider:      buildJSProviderSummary(row.ProviderID, row.ProviderName, row.ProviderPriority, providerAnno),
-			ProviderModel: buildProviderModel(row.ModelName, row.EndpointPath, row.UpstreamModelName, row.EntryPriority, entryAnno, upstreamFormat.String()),
+			ProviderModel: buildProviderModel(row.ModelName, row.EndpointPath, row.UpstreamModelName, row.EntryPriority, entryAnno, jsUpstreamFormat),
 			Annotations:   merged,
 		}
 		key := fmt.Sprintf("%d", row.ProviderID)
@@ -108,8 +114,10 @@ func buildUnifiedCandidateSet(providers []db.GetProvidersByEndpointTypesAndModel
 			proxyURL = row.ProxyUrl.String
 		}
 		cand := jsx.CandidateView{
-			Provider:      buildJSProviderSummary(row.ProviderID, row.ProviderName, row.ProviderPriority, providerAnno),
-			ProviderModel: buildProviderModel(row.ModelName, row.EndpointPath, row.UpstreamModelName, row.Priority, entryAnno, upstreamFormatFor(row.EndpointType).String()),
+			Provider: buildJSProviderSummary(row.ProviderID, row.ProviderName, row.ProviderPriority, providerAnno),
+			// See buildPathCandidateSet: the JS-visible upstreamFormat is the
+			// endpoint type's string, not the bridge format's.
+			ProviderModel: buildProviderModel(row.ModelName, row.EndpointPath, row.UpstreamModelName, row.Priority, entryAnno, contract.FromEndpointType(row.EndpointType)),
 			Annotations:   merged,
 		}
 		key := fmt.Sprintf("%d|%s", row.ProviderID, row.EndpointPath)

@@ -23,26 +23,6 @@ import (
 	"github.com/tidwall/sjson"
 )
 
-// sourceEndpointType maps an llmbridge format back to the EndpointType_*
-// constant used by the contract package, so the synthetic endpoint shown to
-// JS hooks reports a consistent endpoint_type.
-func sourceEndpointType(f llmbridge.Format) int32 {
-	switch f {
-	case llmbridge.FormatAnthropicMessages:
-		return contract.EndpointType_AnthropicMessages
-	case llmbridge.FormatOpenAIChatCompletions:
-		return contract.EndpointType_OpenAIChatCompletions
-	case llmbridge.FormatOpenAIResponses:
-		return contract.EndpointType_OpenAIResponses
-	case llmbridge.FormatGeminiGenerateContent:
-		return contract.EndpointType_GeminiGenerateContent
-	case llmbridge.FormatGeminiStreamGenerateContent:
-		return contract.EndpointType_GeminiStreamGenerateContent
-	default:
-		return contract.EndpointType_Unknown
-	}
-}
-
 // upstreamFormatFor maps an endpoint_type to the bridge format. Endpoint
 // types outside the generation set (general, model list, search, ...) map to
 // FormatUnknown; for unified candidates those never appear in the type-set
@@ -65,12 +45,17 @@ func upstreamFormatFor(t int32) llmbridge.Format {
 }
 
 // candidateEndpointTypes returns the endpoint_type ids that should be
-// considered for a given (source format, stream flag) tuple. Mirrors the
-// table in api.md.
-func candidateEndpointTypes(src llmbridge.Format, streaming bool) []int32 {
+// considered for a given (route, stream flag) tuple. Mirrors the table in
+// api.md.
+func candidateEndpointTypes(route unifiedRoute, streaming bool) []int32 {
+	// Passthrough routes have no converter, so the only upstream that can
+	// serve them is one configured with the very same endpoint type.
+	if route.passthrough() {
+		return []int32{route.SourceType}
+	}
 	// Anthropic and OpenAI sources share the same set; only the Gemini pair
 	// is filtered by the stream flag.
-	switch src {
+	switch route.Format {
 	case llmbridge.FormatGeminiGenerateContent:
 		return []int32{
 			contract.EndpointType_AnthropicMessages,
@@ -98,37 +83,40 @@ func candidateEndpointTypes(src llmbridge.Format, streaming bool) []int32 {
 	}
 }
 
-// extractUnifiedModel picks the model name for the inbound request. For
-// Anthropic / OpenAI the body carries it; for Gemini it lives in the chi
-// {model} path variable. The streaming flag is no longer derived here — it
-// comes solely from detectStreaming (five rules) in resolveAndRewriteModel.
-func extractUnifiedModel(src llmbridge.Format, r *http.Request, body []byte) (string, error) {
-	switch src {
-	case llmbridge.FormatGeminiGenerateContent, llmbridge.FormatGeminiStreamGenerateContent:
+// extractUnifiedModel picks the model name for the inbound request. Only the
+// two Gemini routes take it from the chi {model} path variable; every other
+// route — including the Codex passthrough ones — carries it in the body. The
+// streaming flag is no longer derived here — it comes solely from
+// detectStreaming (five rules) in resolveAndRewriteModel.
+func extractUnifiedModel(route unifiedRoute, r *http.Request, body []byte) (string, error) {
+	if geminiRoute(route) {
 		m := chi.URLParam(r, "model")
 		if m == "" {
 			return "", &gatewayError{status: http.StatusBadRequest, message: "missing {model} path variable", code: errorx.ModelNotFound.Error()}
 		}
 		return m, nil
-	case llmbridge.FormatAnthropicMessages, llmbridge.FormatOpenAIChatCompletions, llmbridge.FormatOpenAIResponses:
-		model := gjson.GetBytes(body, "model").Str
-		if model == "" {
-			return "", &gatewayError{status: http.StatusBadRequest, message: "model is required", code: errorx.ModelNotFound.Error()}
-		}
-		return model, nil
 	}
-	return "", &gatewayError{status: http.StatusBadRequest, message: "unsupported source format", code: errorx.InvalidRequest.Error()}
+	model := gjson.GetBytes(body, "model").Str
+	if model == "" {
+		return "", &gatewayError{status: http.StatusBadRequest, message: "model is required", code: errorx.ModelNotFound.Error()}
+	}
+	return model, nil
 }
 
 // setUnifiedModel rewrites the model name carried by the source body. Gemini
 // requests carry no model field — the unified handler swaps the URL path
 // variable instead, but at this layer we just leave the body alone.
-func setUnifiedModel(src llmbridge.Format, body []byte, newModel string) ([]byte, error) {
-	switch src {
-	case llmbridge.FormatGeminiGenerateContent, llmbridge.FormatGeminiStreamGenerateContent:
+func setUnifiedModel(route unifiedRoute, body []byte, newModel string) ([]byte, error) {
+	if geminiRoute(route) {
 		return body, nil
 	}
 	return sjson.SetBytes(body, "model", newModel)
+}
+
+// geminiRoute reports whether the route's model lives in the URL rather than
+// the body — the single distinction extractUnifiedModel / setUnifiedModel make.
+func geminiRoute(route unifiedRoute) bool {
+	return route.Format == llmbridge.FormatGeminiGenerateContent || route.Format == llmbridge.FormatGeminiStreamGenerateContent
 }
 
 // chiURLParams collects path variables that the chi router matched onto r,
@@ -170,8 +158,8 @@ func unifiedUpstreamPathVars(upstreamModel string) map[string]string {
 // resolveProvidersByTypes is the unified handler's analogue of resolveProviders.
 // It runs the new sqlc query and applies the same priority sort and minimum
 // validity filter (upstream URL + credentials non-empty). srcType is the
-// inbound request's endpoint_type (from sourceEndpointType(srcFormat)) and
-// drives the per-(provider, model) dedupe — see dedupeUnifiedRows.
+// inbound request's endpoint_type (the route's SourceType) and drives the
+// per-(provider, model) dedupe — see dedupeUnifiedRows.
 func (s *Server) resolveProvidersByTypes(ctx context.Context, model string, types []int32, srcType int32) ([]db.GetProvidersByEndpointTypesAndModelRow, error) {
 	rows, err := s.queries.GetProvidersByEndpointTypesAndModel(ctx, db.GetProvidersByEndpointTypesAndModelParams{
 		ModelName:     model,

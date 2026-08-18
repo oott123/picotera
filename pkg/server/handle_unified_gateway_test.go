@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,10 +13,12 @@ import (
 
 	"picotera/pkg/contract"
 	"picotera/pkg/db"
+	"picotera/pkg/errorx"
 	"picotera/pkg/llmbridge"
 	"picotera/pkg/llmbridgeimpl"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/tidwall/gjson"
 )
 
 // Smoke-coverage of the small helpers that translate between bridge
@@ -23,18 +26,65 @@ import (
 // handler itself is not covered by tests yet — picotera has no postgres
 // test harness and Server can't be built without one. See plan §8.
 
-func TestSourceEndpointType(t *testing.T) {
-	cases := map[llmbridge.Format]int32{
-		llmbridge.FormatAnthropicMessages:           contract.EndpointType_AnthropicMessages,
-		llmbridge.FormatOpenAIChatCompletions:       contract.EndpointType_OpenAIChatCompletions,
-		llmbridge.FormatOpenAIResponses:             contract.EndpointType_OpenAIResponses,
-		llmbridge.FormatGeminiGenerateContent:       contract.EndpointType_GeminiGenerateContent,
-		llmbridge.FormatGeminiStreamGenerateContent: contract.EndpointType_GeminiStreamGenerateContent,
-		llmbridge.FormatUnknown:                     contract.EndpointType_Unknown,
+// unifiedRouteByPath looks a route up in the runtime-constant table. Tests use
+// the real entries rather than hand-built ones so the table itself is covered.
+func unifiedRouteByPath(t *testing.T, path string) unifiedRoute {
+	t.Helper()
+	for _, r := range unifiedRoutes {
+		if r.Path == path {
+			return r
+		}
 	}
-	for f, want := range cases {
-		if got := sourceEndpointType(f); got != want {
-			t.Errorf("sourceEndpointType(%s) = %d, want %d", f, got, want)
+	t.Fatalf("no unified route registered at %s", path)
+	return unifiedRoute{}
+}
+
+// TestUnifiedRoutesTable pins the route table's invariants: paths are unique
+// (chi would otherwise panic on the duplicate registration), every route
+// declares the SourceType its synthetic endpoint reports, and passthrough is
+// exactly the set of routes llmbridge has no format for.
+func TestUnifiedRoutesTable(t *testing.T) {
+	seen := map[string]bool{}
+	for _, r := range unifiedRoutes {
+		if seen[r.Path] {
+			t.Errorf("duplicate unified route path %s", r.Path)
+		}
+		seen[r.Path] = true
+		if r.Name == "" {
+			t.Errorf("route %s has no display name", r.Path)
+		}
+	}
+
+	cases := []struct {
+		path            string
+		wantFormat      llmbridge.Format
+		wantSourceType  int32
+		wantPassthrough bool
+	}{
+		{"/api/unified/v1/messages", llmbridge.FormatAnthropicMessages, contract.EndpointType_AnthropicMessages, false},
+		{"/api/unified/v1/responses", llmbridge.FormatOpenAIResponses, contract.EndpointType_OpenAIResponses, false},
+		{"/api/unified/v1/chat/completions", llmbridge.FormatOpenAIChatCompletions, contract.EndpointType_OpenAIChatCompletions, false},
+		{"/api/unified/v1beta/models/{model}:generateContent", llmbridge.FormatGeminiGenerateContent, contract.EndpointType_GeminiGenerateContent, false},
+		{"/api/unified/v1beta/models/{model}:streamGenerateContent", llmbridge.FormatGeminiStreamGenerateContent, contract.EndpointType_GeminiStreamGenerateContent, false},
+		// The Codex responses route is a second mount of the OpenAI Responses
+		// source — same format and source type as /v1/responses.
+		{"/api/unified/codex/responses", llmbridge.FormatOpenAIResponses, contract.EndpointType_OpenAIResponses, false},
+		{"/api/unified/codex/responses/compact", llmbridge.FormatUnknown, contract.EndpointType_CodexCompact, true},
+		{"/api/unified/v1/alpha/search", llmbridge.FormatUnknown, contract.EndpointType_CodexSearchV1Alpha, true},
+	}
+	if len(cases) != len(unifiedRoutes) {
+		t.Fatalf("route table has %d entries, test covers %d", len(unifiedRoutes), len(cases))
+	}
+	for _, tc := range cases {
+		r := unifiedRouteByPath(t, tc.path)
+		if r.Format != tc.wantFormat {
+			t.Errorf("%s: Format = %s, want %s", tc.path, r.Format, tc.wantFormat)
+		}
+		if r.SourceType != tc.wantSourceType {
+			t.Errorf("%s: SourceType = %d, want %d", tc.path, r.SourceType, tc.wantSourceType)
+		}
+		if r.passthrough() != tc.wantPassthrough {
+			t.Errorf("%s: passthrough() = %v, want %v", tc.path, r.passthrough(), tc.wantPassthrough)
 		}
 	}
 }
@@ -137,7 +187,7 @@ func (fakeLLMBridge) SignalPlugin(sig syscall.Signal) error {
 
 func TestCandidateEndpointTypes(t *testing.T) {
 	// Anthropic / OpenAI sources: stream flag picks the Gemini variant.
-	got := candidateEndpointTypes(llmbridge.FormatAnthropicMessages, false)
+	got := candidateEndpointTypes(unifiedRouteByPath(t, "/api/unified/v1/messages"), false)
 	want := []int32{
 		contract.EndpointType_AnthropicMessages,
 		contract.EndpointType_OpenAIChatCompletions,
@@ -147,7 +197,7 @@ func TestCandidateEndpointTypes(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Anthropic non-stream set = %v, want %v", got, want)
 	}
-	got = candidateEndpointTypes(llmbridge.FormatOpenAIChatCompletions, true)
+	got = candidateEndpointTypes(unifiedRouteByPath(t, "/api/unified/v1/chat/completions"), true)
 	want = []int32{
 		contract.EndpointType_AnthropicMessages,
 		contract.EndpointType_OpenAIChatCompletions,
@@ -160,16 +210,43 @@ func TestCandidateEndpointTypes(t *testing.T) {
 
 	// Gemini routes ignore the stream-flag arg and always use their own
 	// fixed pair.
-	got = candidateEndpointTypes(llmbridge.FormatGeminiStreamGenerateContent, false)
+	got = candidateEndpointTypes(unifiedRouteByPath(t, "/api/unified/v1beta/models/{model}:streamGenerateContent"), false)
 	if got[len(got)-1] != contract.EndpointType_GeminiStreamGenerateContent {
 		t.Errorf("Gemini stream route returned wrong gemini variant: %v", got)
+	}
+
+	// The Codex responses route shares the OpenAI Responses candidate set.
+	got = candidateEndpointTypes(unifiedRouteByPath(t, "/api/unified/codex/responses"), false)
+	want = candidateEndpointTypes(unifiedRouteByPath(t, "/api/unified/v1/responses"), false)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("codex responses set = %v, want same as /v1/responses %v", got, want)
+	}
+}
+
+// TestCandidateEndpointTypesPassthrough pins that the Codex passthrough routes
+// only ever consider an upstream of their own endpoint type — there is no
+// converter, so nothing else can serve them — and that the stream flag has no
+// say in it (there is no Gemini variant to choose).
+func TestCandidateEndpointTypesPassthrough(t *testing.T) {
+	cases := map[string]int32{
+		"/api/unified/codex/responses/compact": contract.EndpointType_CodexCompact,
+		"/api/unified/v1/alpha/search":         contract.EndpointType_CodexSearchV1Alpha,
+	}
+	for path, wantType := range cases {
+		route := unifiedRouteByPath(t, path)
+		for _, streaming := range []bool{false, true} {
+			got := candidateEndpointTypes(route, streaming)
+			if !reflect.DeepEqual(got, []int32{wantType}) {
+				t.Errorf("%s (streaming=%v) = %v, want [%d]", path, streaming, got, wantType)
+			}
+		}
 	}
 }
 
 func TestExtractUnifiedModel_BodyFormats(t *testing.T) {
 	body := []byte(`{"model":"claude-3-5-sonnet","stream":true}`)
 	r := httptest.NewRequest("POST", "/api/unified/v1/messages", nil)
-	model, err := extractUnifiedModel(llmbridge.FormatAnthropicMessages, r, body)
+	model, err := extractUnifiedModel(unifiedRouteByPath(t, "/api/unified/v1/messages"), r, body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,9 +255,38 @@ func TestExtractUnifiedModel_BodyFormats(t *testing.T) {
 	}
 
 	// Missing model field: 400 MODEL_NOT_FOUND.
-	_, err = extractUnifiedModel(llmbridge.FormatOpenAIChatCompletions, r, []byte(`{}`))
+	_, err = extractUnifiedModel(unifiedRouteByPath(t, "/api/unified/v1/chat/completions"), r, []byte(`{}`))
 	if err == nil {
 		t.Errorf("expected error for missing model, got nil")
+	}
+}
+
+// TestExtractUnifiedModel_Passthrough pins that the Codex passthrough routes
+// route by the body's `model` like every non-Gemini route — that is what makes
+// rewriteModel and the beforeRequest upstreamModel override work on them.
+func TestExtractUnifiedModel_Passthrough(t *testing.T) {
+	for _, path := range []string{"/api/unified/codex/responses/compact", "/api/unified/v1/alpha/search"} {
+		route := unifiedRouteByPath(t, path)
+		r := httptest.NewRequest("POST", path, nil)
+		model, err := extractUnifiedModel(route, r, []byte(`{"model":"gpt-5-codex","query":"hi"}`))
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		if model != "gpt-5-codex" {
+			t.Errorf("%s: got model=%q, want gpt-5-codex", path, model)
+		}
+
+		// Missing / empty model is a 400, not a fallback.
+		for _, bad := range [][]byte{[]byte(`{}`), []byte(`{"model":""}`)} {
+			_, err = extractUnifiedModel(route, r, bad)
+			var gerr *gatewayError
+			if !errors.As(err, &gerr) {
+				t.Fatalf("%s: body %s: expected gatewayError, got %v", path, bad, err)
+			}
+			if gerr.status != http.StatusBadRequest || gerr.code != errorx.ModelNotFound.Error() {
+				t.Errorf("%s: body %s: got status=%d code=%s, want 400 %s", path, bad, gerr.status, gerr.code, errorx.ModelNotFound.Error())
+			}
+		}
 	}
 }
 
@@ -192,7 +298,7 @@ func TestExtractUnifiedModel_GeminiFromPath(t *testing.T) {
 	r := httptest.NewRequest("POST", "/api/unified/v1beta/models/gemini-2.5-pro:streamGenerateContent", nil)
 	r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
 
-	model, err := extractUnifiedModel(llmbridge.FormatGeminiStreamGenerateContent, r, []byte(`{"contents":[]}`))
+	model, err := extractUnifiedModel(unifiedRouteByPath(t, "/api/unified/v1beta/models/{model}:streamGenerateContent"), r, []byte(`{"contents":[]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +306,7 @@ func TestExtractUnifiedModel_GeminiFromPath(t *testing.T) {
 		t.Errorf("got model=%q", model)
 	}
 
-	model, err = extractUnifiedModel(llmbridge.FormatGeminiGenerateContent, r, []byte(`{"contents":[]}`))
+	model, err = extractUnifiedModel(unifiedRouteByPath(t, "/api/unified/v1beta/models/{model}:generateContent"), r, []byte(`{"contents":[]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,7 +353,7 @@ func TestDetectStreaming(t *testing.T) {
 func TestSetUnifiedModel(t *testing.T) {
 	// Body-bearing source: model is rewritten via sjson.
 	body := []byte(`{"model":"old","messages":[]}`)
-	out, err := setUnifiedModel(llmbridge.FormatAnthropicMessages, body, "new")
+	out, err := setUnifiedModel(unifiedRouteByPath(t, "/api/unified/v1/messages"), body, "new")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,12 +362,30 @@ func TestSetUnifiedModel(t *testing.T) {
 	}
 	// Gemini: body unchanged because the model lives in the URL.
 	body = []byte(`{"contents":[]}`)
-	out, err = setUnifiedModel(llmbridge.FormatGeminiGenerateContent, body, "new")
+	out, err = setUnifiedModel(unifiedRouteByPath(t, "/api/unified/v1beta/models/{model}:generateContent"), body, "new")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(out) != string(body) {
 		t.Errorf("expected Gemini body unchanged, got %s", out)
+	}
+}
+
+// TestSetUnifiedModelPassthrough pins that the upstream model override still
+// reaches the wire on the passthrough routes: the body is forwarded verbatim
+// apart from this one field.
+func TestSetUnifiedModelPassthrough(t *testing.T) {
+	for _, path := range []string{"/api/unified/codex/responses/compact", "/api/unified/v1/alpha/search"} {
+		out, err := setUnifiedModel(unifiedRouteByPath(t, path), []byte(`{"model":"old","query":"hi"}`), "upstream-model")
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		if got := gjson.GetBytes(out, "model").Str; got != "upstream-model" {
+			t.Errorf("%s: model = %q, want upstream-model", path, got)
+		}
+		if got := gjson.GetBytes(out, "query").Str; got != "hi" {
+			t.Errorf("%s: query = %q, want hi (rest of body must survive)", path, got)
+		}
 	}
 }
 

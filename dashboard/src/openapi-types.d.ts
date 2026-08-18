@@ -1231,7 +1231,7 @@ export interface components {
         };
         EndpointLabel: {
             /** @enum {string} */
-            endpointType: "general" | "openaiChatCompletions" | "openaiResponses" | "anthropicMessages" | "anthropicCountTokens" | "geminiGenerateContent" | "geminiStreamGenerateContent" | "exaSearch" | "modelList" | "unknown";
+            endpointType: "general" | "openaiChatCompletions" | "openaiResponses" | "anthropicMessages" | "anthropicCountTokens" | "geminiGenerateContent" | "geminiStreamGenerateContent" | "exaSearch" | "modelList" | "codexCompact" | "codexSearchV1Alpha" | "unknown";
             name: string;
             path: string;
         };
@@ -1245,7 +1245,7 @@ export interface components {
             /** @enum {string} */
             credentialsResolver: "followRequest" | "bearerToken" | "xApiKey" | "searchKey" | "googApiKey" | "unknown";
             /** @enum {string} */
-            endpointType: "general" | "openaiChatCompletions" | "openaiResponses" | "anthropicMessages" | "anthropicCountTokens" | "geminiGenerateContent" | "geminiStreamGenerateContent" | "exaSearch" | "modelList" | "unknown";
+            endpointType: "general" | "openaiChatCompletions" | "openaiResponses" | "anthropicMessages" | "anthropicCountTokens" | "geminiGenerateContent" | "geminiStreamGenerateContent" | "exaSearch" | "modelList" | "codexCompact" | "codexSearchV1Alpha" | "unknown";
             modelPath: string;
             name: string;
             path: string;

@@ -8,6 +8,9 @@ const UNIFIED_ENDPOINT_NAMES: Record<string, string> = {
   '/api/unified/v1/chat/completions': 'OpenAI Chat Completions',
   '/api/unified/v1beta/models/{model}:generateContent': 'Gemini 生成内容',
   '/api/unified/v1beta/models/{model}:streamGenerateContent': 'Gemini 流式生成',
+  '/api/unified/codex/responses': 'Codex Responses',
+  '/api/unified/codex/responses/compact': 'Codex 压缩',
+  '/api/unified/v1/alpha/search': 'Codex 搜索 v1alpha',
 }
 
 export function isUnifiedEndpoint(path: string | undefined | null): boolean {

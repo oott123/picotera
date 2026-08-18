@@ -273,8 +273,11 @@ func (f *gatewayFlow) buildRewrittenUpstreamRequest(input attemptInput) (attempt
 		// resolved upstream model name, not the inbound chi params — which are
 		// empty for non-Gemini source routes that get bridged to Gemini.
 		pathVars = unifiedUpstreamPathVars(input.UpstreamModel)
+		// Goes through the config closure rather than setUnifiedModel directly:
+		// the model's home (body vs {model} path var) is a property of the
+		// route, which only the unified config still knows about.
 		var err error
-		body, err = setUnifiedModel(f.config.SourceFormat, f.body, input.UpstreamModel)
+		body, err = f.config.SetBodyModel(f.body, input.UpstreamModel)
 		if err != nil {
 			return attemptPrepared{}, err
 		}

@@ -216,7 +216,7 @@ picotera.hooks.beforeRequest.tap('retry', function (ctx, input) {
 
 ### beforeTransform
 
-**时机**：仅 `/api/unified` 统一网关，每次尝试在跨格式转换前执行一次（即使本次源格式与上游格式相同、不发生实际转换）。路径网关不执行。
+**时机**：仅 `/api/unified` 统一网关，每次尝试在跨格式转换前执行一次（即使本次源格式与上游格式相同、不发生实际转换）。路径网关不执行；Codex 透传路由（`/api/unified/codex/responses/compact`、`/api/unified/v1/alpha/search`）没有跨格式转换，也不执行。
 
 **输入 / 返回**：
 
@@ -442,7 +442,7 @@ interface ProviderModel {
   endpoint: string                     // 该条目的端点路径
   priority: number                     // 条目优先级
   annotations: Record<string, string>  // 仅模型条目层注解
-  upstreamFormat: string               // 该条目的上游格式（仅统一网关有意义）
+  upstreamFormat: string               // 该条目上游端点类型的字符串,取值见下方端点类型枚举
 }
 ```
 
@@ -465,7 +465,7 @@ interface ProviderModel {
 | `parentSpanId` | `string \| null` | 父 span ID（客户端会话标识） |
 | `traceId` | `string \| null` | 关联 trace ID；无父 span 时为 `null` |
 
-### 格式枚举（sourceFormat / format / upstreamFormat）
+### 格式枚举（sourceFormat / format）
 
 | 取值 | 含义 |
 | --- | --- |
@@ -474,7 +474,11 @@ interface ProviderModel {
 | `openaiResponses` | OpenAI Responses |
 | `geminiGenerateContent` | Gemini GenerateContent（非流式） |
 | `geminiStreamGenerateContent` | Gemini GenerateContent（流式） |
-| `unknown` | 其他端点类型（general、countTokens、modelList 等） |
+| `unknown` | 其他端点类型（general、countTokens、modelList、Codex 透传路由等） |
+
+### 端点类型枚举（upstreamFormat）
+
+`providerModel.upstreamFormat` 给出的是该条目上游**端点类型**的字符串。上面五种生成格式的取值与格式枚举完全一致，此外还可能是 `general`、`anthropicCountTokens`、`exaSearch`、`modelList`、`codexCompact`、`codexSearchV1Alpha`、`unknown`。
 
 ### 注解合并规则
 

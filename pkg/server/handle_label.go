@@ -53,7 +53,7 @@ func (s *Server) handleListEndpointLabels(ctx context.Context, _ *struct{}) (*co
 		labels = append(labels, contract.EndpointLabel{
 			Path:         r.Path,
 			Name:         r.Name,
-			EndpointType: r.Format.String(),
+			EndpointType: contract.FromEndpointType(r.SourceType),
 		})
 	}
 	return &contract.ListEndpointLabelsResponse{Body: labels}, nil

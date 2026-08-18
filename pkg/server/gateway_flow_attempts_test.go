@@ -73,8 +73,13 @@ picotera.hooks.rewriteRequest.tap('add-include-usage', function (ctx, pending) {
 		h: &gatewayHandler{Server: &Server{llmBridge: realBridge{}, config: &configx.Config{}}},
 		r: httptest.NewRequest("POST", "/api/unified/v1/responses", nil),
 		config: gatewayFlowConfig{
-			Kind:           gatewayRouteUnified,
-			SourceFormat:   llmbridge.FormatOpenAIResponses,
+			Kind:         gatewayRouteUnified,
+			SourceFormat: llmbridge.FormatOpenAIResponses,
+			// buildRewrittenUpstreamRequest writes the per-attempt upstream
+			// model through this closure, so a unified config must carry it.
+			SetBodyModel: func(body []byte, model string) ([]byte, error) {
+				return setUnifiedModel(unifiedRouteByPath(t, "/api/unified/v1/responses"), body, model)
+			},
 			PrepareAttempt: prepareUnifiedAttempt,
 		},
 		body:    []byte(`{"model":"gpt-4o","input":[{"role":"user","content":"ping"}],"stream":true}`),
