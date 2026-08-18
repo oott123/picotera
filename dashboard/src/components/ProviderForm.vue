@@ -75,10 +75,10 @@ async function submit() {
   >
     <form id="provider-form" class="flex flex-col gap-4" @submit.prevent="submit">
       <Field label="名称">
-        <Input v-model="form.name" required placeholder="例如 openai" />
+        <Input v-model="form.name" required />
       </Field>
       <Field label="凭证">
-        <Input v-model="form.credentials" required placeholder="密钥或密钥" />
+        <Input v-model="form.credentials" required />
       </Field>
       <Field label="优先级">
         <Input v-model.number="form.priority" type="number" required />
@@ -86,19 +86,19 @@ async function submit() {
       <Field label="状态" as="div">
         <label class="inline-flex items-center gap-2 text-sm cursor-pointer">
           <input v-model="form.disabled" type="checkbox" class="cursor-pointer" />
-          <span>禁用此渠道（不参与调度）</span>
+          <span>禁用</span>
         </label>
       </Field>
       <Field label="标注" as="div">
         <AnnotationsEditor v-model="form.annotations" />
       </Field>
       <Field label="代理 URL">
-        <Input v-model="form.proxyUrl" placeholder="留空使用环境代理，填 direct 禁用代理" />
+        <Input v-model="form.proxyUrl" placeholder="留空默认， direct 直连" />
       </Field>
       <Field label="TLS" as="div">
         <label class="inline-flex items-center gap-2 text-sm cursor-pointer">
           <input v-model="form.insecureTls" type="checkbox" class="cursor-pointer" />
-          <span>不校验上游 HTTPS 证书（仅用于自签名证书的私有部署）</span>
+          <span>忽略 HTTPS 证书错误</span>
         </label>
       </Field>
       <Field label="模型列表 URL">
@@ -110,7 +110,7 @@ async function submit() {
       <Field label="Web 搜索" as="div">
         <label class="inline-flex items-center gap-2 text-sm cursor-pointer">
           <input v-model="form.supportsNativeWebSearch" type="checkbox" class="cursor-pointer" />
-          <span>支持原生 Web 搜索（关闭时由网关使用 Exa 模拟）</span>
+          <span>支持原生 Web 搜索</span>
         </label>
       </Field>
       <p v-if="!isEdit" class="text-xs text-ink-faint">
