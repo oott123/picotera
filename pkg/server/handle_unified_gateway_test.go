@@ -70,6 +70,7 @@ func TestUnifiedRoutesTable(t *testing.T) {
 		// source — same format and source type as /v1/responses.
 		{"/api/unified/codex/responses", llmbridge.FormatOpenAIResponses, contract.EndpointType_OpenAIResponses, false},
 		{"/api/unified/codex/responses/compact", llmbridge.FormatUnknown, contract.EndpointType_CodexCompact, true},
+		{"/api/unified/codex/alpha/search", llmbridge.FormatUnknown, contract.EndpointType_CodexSearchV1Alpha, true},
 		{"/api/unified/v1/alpha/search", llmbridge.FormatUnknown, contract.EndpointType_CodexSearchV1Alpha, true},
 		{"/api/unified/v1/embeddings", llmbridge.FormatUnknown, contract.EndpointType_OpenAIEmbedding, true},
 	}
