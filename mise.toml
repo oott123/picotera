@@ -31,3 +31,6 @@ outputs = [ "dist/picotera-llmbridge-plugin" ]
 
 [tasks.bind-identity]
 run = "go run ./cmd/picotera/main.go bind-identity"
+
+[tasks.set-admin]
+run = "go run ./cmd/picotera/main.go set-admin"
