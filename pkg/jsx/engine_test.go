@@ -481,6 +481,59 @@ func TestSession_RewriteRequest_BodyJSONRoundtrip(t *testing.T) {
 	}
 }
 
+func TestSession_RewriteRequest_NoBody(t *testing.T) {
+	s := newTestSession(t, db.Script{ID: "a", Source: `
+		picotera.hooks.rewriteRequest.tap("a", function (ctx, pending) {
+			pending.url = "https://y/models";
+			pending.headers["x-added"] = ["1"];
+			return pending;
+		});
+	`})
+	out, err := s.RunRewriteRequest(PendingRequestShape{
+		URL:     "https://x/models",
+		Method:  "GET",
+		Headers: map[string][]string{"authorization": {"Bearer t"}},
+	}, nil)
+	if err != nil {
+		t.Fatalf("RunRewriteRequest: %v", err)
+	}
+	if out.URL != "https://y/models" {
+		t.Errorf("URL not rewritten, got %+v", out)
+	}
+	if got := out.Headers["x-added"]; len(got) != 1 || got[0] != "1" {
+		t.Errorf("header not added, got %+v", out.Headers)
+	}
+	if out.Body != nil {
+		t.Errorf("no-body request should leave Body nil, got %s", string(out.Body))
+	}
+}
+
+func TestSession_RewriteRequest_NoBody_ScriptAddsBody(t *testing.T) {
+	s := newTestSession(t, db.Script{ID: "a", Source: `
+		picotera.hooks.rewriteRequest.tap("a", function (ctx, pending) {
+			return { ...pending, method: "POST", body: { scope: "all" } };
+		});
+	`})
+	out, err := s.RunRewriteRequest(PendingRequestShape{
+		URL:     "https://x/models",
+		Method:  "GET",
+		Headers: map[string][]string{},
+	}, nil)
+	if err != nil {
+		t.Fatalf("RunRewriteRequest: %v", err)
+	}
+	if out.Method != "POST" {
+		t.Errorf("method not rewritten, got %q", out.Method)
+	}
+	var got map[string]string
+	if err := json.Unmarshal(out.Body, &got); err != nil {
+		t.Fatalf("body should be raw JSON object bytes: %v (raw=%q)", err, string(out.Body))
+	}
+	if got["scope"] != "all" {
+		t.Errorf("want {scope:all}, got %+v", got)
+	}
+}
+
 func TestSession_BeforeTransform_Passthrough(t *testing.T) {
 	s := newTestSession(t, db.Script{ID: "a", Source: `picotera.hooks.beforeTransform.tap("a", function () {});`})
 	out, err := s.RunBeforeTransform(OutboundProfile{Type: "openai", Config: map[string]any{}})

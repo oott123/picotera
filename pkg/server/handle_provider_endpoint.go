@@ -78,16 +78,57 @@ func (s *Server) handleFetchModels(ctx context.Context, input *contract.FetchMod
 		return nil, huma.Error400BadRequest("provider has no models endpoint configured")
 	}
 
-	fetchCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
+	sess, serr := s.jsxEngine.NewSession(ctx, fmt.Sprintf("fetch-models:%d:%d", input.Body.ProviderID, time.Now().UnixNano()))
+	if serr != nil {
+		return nil, huma.Error502BadGateway("failed to load js hooks: " + serr.Error())
+	}
+	defer sess.Close()
 
-	req, err := http.NewRequestWithContext(fetchCtx, http.MethodGet, provider.ModelsEndpointUrl, nil)
+	providerAnno, _ := annotations.Decode(provider.Annotations)
+	// fetch-models has no model context — routedModel/request/apiKey/
+	// providerModel/attempt/endpoint stay null on ctx (models are addressed via
+	// provider.modelsEndpointUrl, not an endpoint row). apiKey isn't
+	// authenticated on this management route either, so ctx.annotations carries
+	// only the provider-level annotations.
+	endpointType := "fetchModels"
+	provJS := jsx.ProviderSummary{
+		ID:          provider.ID,
+		Name:        provider.Name,
+		Priority:    provider.Priority,
+		Annotations: providerAnno,
+		Disabled:    provider.Disabled,
+	}
+	mergedAnno := annotations.Merge(providerAnno)
+	if perr := sess.PatchContext(jsx.ContextPatch{
+		EndpointType: &endpointType,
+		Provider:     &provJS,
+		Annotations:  &mergedAnno,
+	}); perr != nil {
+		return nil, huma.NewError(gatewayHookStatus(perr), perr.Error())
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, provider.ModelsEndpointUrl, nil)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to create upstream request", err)
 	}
 
 	applyCredentials(req, provider.Credentials, provider.ModelsEndpointResolver, nil)
 	req.Header.Set("anthropic-version", "2023-06-01")
+
+	pending, herr := sess.RunRewriteRequest(serializePendingRequest(req), nil)
+	if herr != nil {
+		return nil, huma.NewError(gatewayHookStatus(herr), herr.Error())
+	}
+
+	// 10s covers only the upstream round-trip; the hook itself is bounded by
+	// the engine's PICOTERA_JS_HOOK_TIMEOUT.
+	fetchCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	req, _, err = buildRequestFromPending(fetchCtx, pending, nil)
+	if err != nil {
+		return nil, huma.Error502BadGateway(err.Error())
+	}
 
 	var proxyURL string
 	if provider.ProxyUrl.Valid {
@@ -131,46 +172,19 @@ func (s *Server) handleFetchModels(ctx context.Context, input *contract.FetchMod
 
 	aggregated, removed := aggregateProviderModels(oldList, upstreamNames)
 
-	sess, serr := s.jsxEngine.NewSession(ctx, fmt.Sprintf("fetch-models:%d:%d", input.Body.ProviderID, time.Now().UnixNano()))
-	if serr != nil {
-		return nil, huma.Error502BadGateway("failed to load js hooks: " + serr.Error())
-	}
-	defer sess.Close()
-
 	upstreamRawJSON, _ := json.Marshal(upstreamRaw)
 
-	providerAnno, _ := annotations.Decode(provider.Annotations)
-	// fetch-models has no model context — routedModel/request/apiKey/
-	// providerModel/attempt/endpoint stay null on ctx. apiKey isn't
-	// authenticated on this management route either, so ctx.annotations carries
-	// only the provider-level annotations, and ctx.upstreamResponse carries the
-	// raw upstream /models JSON.
-	provJS := jsx.ProviderSummary{
-		ID:          provider.ID,
-		Name:        provider.Name,
-		Priority:    provider.Priority,
-		Annotations: providerAnno,
-		Disabled:    provider.Disabled,
-	}
-	mergedAnno := annotations.Merge(providerAnno)
+	// ctx.upstreamResponse (the raw upstream /models JSON) is only visible from
+	// here on, in rewriteProviderModels — it doesn't exist yet at rewriteRequest
+	// time.
 	if perr := sess.PatchContext(jsx.ContextPatch{
-		Provider:         &provJS,
-		Annotations:      &mergedAnno,
 		UpstreamResponse: upstreamRawJSON,
 	}); perr != nil {
-		status := http.StatusBadGateway
-		if errors.Is(perr, jsx.ErrHookTimeout) {
-			status = http.StatusServiceUnavailable
-		}
-		return nil, huma.NewError(status, perr.Error())
+		return nil, huma.NewError(gatewayHookStatus(perr), perr.Error())
 	}
 	processed, herr := sess.RunRewriteProviderModels(contractToJsxEntries(aggregated))
 	if herr != nil {
-		status := http.StatusBadGateway
-		if errors.Is(herr, jsx.ErrHookTimeout) {
-			status = http.StatusServiceUnavailable
-		}
-		return nil, huma.NewError(status, herr.Error())
+		return nil, huma.NewError(gatewayHookStatus(herr), herr.Error())
 	}
 
 	converted := jsxToContractEntries(processed)

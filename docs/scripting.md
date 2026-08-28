@@ -28,7 +28,7 @@ PicoTera 支持用 JavaScript 脚本定制网关行为：在请求处理的各�
 | `beforeMetaRequest` | 首次上游尝试前：可直接返回响应短路整个请求（每请求一次） |
 | `beforeRequest` | 每次上游尝试前：决定发起/跳过/延迟/覆盖上游模型 |
 | `beforeTransform` | 统一网关的跨格式转换前：定制出站转换配置 |
-| `rewriteRequest` | 改写即将发出的上游请求（URL、请求头、请求体） |
+| `rewriteRequest` | 改写即将发出的上游请求（URL、请求头、请求体）；「获取模型列表」拉取前也会执行一次 |
 | `afterUpstreamError` | 上游尝试失败后：决定中断透传还是继续 |
 | `rewriteProviderModels` | 「获取模型列表」时改写渠道的模型配置 |
 | `requestFinished` | 请求结束后观察结果（只读记账，每请求一次） |
@@ -65,7 +65,7 @@ flowchart TD
    - 尝试总次数有上限（默认 50 次）。
 5. **`requestFinished`**：请求进入终态后执行一次，返回值被忽略，用于记账、打注解等观察性用途。
 
-「获取模型列表」（在渠道表单中向上游拉取模型名）是一条独立管理链路，与上述流程无关，只执行 `rewriteProviderModels` 一次。
+「获取模型列表」（在渠道表单中向上游拉取模型名）是一条独立管理链路，与上述流程无关：拉取前执行一次 `rewriteRequest`，拉取后执行一次 `rewriteProviderModels`，两者共用同一个会话的 `ctx`（脚本挂在 `ctx` 上的自定义字段可以跨这两个 hook 传递）。
 
 ## 各 Hook 详解
 
@@ -256,6 +256,15 @@ picotera.hooks.rewriteRequest.tap('add-effort', function (ctx, pending) {
 
 **注意**：非 JSON 请求没有 `pending.body`（为 `undefined`）。
 
+**获取模型列表**：`rewriteRequest` 也会在「获取模型列表」拉取前执行一次（`ctx.endpointType === 'fetchModels'` 判别）。这条链路上可见的 ctx 字段只有 `ctx.provider` 与 `ctx.annotations`（见 `rewriteProviderModels` 一节）；`pending` 是发往 `provider.modelsEndpointUrl` 的 GET 请求，凭证已注入 `pending.headers`。这次请求没有 body，`pending.body` 为 `undefined`；就地给 `pending.body` 赋值不生效，脚本要携带请求体必须返回一个新对象，例如把拉取改成 POST：
+
+```js
+picotera.hooks.rewriteRequest.tap('models-post', function (ctx, pending) {
+  if (ctx.endpointType !== 'fetchModels') return
+  return { ...pending, method: 'POST', headers: { ...pending.headers, 'content-type': ['application/json'] }, body: { scope: 'all' } }
+})
+```
+
 ### afterUpstreamError
 
 **时机**：每次失败的尝试之后。覆盖：HTTP 非 200、连接/网络失败、流式响应中的 SSE 错误事件（`streamed: true`）等。脚本自身抛错/超时不触发。
@@ -348,6 +357,7 @@ interface ProviderModelEntry {
 
 **可用的 ctx 字段**：该流程没有客户端请求上下文，只有以下字段有意义：
 
+- `ctx.endpointType`：恒为 `"fetchModels"`，与 `rewriteRequest` 共用同一会话；
 - `ctx.provider`：当前渠道（`ProviderSummary`）；
 - `ctx.annotations`：渠道层注解；
 - `ctx.upstreamResponse`：上游 `/models` 响应解析后的原始 JSON（解析失败为 `null`），可从中自行提取模型名处理非标准响应。
@@ -364,7 +374,7 @@ picotera.hooks.rewriteProviderModels.tap('only-free', function (ctx, entries) {
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `endpointType` | `"gateway" \| "unified"` | 路由形态：路径网关或 `/api/unified` 统一网关 |
+| `endpointType` | `"gateway" \| "unified" \| "fetchModels"` | 路由形态：路径网关、`/api/unified` 统一网关，或「获取模型列表」链路 |
 | `endpoint` | `EndpointSummary \| null` | 当前端点信息 |
 | `requestModel` | `string \| null` | 客户端原始请求的模型名（改写前） |
 | `routedModel` | `ModelSummary \| null` | 最终路由模型：`{ name: string, annotations: Record<string, string> }`，注解为模型层 |
