@@ -53,8 +53,10 @@ type ResponseExtractor struct {
 	// leading '['). Mirrors lineBuf: accumulate → delimit elements → discard.
 	jaBuf []byte
 
-	// streamError holds the first in-stream error.message seen in an SSE data
-	// payload (empty means no error). Detected independently of metrics.
+	// streamError holds the first error seen in a response payload (empty means
+	// no error): an error event in an SSE data payload, or an Anthropic refusal
+	// stop_reason in either an SSE data payload or a non-stream JSON body.
+	// Detected independently of metrics.
 	streamError string
 
 	// streamCompleted records whether the upstream stream reached its
@@ -98,8 +100,8 @@ func (e *ResponseExtractor) Metrics() ResponseMetrics {
 	return e.metrics
 }
 
-// StreamError returns the first error.message detected in an SSE data payload,
-// or "" if the stream carried no in-stream error. Call after the Read loop.
+// StreamError returns the first error detected in a response payload, or "" if
+// the response carried no error. Call after the Read loop.
 func (e *ResponseExtractor) StreamError() string {
 	return e.streamError
 }
@@ -220,8 +222,9 @@ func (e *ResponseExtractor) inferSignatureDeltaFromSSE(payload string) {
 // detectStreamError records the first stream error found in an SSE data
 // payload. OpenAI Responses uses response.error.message on response.failed;
 // Anthropic Messages, OpenAI Chat Completions, and Gemini native error shapes
-// use error.message. Some OpenAI Chat compatible providers return errors as
-// strict choices[].finish_reason values.
+// use error.message. Anthropic also refuses to produce content with an HTTP 200
+// message_delta carrying delta.stop_reason = "refusal". Some OpenAI Chat
+// compatible providers return errors as strict choices[].finish_reason values.
 func (e *ResponseExtractor) detectStreamError(payload string) {
 	if e.streamError != "" {
 		return
@@ -234,6 +237,12 @@ func (e *ResponseExtractor) detectStreamError(payload string) {
 		e.streamError = v.String()
 		return
 	}
+	// A top-level "delta" object is unique to Anthropic among the supported
+	// formats: OpenAI Chat nests delta under choices[], Gemini has none.
+	e.detectRefusal(gjson.Get(payload, "delta.stop_reason"), gjson.Get(payload, "delta.stop_details"))
+	if e.streamError != "" {
+		return
+	}
 	finishReason := gjson.Get(payload, "choices.0.finish_reason")
 	if !finishReason.Exists() || finishReason.Type != gjson.String {
 		return
@@ -242,6 +251,26 @@ func (e *ResponseExtractor) detectStreamError(payload string) {
 	case "network_error", "model_context_window_exceeded":
 		e.streamError = finishReason.String()
 	}
+}
+
+// detectRefusal records an Anthropic refusal stop_reason as a stream error.
+// stopReason / stopDetails are the payload's stop_reason field and its sibling
+// stop_details object — delta.* in a streaming message_delta, top-level in a
+// non-stream body. First error wins, matching detectStreamError. stop_details is
+// optional in the Anthropic contract, so a missing explanation falls back to the
+// bare "refusal" marker.
+func (e *ResponseExtractor) detectRefusal(stopReason, stopDetails gjson.Result) {
+	if e.streamError != "" {
+		return
+	}
+	if stopReason.Type != gjson.String || stopReason.String() != "refusal" {
+		return
+	}
+	if v := stopDetails.Get("explanation"); v.Type == gjson.String && v.String() != "" {
+		e.streamError = v.String()
+		return
+	}
+	e.streamError = "refusal"
 }
 
 // detectStreamCompletion marks the stream complete when an SSE data payload
@@ -552,6 +581,8 @@ func (e *ResponseExtractor) extractJSONMetrics() {
 	if e.metrics.CacheWriteTokens == nil {
 		e.extractAnthropicCacheCreation(result.Get("usage"))
 	}
+
+	e.detectRefusal(result.Get("stop_reason"), result.Get("stop_details"))
 
 	// Try Gemini format (only fills metrics the formats above didn't set).
 	geminiUsage := result.Get("usageMetadata")

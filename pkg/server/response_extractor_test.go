@@ -762,6 +762,150 @@ func TestResponseExtractor_SSE_StreamError_FirstWins(t *testing.T) {
 	}
 }
 
+func TestResponseExtractor_SSE_StreamError_FirstWinsOverRefusal(t *testing.T) {
+	events := []string{
+		"data: {\"type\":\"error\",\"error\":{\"message\":\"first error\"}}\n\n",
+		"data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"refusal\",\"stop_details\":{\"type\":\"refusal\",\"explanation\":\"blocked\"}}}\n\n",
+	}
+	inner := &chunkReader{chunks: []string{strings.Join(events, "")}}
+	extractor := NewResponseExtractor(inner, "text/event-stream", time.Now())
+
+	_, _ = io.ReadAll(extractor)
+
+	if got := extractor.StreamError(); got != "first error" {
+		t.Errorf("StreamError() = %q, want %q", got, "first error")
+	}
+}
+
+func TestResponseExtractor_SSE_StreamError_AnthropicRefusalFixture(t *testing.T) {
+	data, err := os.ReadFile("../../fixtures/anthropic-refusal.sse")
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	extractor := NewResponseExtractor(strings.NewReader(string(data)), "text/event-stream", time.Now())
+
+	got, err := io.ReadAll(extractor)
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+
+	if string(got) != string(data) {
+		t.Errorf("bytes forwarded unchanged:\ngot:  %q\nwant: %q", string(got), string(data))
+	}
+
+	want := "This request was blocked as it seems to violate Anthropic's Terms of Service restrictions on reverse engineering or duplicating model outputs. To learn more, visit https://www.anthropic.com/legal/commercial-terms."
+	if got := extractor.StreamError(); got != want {
+		t.Errorf("StreamError() = %q, want %q", got, want)
+	}
+	// The stream still terminates normally; only the finish reason downstream
+	// changes. Tokens are still billed — a refusal consumed the cache read.
+	if !extractor.StreamCompleted() {
+		t.Error("StreamCompleted() = false, want true")
+	}
+	m := extractor.Metrics()
+	if m.OutputTokens == nil || *m.OutputTokens != 0 {
+		t.Errorf("OutputTokens = %v, want 0", m.OutputTokens)
+	}
+	if m.CacheReadTokens == nil || *m.CacheReadTokens != 244090 {
+		t.Errorf("CacheReadTokens = %v, want 244090", m.CacheReadTokens)
+	}
+}
+
+func TestResponseExtractor_SSE_StreamError_AnthropicRefusalWithoutExplanation(t *testing.T) {
+	tests := []struct {
+		name  string
+		delta string
+	}{
+		{name: "no stop_details", delta: `{"stop_reason":"refusal"}`},
+		{name: "null stop_details", delta: `{"stop_reason":"refusal","stop_details":null}`},
+		{name: "empty explanation", delta: `{"stop_reason":"refusal","stop_details":{"type":"refusal","explanation":""}}`},
+		{name: "no explanation field", delta: `{"stop_reason":"refusal","stop_details":{"type":"refusal","category":"reasoning_extraction"}}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			events := `data: {"type":"message_delta","delta":` + tt.delta + `,"usage":{"output_tokens":0}}` + "\n\n"
+			extractor := NewResponseExtractor(strings.NewReader(events), "text/event-stream", time.Now())
+
+			_, _ = io.ReadAll(extractor)
+
+			if got := extractor.StreamError(); got != "refusal" {
+				t.Errorf("StreamError() = %q, want %q", got, "refusal")
+			}
+		})
+	}
+}
+
+func TestResponseExtractor_SSE_StreamError_AnthropicStopReasonNonRefusal(t *testing.T) {
+	tests := []struct {
+		name       string
+		stopReason string
+	}{
+		{name: "end turn", stopReason: `"end_turn"`},
+		{name: "max tokens", stopReason: `"max_tokens"`},
+		{name: "tool use", stopReason: `"tool_use"`},
+		{name: "stop sequence", stopReason: `"stop_sequence"`},
+		{name: "null", stopReason: `null`},
+		{name: "number", stopReason: `1`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			events := `data: {"type":"message_delta","delta":{"stop_reason":` + tt.stopReason + `,"stop_sequence":null},"usage":{"output_tokens":12}}` + "\n\n"
+			extractor := NewResponseExtractor(strings.NewReader(events), "text/event-stream", time.Now())
+
+			_, _ = io.ReadAll(extractor)
+
+			if got := extractor.StreamError(); got != "" {
+				t.Errorf("StreamError() = %q, want empty", got)
+			}
+		})
+	}
+}
+
+func TestResponseExtractor_JSON_StreamError_AnthropicRefusal(t *testing.T) {
+	body := `{"id":"msg_01Qk7TrEfBz4mNwYpLxDv2Hs","type":"message","role":"assistant","model":"claude-opus-4-7","content":[],` +
+		`"stop_reason":"refusal","stop_sequence":null,` +
+		`"stop_details":{"type":"refusal","category":"reasoning_extraction","explanation":"This request was blocked."},` +
+		`"usage":{"input_tokens":7,"cache_read_input_tokens":244090,"output_tokens":0}}`
+	extractor := NewResponseExtractor(strings.NewReader(body), "application/json", time.Now())
+
+	got, err := io.ReadAll(extractor)
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if string(got) != body {
+		t.Errorf("bytes forwarded unchanged:\ngot:  %q\nwant: %q", string(got), body)
+	}
+
+	if got := extractor.StreamError(); got != "This request was blocked." {
+		t.Errorf("StreamError() = %q, want %q", got, "This request was blocked.")
+	}
+	m := extractor.Metrics()
+	if m.InputTokens == nil || *m.InputTokens != 7 {
+		t.Errorf("InputTokens = %v, want 7", m.InputTokens)
+	}
+	if m.OutputTokens == nil || *m.OutputTokens != 0 {
+		t.Errorf("OutputTokens = %v, want 0", m.OutputTokens)
+	}
+	if m.CacheReadTokens == nil || *m.CacheReadTokens != 244090 {
+		t.Errorf("CacheReadTokens = %v, want 244090", m.CacheReadTokens)
+	}
+}
+
+func TestResponseExtractor_JSON_StreamError_AnthropicNonRefusal(t *testing.T) {
+	body := `{"id":"msg_1","type":"message","role":"assistant","model":"claude-opus-4-7",` +
+		`"content":[{"type":"text","text":"hi"}],"stop_reason":"end_turn","stop_sequence":null,` +
+		`"usage":{"input_tokens":7,"output_tokens":2}}`
+	extractor := NewResponseExtractor(strings.NewReader(body), "application/json", time.Now())
+
+	_, _ = io.ReadAll(extractor)
+
+	if got := extractor.StreamError(); got != "" {
+		t.Errorf("StreamError() = %q, want empty", got)
+	}
+}
+
 func TestResponseExtractor_SSE_InferredProvider_OpenRouter(t *testing.T) {
 	events := []string{
 		"data: {\"id\":\"gen-1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"nvidia/nemotron-3-ultra-550b-a55b-20260604:free\",\"provider\":\"Nvidia\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\"}}]}\n\n",
