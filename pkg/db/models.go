@@ -39,6 +39,7 @@ type Endpoint struct {
 	ModelPath           string `json:"modelPath"`
 	CredentialsResolver int32  `json:"credentialsResolver"`
 	EndpointType        int32  `json:"endpointType"`
+	PrefixMatch         bool   `json:"prefixMatch"`
 }
 
 type ExchangeRate struct {

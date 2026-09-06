@@ -78,9 +78,15 @@ function confirmDeleteEndpoint(_event: Event, path: string) {
         </thead>
         <tbody>
           <Tr v-for="e in endpoints" :key="e.path" :selected="panel.isActive(`endpoint:${e.path}`)">
-            <Td
-              ><span class="font-mono font-medium">{{ e.path }}</span></Td
-            >
+            <Td>
+              <span class="font-mono font-medium">{{ e.path }}</span>
+              <span
+                v-if="e.prefixMatch"
+                class="font-mono text-ink-faint"
+                title="前缀匹配：前缀之后的路径会原样接到上游 URL 后面"
+                >/*</span
+              >
+            </Td>
             <Td>{{ e.name }}</Td>
             <Td>
               <Tag :variant="endpointTypeVariant(e.endpointType)">{{

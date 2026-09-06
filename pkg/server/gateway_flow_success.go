@@ -104,7 +104,10 @@ func (h *gatewayHandler) streamSuccess(input successInput) {
 
 func (h *gatewayHandler) markPathHeadersReceived(input successInput) {
 	metaID, metaCreatedAt := input.Flow.meta.ID, input.Flow.meta.CreatedAt
-	endpointPath := input.Flow.config.Endpoint.Path
+	metaEndpointPath := input.Flow.config.RecordedEndpointPath
+	// The upstream row records the candidate's own path, which for a prefix
+	// endpoint already carries this request's suffix.
+	upstreamEndpointPath := input.Sidecar.EndpointPath
 	if input.Entry != nil && input.Entry.progress != nil {
 		input.Entry.progress.markHeaders(input.Response.StatusCode, input.UpstreamStartTime)
 		if metaEntry, ok := h.liveRequests.get(metaID); ok {
@@ -121,13 +124,13 @@ func (h *gatewayHandler) markPathHeadersReceived(input successInput) {
 		ProviderID(pgtype.Int4{Int32: input.ProviderID, Valid: true}).
 		Model(pgtype.Text{String: input.RoutedModel, Valid: input.RoutedModel != ""}).
 		UpstreamModel(pgtype.Text{String: input.UpstreamModel, Valid: input.UpstreamModel != ""}).
-		EndpointPath(pgtype.Text{String: endpointPath, Valid: true}).
+		EndpointPath(pgtype.Text{String: metaEndpointPath, Valid: true}).
 		ApiKeyID(apiKeyID))
 	h.updateRequest(bgCtx, newRequestUpdate(input.UpstreamID, input.UpstreamCreatedAt).
 		ProviderID(pgtype.Int4{Int32: input.ProviderID, Valid: true}).
 		Model(pgtype.Text{String: input.RoutedModel, Valid: input.RoutedModel != ""}).
 		UpstreamModel(pgtype.Text{String: input.UpstreamModel, Valid: input.UpstreamModel != ""}).
-		EndpointPath(pgtype.Text{String: endpointPath, Valid: true}).
+		EndpointPath(pgtype.Text{String: upstreamEndpointPath, Valid: upstreamEndpointPath != ""}).
 		ApiKeyID(apiKeyID))
 }
 

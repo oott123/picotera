@@ -27,9 +27,16 @@ const (
 	EndpointType_GeminiStreamGenerateContent int32 = 8
 	EndpointType_ExaSearch                   int32 = 9
 	EndpointType_ModelList                   int32 = 10
-	EndpointType_CodexCompact                int32 = 11
-	EndpointType_CodexSearchV1Alpha          int32 = 12
-	EndpointType_OpenAIEmbedding             int32 = 13
+	// Deprecated: retired Codex-only types, no longer mapped to or from a wire
+	// string. A Codex upstream is now a single EndpointType_Codex prefix endpoint
+	// whose sub-paths ride on the request path. Kept as placeholders so 11 / 12
+	// are never reused — historical request rows and migration 047 still carry
+	// them.
+	EndpointType_CodexCompact       int32 = 11
+	EndpointType_CodexSearchV1Alpha int32 = 12
+
+	EndpointType_OpenAIEmbedding int32 = 13
+	EndpointType_Codex           int32 = 14
 )
 
 func ToEndpointType(s string) int32 {
@@ -54,10 +61,8 @@ func ToEndpointType(s string) int32 {
 		return EndpointType_ExaSearch
 	case "modelList":
 		return EndpointType_ModelList
-	case "codexCompact":
-		return EndpointType_CodexCompact
-	case "codexSearchV1Alpha":
-		return EndpointType_CodexSearchV1Alpha
+	case "codex":
+		return EndpointType_Codex
 	case "openaiEmbedding":
 		return EndpointType_OpenAIEmbedding
 	default:
@@ -87,10 +92,8 @@ func FromEndpointType(t int32) string {
 		return "exaSearch"
 	case EndpointType_ModelList:
 		return "modelList"
-	case EndpointType_CodexCompact:
-		return "codexCompact"
-	case EndpointType_CodexSearchV1Alpha:
-		return "codexSearchV1Alpha"
+	case EndpointType_Codex:
+		return "codex"
 	case EndpointType_OpenAIEmbedding:
 		return "openaiEmbedding"
 	default:
@@ -141,7 +144,11 @@ type EndpointView struct {
 	Path                string `json:"path"`
 	ModelPath           string `json:"modelPath"`
 	CredentialsResolver string `json:"credentialsResolver" enum:"followRequest,bearerToken,xApiKey,searchKey,googApiKey,unknown"`
-	EndpointType        string `json:"endpointType" enum:"general,openaiChatCompletions,openaiResponses,anthropicMessages,anthropicCountTokens,geminiGenerateContent,geminiStreamGenerateContent,exaSearch,modelList,codexCompact,codexSearchV1Alpha,openaiEmbedding,unknown"`
+	EndpointType        string `json:"endpointType" enum:"general,openaiChatCompletions,openaiResponses,anthropicMessages,anthropicCountTokens,geminiGenerateContent,geminiStreamGenerateContent,exaSearch,modelList,codex,openaiEmbedding,unknown"`
+	// PrefixMatch turns Path into a prefix: the request path's remainder after
+	// the prefix is appended verbatim to the upstream URL. Mandatory for the
+	// codex type; see handleUpsertEndpoint for the path constraints it implies.
+	PrefixMatch bool `json:"prefixMatch"`
 }
 
 func ToEndpointView(endpoint *db.Endpoint) (*EndpointView, error) {
@@ -151,6 +158,7 @@ func ToEndpointView(endpoint *db.Endpoint) (*EndpointView, error) {
 		ModelPath:           endpoint.ModelPath,
 		CredentialsResolver: FromCredentialsResolver(endpoint.CredentialsResolver),
 		EndpointType:        FromEndpointType(endpoint.EndpointType),
+		PrefixMatch:         endpoint.PrefixMatch,
 	}, nil
 }
 

@@ -1231,7 +1231,7 @@ export interface components {
         };
         EndpointLabel: {
             /** @enum {string} */
-            endpointType: "general" | "openaiChatCompletions" | "openaiResponses" | "anthropicMessages" | "anthropicCountTokens" | "geminiGenerateContent" | "geminiStreamGenerateContent" | "exaSearch" | "modelList" | "codexCompact" | "codexSearchV1Alpha" | "openaiEmbedding" | "unknown";
+            endpointType: "general" | "openaiChatCompletions" | "openaiResponses" | "anthropicMessages" | "anthropicCountTokens" | "geminiGenerateContent" | "geminiStreamGenerateContent" | "exaSearch" | "modelList" | "codex" | "openaiEmbedding" | "unknown";
             name: string;
             path: string;
         };
@@ -1245,10 +1245,11 @@ export interface components {
             /** @enum {string} */
             credentialsResolver: "followRequest" | "bearerToken" | "xApiKey" | "searchKey" | "googApiKey" | "unknown";
             /** @enum {string} */
-            endpointType: "general" | "openaiChatCompletions" | "openaiResponses" | "anthropicMessages" | "anthropicCountTokens" | "geminiGenerateContent" | "geminiStreamGenerateContent" | "exaSearch" | "modelList" | "codexCompact" | "codexSearchV1Alpha" | "openaiEmbedding" | "unknown";
+            endpointType: "general" | "openaiChatCompletions" | "openaiResponses" | "anthropicMessages" | "anthropicCountTokens" | "geminiGenerateContent" | "geminiStreamGenerateContent" | "exaSearch" | "modelList" | "codex" | "openaiEmbedding" | "unknown";
             modelPath: string;
             name: string;
             path: string;
+            prefixMatch: boolean;
         };
         ExchangeRateView: {
             /**

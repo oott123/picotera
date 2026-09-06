@@ -286,7 +286,7 @@ func (f *gatewayFlow) buildRewrittenUpstreamRequest(input attemptInput) (attempt
 	if f.h.config.Auth.HeaderEnabled {
 		authHeaderName = f.h.config.Auth.HeaderName
 	}
-	req, reqBody, err := buildUpstreamRequest(input.AttemptCtx, f.r, body, input.Sidecar.UpstreamURL, upstreamModel, input.Sidecar.Credentials, input.Sidecar.SendResolver, pathVars, authHeaderName)
+	req, reqBody, err := buildUpstreamRequest(input.AttemptCtx, f.r, body, input.Sidecar.UpstreamURL, input.Sidecar.AppendPath, upstreamModel, input.Sidecar.Credentials, input.Sidecar.SendResolver, pathVars, authHeaderName)
 	if err != nil {
 		return attemptPrepared{}, err
 	}

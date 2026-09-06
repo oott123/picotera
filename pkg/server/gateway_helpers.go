@@ -117,13 +117,14 @@ func handleGatewayErr(w http.ResponseWriter, err error) (int, []byte) {
 
 // resolveEndpoint matches the request path to an endpoint using the in-memory
 // router (see endpoint_router.go). Returns the matched endpoint, any extracted
-// path variables, and a gatewayError on miss or load failure.
-func (s *Server) resolveEndpoint(ctx context.Context, path string) (db.Endpoint, map[string]string, error) {
-	endpoint, pathVars, ok, err := s.endpointRouter.Match(ctx, path)
+// path variables, the prefix suffix (empty for ordinary endpoints), and a
+// gatewayError on miss or load failure.
+func (s *Server) resolveEndpoint(ctx context.Context, path string) (db.Endpoint, map[string]string, string, error) {
+	endpoint, pathVars, suffix, ok, err := s.endpointRouter.Match(ctx, path)
 	if err != nil {
 		// Load/compile error — keep it visible.
 		logx.WithContext(ctx).WithError(err).WithField("path", path).Error("endpoint lookup failed")
-		return db.Endpoint{}, nil, &gatewayError{
+		return db.Endpoint{}, nil, "", &gatewayError{
 			status:  http.StatusInternalServerError,
 			message: "failed to query endpoint",
 			code:    errorx.InternalError.Error(),
@@ -131,13 +132,13 @@ func (s *Server) resolveEndpoint(ctx context.Context, path string) (db.Endpoint,
 	}
 	if !ok {
 		logx.WithContext(ctx).WithField("path", path).Warn("route not found")
-		return db.Endpoint{}, nil, &gatewayError{
+		return db.Endpoint{}, nil, "", &gatewayError{
 			status:  http.StatusNotFound,
 			message: "route not found",
 			code:    errorx.RouteNotFound.Error(),
 		}
 	}
-	return endpoint, pathVars, nil
+	return endpoint, pathVars, suffix, nil
 }
 
 // extractClientToken pulls the client-supplied API key/token from the
@@ -408,6 +409,21 @@ func extractModel(body []byte, modelPath string, pathVars map[string]string) (st
 	return result.Str, nil
 }
 
+// appendUpstreamPath appends a prefix endpoint's suffix to the upstream URL.
+// It inserts before the first '?' or '#' so an upstream URL that carries its own
+// query string (`…/v1?api-version=x`) stays intact. An empty suffix — every
+// non-prefix endpoint — returns the URL untouched.
+func appendUpstreamPath(upstreamURL, appendPath string) string {
+	if appendPath == "" {
+		return upstreamURL
+	}
+	cut := len(upstreamURL)
+	if i := strings.IndexAny(upstreamURL, "?#"); i >= 0 {
+		cut = i
+	}
+	return upstreamURL[:cut] + appendPath + upstreamURL[cut:]
+}
+
 // substitutePathVars replaces every {name} token in url with the corresponding
 // value from vars. Returns an error if any {…} token remains after substitution
 // (indicating a misconfigured upstream URL).
@@ -582,17 +598,19 @@ func compareCandidateOrder(leftProviderID, leftEntryPriority, leftProviderPriori
 
 // buildUpstreamRequest constructs the upstream HTTP request.
 // It copies headers from the original request, replaces the model name in the body
-// if upstreamModel differs, substitutes path variables in upstreamURL, and sets
+// if upstreamModel differs, substitutes path variables in upstreamURL, appends
+// appendPath (a prefix endpoint's suffix; "" for everything else), and sets
 // credentials based on the auth type.
 // The provided ctx is used for the request context, enabling cancellation of
 // upstream reads (e.g., by the idle timeout reader).
-func buildUpstreamRequest(ctx context.Context, original *http.Request, body []byte, upstreamURL, upstreamModel, creds string, sendResolver int32, pathVars map[string]string, authHeaderName string) (*http.Request, []byte, error) {
+func buildUpstreamRequest(ctx context.Context, original *http.Request, body []byte, upstreamURL, appendPath, upstreamModel, creds string, sendResolver int32, pathVars map[string]string, authHeaderName string) (*http.Request, []byte, error) {
 	// Substitute path variables in the upstream URL.
 	var err error
 	upstreamURL, err = substitutePathVars(upstreamURL, pathVars)
 	if err != nil {
 		return nil, nil, err
 	}
+	upstreamURL = appendUpstreamPath(upstreamURL, appendPath)
 
 	// Replace model name if upstream_model_name is set
 	reqBody := body

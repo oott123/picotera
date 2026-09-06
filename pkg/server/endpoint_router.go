@@ -11,12 +11,12 @@
 // Any future writer of the endpoint table must call
 // Server.endpointRouter.Invalidate() at the same site.
 //
-// The five unified generation routes (/api/unified/v1/messages,
+// The unified routes — five generation routes (/api/unified/v1/messages,
 // /v1/responses, /v1/chat/completions, and the two /v1beta/models/{model}:…
-// Gemini variants) are registered as literal chi handlers in server.go
-// BEFORE the catch-all gateway mount, so they never hit Match. They are not
-// rows in the endpoint table — they are runtime constants, see
-// handle_unified_gateway.go.
+// Gemini variants), /api/unified/v1/embeddings, and the /api/unified/codex/*
+// wildcard mount — are registered as chi handlers in server.go BEFORE the
+// catch-all gateway mount, so they never hit Match. They are not rows in the
+// endpoint table — they are runtime constants, see handle_unified_gateway.go.
 package server
 
 import (
@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strings"
 	"sync"
 
 	"picotera/pkg/db"
@@ -33,11 +34,14 @@ import (
 var tokenRe = regexp.MustCompile(`\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 
 // compiledEndpoint holds a pre-compiled pattern for a single endpoint path.
+// A prefix entry carries no regexp: re / varNames are nil and matching is a
+// plain HasPrefix over endpoint.Path + "/".
 type compiledEndpoint struct {
 	endpoint   db.Endpoint
 	re         *regexp.Regexp
 	varNames   []string
 	literalLen int
+	prefix     bool
 }
 
 // compilePattern converts an endpoint path (possibly containing {name} tokens)
@@ -119,20 +123,22 @@ func newEndpointRouter(q *db.Queries) *endpointRouter {
 
 // Match finds the best-matching endpoint for the given request path.
 //
-// On a hit it returns (endpoint, pathVars, true, nil). pathVars is nil when
-// the matched endpoint contains no {name} tokens.
+// On a hit it returns (endpoint, pathVars, suffix, true, nil). pathVars is nil
+// when the matched endpoint contains no {name} tokens. suffix is the part of
+// the request path beyond the endpoint's prefix (always starting with '/' and
+// non-empty) for a prefix endpoint, and "" for every ordinary endpoint.
 //
-// On a miss it returns (zero, nil, false, nil).
+// On a miss it returns (zero, nil, "", false, nil).
 //
-// On a load/compile error it returns (zero, nil, false, err); the caller
+// On a load/compile error it returns (zero, nil, "", false, err); the caller
 // should surface this as a 500 INTERNAL_ERROR.
-func (r *endpointRouter) Match(ctx context.Context, path string) (db.Endpoint, map[string]string, bool, error) {
+func (r *endpointRouter) Match(ctx context.Context, path string) (db.Endpoint, map[string]string, string, bool, error) {
 	// Fast path: cache already warm.
 	r.mu.RLock()
 	if r.loaded {
-		ep, vars, ok := r.matchLocked(path)
+		ep, vars, suffix, ok := r.matchLocked(path)
 		r.mu.RUnlock()
-		return ep, vars, ok, nil
+		return ep, vars, suffix, ok, nil
 	}
 	r.mu.RUnlock()
 
@@ -141,31 +147,40 @@ func (r *endpointRouter) Match(ctx context.Context, path string) (db.Endpoint, m
 	if !r.loaded {
 		if err := r.load(ctx); err != nil {
 			r.mu.Unlock()
-			return db.Endpoint{}, nil, false, err
+			return db.Endpoint{}, nil, "", false, err
 		}
 	}
-	ep, vars, ok := r.matchLocked(path)
+	ep, vars, suffix, ok := r.matchLocked(path)
 	r.mu.Unlock()
-	return ep, vars, ok, nil
+	return ep, vars, suffix, ok, nil
 }
 
 // matchLocked iterates entries (must be called under at least a read lock).
-func (r *endpointRouter) matchLocked(path string) (db.Endpoint, map[string]string, bool) {
+func (r *endpointRouter) matchLocked(path string) (db.Endpoint, map[string]string, string, bool) {
 	for _, ce := range r.entries {
+		if ce.prefix {
+			// A prefix endpoint serves sub-paths only: the bare prefix itself
+			// falls through to the next entry (and ultimately 404 / SPA).
+			p := ce.endpoint.Path
+			if !strings.HasPrefix(path, p+"/") {
+				continue
+			}
+			return ce.endpoint, nil, path[len(p):], true
+		}
 		subs := ce.re.FindStringSubmatch(path)
 		if subs == nil {
 			continue
 		}
 		if len(ce.varNames) == 0 {
-			return ce.endpoint, nil, true
+			return ce.endpoint, nil, "", true
 		}
 		vars := make(map[string]string, len(ce.varNames))
 		for i, name := range ce.varNames {
 			vars[name] = subs[i+1]
 		}
-		return ce.endpoint, vars, true
+		return ce.endpoint, vars, "", true
 	}
-	return db.Endpoint{}, nil, false
+	return db.Endpoint{}, nil, "", false
 }
 
 // Invalidate drops the cached entries. The next Match call will reload from
@@ -187,6 +202,20 @@ func (r *endpointRouter) load(ctx context.Context) error {
 
 	entries := make([]compiledEndpoint, 0, len(rows))
 	for _, ep := range rows {
+		if ep.PrefixMatch {
+			// Prefix paths carry no {name} tokens (handleUpsertEndpoint rejects
+			// them), so there is nothing to compile — the whole path is literal.
+			// Defensively skip a row that somehow still has one.
+			if strings.ContainsAny(ep.Path, "{}") {
+				continue
+			}
+			entries = append(entries, compiledEndpoint{
+				endpoint:   ep,
+				literalLen: len(ep.Path),
+				prefix:     true,
+			})
+			continue
+		}
 		re, varNames, litLen, err := compilePattern(ep.Path)
 		if err != nil {
 			// Skip malformed patterns rather than failing all routing.
@@ -200,15 +229,22 @@ func (r *endpointRouter) load(ctx context.Context) error {
 		})
 	}
 
-	// Most-specific first: largest literal length wins; ties broken by path asc.
+	sortCompiledEndpoints(entries)
+
+	r.entries = entries
+	r.loaded = true
+	return nil
+}
+
+// sortCompiledEndpoints orders entries most-specific first: largest literal
+// length wins, ties broken by path ascending. A prefix entry's literalLen is
+// just its own path length, so an exact endpoint mounted under the same prefix
+// (longer literal) always wins over it — prefix matching needs no extra rule.
+func sortCompiledEndpoints(entries []compiledEndpoint) {
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].literalLen != entries[j].literalLen {
 			return entries[i].literalLen > entries[j].literalLen
 		}
 		return entries[i].endpoint.Path < entries[j].endpoint.Path
 	})
-
-	r.entries = entries
-	r.loaded = true
-	return nil
 }

@@ -28,8 +28,7 @@ func extractUserMessage(body []byte, endpointType int32) (string, bool) {
 		if text, ok := extractAnthropicUserMessage(body); ok {
 			return text, true
 		}
-	case contract.EndpointType_OpenAIResponses, contract.EndpointType_CodexCompact:
-		// Codex compact bodies are Responses-shaped.
+	case contract.EndpointType_OpenAIResponses:
 		if text, ok := extractOpenAIResponsesUserMessage(body); ok {
 			return text, true
 		}
@@ -37,10 +36,14 @@ func extractUserMessage(body []byte, endpointType int32) (string, bool) {
 		if text, ok := extractGeminiUserMessage(body); ok {
 			return text, true
 		}
-	case contract.EndpointType_ExaSearch, contract.EndpointType_CodexSearchV1Alpha:
+	case contract.EndpointType_ExaSearch:
 		return extractQueryUserMessage(body)
 	case contract.EndpointType_OpenAIEmbedding:
 		return extractEmbeddingUserMessage(body)
+	// EndpointType_Codex deliberately has no case: a codex body's shape follows
+	// the sub-path (/responses and /responses/compact are Responses-shaped,
+	// /alpha/search is {query}), so the default heuristic chain — which tries
+	// Responses and then `query` — is exactly right.
 	default:
 		for _, fn := range []func([]byte) (string, bool){
 			extractOpenAIChatUserMessage,

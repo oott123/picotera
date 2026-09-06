@@ -71,6 +71,7 @@ SELECT
   p.id AS provider_id,
   pe.endpoint_path,
   e.endpoint_type AS endpoint_type,
+  e.prefix_match AS prefix_match,
   COALESCE(elem ->> 'upstreamModelName', '')::text AS upstream_model_name,
   COALESCE((elem ->> 'priority')::int, 0)::int AS priority,
   (COALESCE(elem -> 'annotations', '{}'::jsonb))::jsonb AS annotations,

@@ -14,7 +14,14 @@ WHERE
   r.user_id = sqlc.arg('user_id')::bigint
   AND (sqlc.narg('type')::int IS NULL OR r.type = sqlc.narg('type'))
   AND (sqlc.narg('provider_id')::int IS NULL OR r.provider_id = sqlc.narg('provider_id'))
-  AND (sqlc.narg('endpoint_path')::text IS NULL OR r.endpoint_path = sqlc.narg('endpoint_path'))
+  -- Prefix-aware: a prefix endpoint's request rows record `path || suffix`, and
+  -- the endpoint label list only carries the prefix itself, so exact equality
+  -- alone would match nothing. starts_with (not LIKE) so a filter value
+  -- containing % or _ is not read as a wildcard. For non-prefix endpoints the
+  -- second branch never fires — no row records `path/…` for them.
+  AND (sqlc.narg('endpoint_path')::text IS NULL
+       OR r.endpoint_path = sqlc.narg('endpoint_path')
+       OR starts_with(r.endpoint_path, sqlc.narg('endpoint_path')::text || '/'))
   AND (sqlc.narg('model')::text IS NULL OR r.model = sqlc.narg('model'))
   AND (sqlc.narg('upstream_model')::text IS NULL OR r.upstream_model = sqlc.narg('upstream_model'))
   AND (sqlc.narg('project_id')::int IS NULL OR r.project_id = sqlc.narg('project_id'))

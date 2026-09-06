@@ -284,7 +284,14 @@ WHERE
   r.user_id = $2::bigint
   AND ($3::int IS NULL OR r.type = $3)
   AND ($4::int IS NULL OR r.provider_id = $4)
-  AND ($5::text IS NULL OR r.endpoint_path = $5)
+  -- Prefix-aware: a prefix endpoint's request rows record ` + "`" + `path || suffix` + "`" + `, and
+  -- the endpoint label list only carries the prefix itself, so exact equality
+  -- alone would match nothing. starts_with (not LIKE) so a filter value
+  -- containing % or _ is not read as a wildcard. For non-prefix endpoints the
+  -- second branch never fires — no row records ` + "`" + `path/…` + "`" + ` for them.
+  AND ($5::text IS NULL
+       OR r.endpoint_path = $5
+       OR starts_with(r.endpoint_path, $5::text || '/'))
   AND ($6::text IS NULL OR r.model = $6)
   AND ($7::text IS NULL OR r.upstream_model = $7)
   AND ($8::int IS NULL OR r.project_id = $8)

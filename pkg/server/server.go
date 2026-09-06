@@ -395,6 +395,12 @@ func (s *Server) registerEndpoints() {
 			r.Post(route.Path, h)
 			r.Options(route.Path, h)
 		}
+		// Codex's sub-paths are open-ended, so it gets a wildcard mount instead
+		// of a row in unifiedRoutes; the handler normalizes the remainder and
+		// builds the route value per request.
+		codex := s.handleUnifiedCodex()
+		r.Post(codexMountPattern, codex)
+		r.Options(codexMountPattern, codex)
 	})
 
 	// Short-circuit test route: forwards a caller-supplied body straight to a

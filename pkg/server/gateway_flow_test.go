@@ -111,7 +111,7 @@ func TestBuildPathCandidateSetAnnotations(t *testing.T) {
 		EndpointPath:            "/v1/messages",
 	}}
 	userAnno := map[string]string{"k": "user", "u": "user", "userOnly": "1"}
-	set, err := buildPathCandidateSet(rows, userAnno, map[string]string{"k": "api", "apiOnly": "1"}, nil, db.Endpoint{Path: "/v1/messages"})
+	set, err := buildPathCandidateSet(rows, userAnno, map[string]string{"k": "api", "apiOnly": "1"}, nil, db.Endpoint{Path: "/v1/messages"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestBuildPathCandidateSetFormat(t *testing.T) {
 		ProviderName: "provider",
 		EndpointPath: "/v1/messages",
 	}}
-	set, err := buildPathCandidateSet(rows, nil, nil, nil, db.Endpoint{Path: "/v1/messages", EndpointType: contract.EndpointType_AnthropicMessages})
+	set, err := buildPathCandidateSet(rows, nil, nil, nil, db.Endpoint{Path: "/v1/messages", EndpointType: contract.EndpointType_AnthropicMessages}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestBuildUnifiedCandidateSetAnnotationsAndFormat(t *testing.T) {
 		Annotations:             []byte(`{"k":"entry"}`),
 		SupportsNativeWebSearch: true,
 	}}
-	set, err := buildUnifiedCandidateSet(rows, map[string]string{"k": "user"}, map[string]string{"k": "api"}, nil, db.Endpoint{})
+	set, err := buildUnifiedCandidateSet(rows, map[string]string{"k": "user"}, map[string]string{"k": "api"}, nil, db.Endpoint{}, "", upstreamFormatFor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,6 +174,79 @@ func TestBuildUnifiedCandidateSetAnnotationsAndFormat(t *testing.T) {
 	}
 	if set.Items[0].Candidate.Annotations["k"] != "api" {
 		t.Fatalf("api annotation should win, got %+v", set.Items[0].Candidate.Annotations)
+	}
+}
+
+// TestBuildPathCandidateSetPrefixSuffix pins that a prefix endpoint's suffix
+// follows the candidate: it lands on AppendPath (appended to the upstream URL
+// at send time) and on EndpointPath (what the upstream row records), while a
+// non-prefix endpoint ignores a suffix entirely.
+func TestBuildPathCandidateSetPrefixSuffix(t *testing.T) {
+	rows := []providerCandidateRow{{ProviderID: 1, ProviderName: "provider", EndpointPath: "/api/codex"}}
+
+	set, err := buildPathCandidateSet(rows, nil, nil, nil, db.Endpoint{Path: "/api/codex", EndpointType: contract.EndpointType_Codex, PrefixMatch: true}, "/responses/compact")
+	if err != nil {
+		t.Fatal(err)
+	}
+	side := set.Items[0].Sidecar
+	if side.AppendPath != "/responses/compact" {
+		t.Errorf("AppendPath = %q", side.AppendPath)
+	}
+	if side.EndpointPath != "/api/codex/responses/compact" {
+		t.Errorf("EndpointPath = %q", side.EndpointPath)
+	}
+
+	// prefix_match = false: the endpoint never sees a suffix, but pin that a
+	// stray one would be ignored rather than silently appended.
+	set, err = buildPathCandidateSet(rows, nil, nil, nil, db.Endpoint{Path: "/api/codex"}, "/responses")
+	if err != nil {
+		t.Fatal(err)
+	}
+	side = set.Items[0].Sidecar
+	if side.AppendPath != "" || side.EndpointPath != "/api/codex" {
+		t.Errorf("non-prefix endpoint picked up a suffix: %+v", side)
+	}
+}
+
+// TestBuildUnifiedCandidateSetCodex pins the codex candidate on the unified
+// mount: it carries the request's suffix (a bridged sibling row does not), and
+// its upstream format comes from the caller's closure so src == upstream and
+// unifiedStreamSuccess degenerates to byte forwarding.
+func TestBuildUnifiedCandidateSetCodex(t *testing.T) {
+	rows := []db.GetProvidersByEndpointTypesAndModelRow{
+		{ProviderID: 1, ProviderName: "codex-provider", EndpointPath: "/api/codex", EndpointType: contract.EndpointType_Codex, PrefixMatch: true},
+		{ProviderID: 2, ProviderName: "responses-provider", EndpointPath: "/v1/responses", EndpointType: contract.EndpointType_OpenAIResponses},
+	}
+	upstreamFormat := func(t int32) llmbridge.Format {
+		if t == contract.EndpointType_Codex {
+			return llmbridge.FormatOpenAIResponses
+		}
+		return upstreamFormatFor(t)
+	}
+	set, err := buildUnifiedCandidateSet(rows, nil, nil, nil, db.Endpoint{}, "/responses", upstreamFormat)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	codex := set.Items[0].Sidecar
+	if codex.AppendPath != "/responses" || codex.EndpointPath != "/api/codex/responses" {
+		t.Errorf("codex sidecar = %+v", codex)
+	}
+	if codex.UpstreamFormat != llmbridge.FormatOpenAIResponses {
+		t.Errorf("codex UpstreamFormat = %s, want identity with the source", codex.UpstreamFormat)
+	}
+	if got := set.Items[0].Candidate.ProviderModel.UpstreamFormat; got != "codex" {
+		t.Errorf("JS-visible upstreamFormat = %q, want codex", got)
+	}
+	// The candidate key must stay keyed on the configured endpoint path, since
+	// candidateKey rebuilds it from the JS-visible providerModel.endpoint.
+	if codex.Key != "1|/api/codex" {
+		t.Errorf("codex Key = %q", codex.Key)
+	}
+
+	bridged := set.Items[1].Sidecar
+	if bridged.AppendPath != "" || bridged.EndpointPath != "/v1/responses" {
+		t.Errorf("non-prefix candidate picked up the suffix: %+v", bridged)
 	}
 }
 

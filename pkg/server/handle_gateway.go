@@ -8,6 +8,7 @@ import (
 
 	"picotera/pkg/contract"
 	"picotera/pkg/db"
+	"picotera/pkg/errorx"
 
 	"github.com/tidwall/sjson"
 )
@@ -20,7 +21,7 @@ var _ http.Handler = (*gatewayHandler)(nil)
 
 func (h *gatewayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	startedAt := time.Now()
-	endpoint, pathVars, err := h.resolveEndpoint(r.Context(), r.URL.Path)
+	endpoint, pathVars, suffix, err := h.resolveEndpoint(r.Context(), r.URL.Path)
 	if err != nil {
 		if isRouteNotFound(err) && looksLikeBrowserNav(r) {
 			h.staticHandler.ServeHTTP(w, r)
@@ -28,6 +29,23 @@ func (h *gatewayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		handleGatewayErr(w, err)
 		return
+	}
+	if suffix != "" {
+		// Routing matched the decoded path, but the bytes appended to the
+		// upstream URL must be exactly what the client sent, so re-cut the
+		// suffix off EscapedPath. A client that percent-encoded part of the
+		// prefix itself (`/api/co%64ex/responses`) breaks the offset — reject
+		// rather than silently forwarding a re-encoded path.
+		escaped := r.URL.EscapedPath()
+		if !strings.HasPrefix(escaped, endpoint.Path) {
+			handleGatewayErr(w, &gatewayError{
+				status:  http.StatusNotFound,
+				message: "route not found",
+				code:    errorx.RouteNotFound.Error(),
+			})
+			return
+		}
+		suffix = escaped[len(endpoint.Path):]
 	}
 	// Matched a real gateway endpoint: emit CORS headers and answer preflight.
 	// Done after the static-fallback branch so SPA assets stay header-free.
@@ -40,15 +58,18 @@ func (h *gatewayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleModelList(w, r, endpoint)
 		return
 	}
-	newGatewayFlow(h, w, r, startedAt, h.newPathGatewayFlowConfig(endpoint, pathVars)).run()
+	newGatewayFlow(h, w, r, startedAt, h.newPathGatewayFlowConfig(endpoint, pathVars, suffix)).run()
 }
 
-func (h *gatewayHandler) newPathGatewayFlowConfig(endpoint db.Endpoint, pathVars map[string]string) gatewayFlowConfig {
+func (h *gatewayHandler) newPathGatewayFlowConfig(endpoint db.Endpoint, pathVars map[string]string, suffix string) gatewayFlowConfig {
 	return gatewayFlowConfig{
-		Kind:         gatewayRoutePath,
-		Endpoint:     endpoint,
-		PathVars:     pathVars,
-		SourceFormat: upstreamFormatFor(endpoint.EndpointType),
+		Kind:     gatewayRoutePath,
+		Endpoint: endpoint,
+		// Prefix endpoints route on the prefix but are recorded — and filtered —
+		// at the concrete sub-path the client asked for.
+		RecordedEndpointPath: endpoint.Path + suffix,
+		PathVars:             pathVars,
+		SourceFormat:         upstreamFormatFor(endpoint.EndpointType),
 		ExtractModel: func(_ *http.Request, body []byte, vars map[string]string) (gatewayModelMode, error) {
 			if endpoint.ModelPath == "" {
 				return gatewayModelMode{}, nil
@@ -64,7 +85,7 @@ func (h *gatewayHandler) newPathGatewayFlowConfig(endpoint db.Endpoint, pathVars
 			if err != nil {
 				return candidateSet{}, err
 			}
-			return buildPathCandidateSet(providers, auth.UserAnno, auth.APIKeyAnno, nil, endpoint)
+			return buildPathCandidateSet(providers, auth.UserAnno, auth.APIKeyAnno, nil, endpoint, suffix)
 		},
 		PrepareAttempt: identityPrepareAttempt,
 		HandleSuccess: func(input successInput) {

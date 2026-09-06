@@ -73,8 +73,7 @@ export const ENDPOINT_TYPES_MODEL_ROUTED: EndpointType[] = [
   'anthropicCountTokens',
   'geminiGenerateContent',
   'geminiStreamGenerateContent',
-  'codexCompact',
-  'codexSearchV1Alpha',
+  'codex',
   'openaiEmbedding',
 ]
 export const ENDPOINT_TYPE_LABELS: Record<EndpointType, string> = {
@@ -87,8 +86,7 @@ export const ENDPOINT_TYPE_LABELS: Record<EndpointType, string> = {
   geminiStreamGenerateContent: 'Gemini 流式生成内容',
   exaSearch: 'Exa 搜索',
   modelList: '模型列表',
-  codexCompact: 'Codex 压缩',
-  codexSearchV1Alpha: 'Codex 搜索 v1alpha',
+  codex: 'Codex',
   openaiEmbedding: 'OpenAI 特征提取',
   unknown: '未知',
 }

@@ -75,12 +75,20 @@ func candidateEndpointTypes(route unifiedRoute, streaming bool) []int32 {
 	if streaming {
 		geminiVariant = contract.EndpointType_GeminiStreamGenerateContent
 	}
-	return []int32{
+	types := []int32{
 		contract.EndpointType_AnthropicMessages,
 		contract.EndpointType_OpenAIChatCompletions,
 		contract.EndpointType_OpenAIResponses,
 		geminiVariant,
 	}
+	if route.Codex {
+		// /api/unified/codex/responses: a codex upstream serves it byte-for-byte
+		// (same format), and the four generation types serve it through the
+		// bridge. dedupeUnifiedRows' srcType is EndpointType_Codex, so a channel
+		// configured with both wins with its codex row.
+		types = append(types, contract.EndpointType_Codex)
+	}
+	return types
 }
 
 // extractUnifiedModel picks the model name for the inbound request. Only the
@@ -298,7 +306,7 @@ func unifiedStreamArgsFromSuccess(input successInput) unifiedStreamArgs {
 		metaID: input.Flow.meta.ID, metaCreatedAt: input.Flow.meta.CreatedAt,
 		gatewayStart: input.Flow.startedAt, providerID: input.ProviderID,
 		routedModel: input.RoutedModel, upstreamModel: input.UpstreamModel,
-		metaEndpointPath: input.Flow.config.Endpoint.Path, upstreamPath: input.Sidecar.EndpointPath,
+		metaEndpointPath: input.Flow.config.RecordedEndpointPath, upstreamPath: input.Sidecar.EndpointPath,
 		upstreamStartTime: input.UpstreamStartTime,
 		metaLogs:          input.Flow.collectLogs(), apiKeyID: input.Flow.auth.APIKeyID,
 		userID:     input.Flow.auth.UserID,

@@ -66,12 +66,6 @@ func TestUnifiedRoutesTable(t *testing.T) {
 		{"/api/unified/v1/chat/completions", llmbridge.FormatOpenAIChatCompletions, contract.EndpointType_OpenAIChatCompletions, false},
 		{"/api/unified/v1beta/models/{model}:generateContent", llmbridge.FormatGeminiGenerateContent, contract.EndpointType_GeminiGenerateContent, false},
 		{"/api/unified/v1beta/models/{model}:streamGenerateContent", llmbridge.FormatGeminiStreamGenerateContent, contract.EndpointType_GeminiStreamGenerateContent, false},
-		// The Codex responses route is a second mount of the OpenAI Responses
-		// source — same format and source type as /v1/responses.
-		{"/api/unified/codex/responses", llmbridge.FormatOpenAIResponses, contract.EndpointType_OpenAIResponses, false},
-		{"/api/unified/codex/responses/compact", llmbridge.FormatUnknown, contract.EndpointType_CodexCompact, true},
-		{"/api/unified/codex/alpha/search", llmbridge.FormatUnknown, contract.EndpointType_CodexSearchV1Alpha, true},
-		{"/api/unified/v1/alpha/search", llmbridge.FormatUnknown, contract.EndpointType_CodexSearchV1Alpha, true},
 		{"/api/unified/v1/embeddings", llmbridge.FormatUnknown, contract.EndpointType_OpenAIEmbedding, true},
 	}
 	if len(cases) != len(unifiedRoutes) {
@@ -217,11 +211,90 @@ func TestCandidateEndpointTypes(t *testing.T) {
 		t.Errorf("Gemini stream route returned wrong gemini variant: %v", got)
 	}
 
-	// The Codex responses route shares the OpenAI Responses candidate set.
-	got = candidateEndpointTypes(unifiedRouteByPath(t, "/api/unified/codex/responses"), false)
-	want = candidateEndpointTypes(unifiedRouteByPath(t, "/api/unified/v1/responses"), false)
+	// The codex /responses sub-path is the OpenAI Responses candidate set plus
+	// codex itself (which serves it byte-for-byte).
+	got = candidateEndpointTypes(codexUnifiedRoute("/responses"), false)
+	want = append(candidateEndpointTypes(unifiedRouteByPath(t, "/api/unified/v1/responses"), false), contract.EndpointType_Codex)
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("codex responses set = %v, want same as /v1/responses %v", got, want)
+		t.Errorf("codex responses set = %v, want %v", got, want)
+	}
+}
+
+// TestNormalizeCodexSuffix pins the /v1 stripping that makes a base_url of
+// …/api/unified/codex and one of …/api/unified/codex/v1 equivalent, and the
+// empty-suffix cases that must 404 rather than dispatch on nothing.
+func TestNormalizeCodexSuffix(t *testing.T) {
+	cases := []struct {
+		raw    string
+		want   string
+		wantOK bool
+	}{
+		{"/responses", "/responses", true},
+		{"/v1/responses", "/responses", true},
+		{"/responses/compact", "/responses/compact", true},
+		{"/v1/responses/compact", "/responses/compact", true},
+		{"/alpha/search", "/alpha/search", true},
+		{"/v1/alpha/search", "/alpha/search", true},
+		// "/v1" is only a segment when followed by "/" — "/v1x/y" is a real path.
+		{"/v1x/y", "/v1x/y", true},
+		{"", "", false},
+		{"/", "", false},
+		{"/v1", "", false},
+		{"/v1/", "", false},
+	}
+	for _, tc := range cases {
+		got, ok := normalizeCodexSuffix(tc.raw)
+		if got != tc.want || ok != tc.wantOK {
+			t.Errorf("normalizeCodexSuffix(%q) = (%q, %v), want (%q, %v)", tc.raw, got, ok, tc.want, tc.wantOK)
+		}
+	}
+}
+
+// TestCodexUnifiedRoute pins the per-request route values the codex mount
+// produces: /responses keeps a real source format (so it can bridge), every
+// other sub-path is codex-only passthrough, and both record the normalized
+// concrete path.
+func TestCodexUnifiedRoute(t *testing.T) {
+	cases := []struct {
+		suffix          string
+		wantPath        string
+		wantFormat      llmbridge.Format
+		wantPassthrough bool
+	}{
+		{"/responses", "/api/unified/codex/responses", llmbridge.FormatOpenAIResponses, false},
+		{"/responses/compact", "/api/unified/codex/responses/compact", llmbridge.FormatUnknown, true},
+		{"/alpha/search", "/api/unified/codex/alpha/search", llmbridge.FormatUnknown, true},
+	}
+	for _, tc := range cases {
+		r := codexUnifiedRoute(tc.suffix)
+		if r.Path != tc.wantPath {
+			t.Errorf("%s: Path = %s, want %s", tc.suffix, r.Path, tc.wantPath)
+		}
+		if r.Format != tc.wantFormat {
+			t.Errorf("%s: Format = %s, want %s", tc.suffix, r.Format, tc.wantFormat)
+		}
+		if r.passthrough() != tc.wantPassthrough {
+			t.Errorf("%s: passthrough() = %v, want %v", tc.suffix, r.passthrough(), tc.wantPassthrough)
+		}
+		if r.SourceType != contract.EndpointType_Codex {
+			t.Errorf("%s: SourceType = %d, want %d", tc.suffix, r.SourceType, contract.EndpointType_Codex)
+		}
+		if r.UpstreamSuffix != tc.suffix {
+			t.Errorf("%s: UpstreamSuffix = %s", tc.suffix, r.UpstreamSuffix)
+		}
+		if !r.Codex {
+			t.Errorf("%s: Codex = false", tc.suffix)
+		}
+	}
+
+	// Passthrough codex sub-paths only ever consider a codex upstream.
+	for _, suffix := range []string{"/responses/compact", "/alpha/search"} {
+		for _, streaming := range []bool{false, true} {
+			got := candidateEndpointTypes(codexUnifiedRoute(suffix), streaming)
+			if !reflect.DeepEqual(got, []int32{contract.EndpointType_Codex}) {
+				t.Errorf("%s (streaming=%v) = %v, want [%d]", suffix, streaming, got, contract.EndpointType_Codex)
+			}
+		}
 	}
 }
 
@@ -231,9 +304,7 @@ func TestCandidateEndpointTypes(t *testing.T) {
 // (there is no Gemini variant to choose).
 func TestCandidateEndpointTypesPassthrough(t *testing.T) {
 	cases := map[string]int32{
-		"/api/unified/codex/responses/compact": contract.EndpointType_CodexCompact,
-		"/api/unified/v1/alpha/search":         contract.EndpointType_CodexSearchV1Alpha,
-		"/api/unified/v1/embeddings":           contract.EndpointType_OpenAIEmbedding,
+		"/api/unified/v1/embeddings": contract.EndpointType_OpenAIEmbedding,
 	}
 	for path, wantType := range cases {
 		route := unifiedRouteByPath(t, path)
@@ -268,34 +339,36 @@ func TestExtractUnifiedModel_BodyFormats(t *testing.T) {
 // the body's `model` like every non-Gemini route — that is what makes
 // rewriteModel and the beforeRequest upstreamModel override work on them.
 func TestExtractUnifiedModel_Passthrough(t *testing.T) {
-	cases := map[string]struct {
+	cases := []struct {
+		name      string
+		route     unifiedRoute
 		body      string
 		wantModel string
 	}{
-		"/api/unified/codex/responses/compact": {`{"model":"gpt-5-codex","query":"hi"}`, "gpt-5-codex"},
-		"/api/unified/v1/alpha/search":         {`{"model":"gpt-5-codex","query":"hi"}`, "gpt-5-codex"},
-		"/api/unified/v1/embeddings":           {`{"model":"text-embedding-3-small","input":"hi"}`, "text-embedding-3-small"},
+		{"embeddings", unifiedRouteByPath(t, "/api/unified/v1/embeddings"), `{"model":"text-embedding-3-small","input":"hi"}`, "text-embedding-3-small"},
+		{"codex compact", codexUnifiedRoute("/responses/compact"), `{"model":"gpt-5-codex","input":[]}`, "gpt-5-codex"},
+		{"codex search", codexUnifiedRoute("/alpha/search"), `{"model":"gpt-5-codex","query":"hi"}`, "gpt-5-codex"},
 	}
-	for path, tc := range cases {
-		route := unifiedRouteByPath(t, path)
-		r := httptest.NewRequest("POST", path, nil)
-		model, err := extractUnifiedModel(route, r, []byte(tc.body))
+	// Only the Gemini routes read the URL, so one request stands in for all.
+	r := httptest.NewRequest("POST", "/api/unified/codex/responses/compact", nil)
+	for _, tc := range cases {
+		model, err := extractUnifiedModel(tc.route, r, []byte(tc.body))
 		if err != nil {
-			t.Fatalf("%s: %v", path, err)
+			t.Fatalf("%s: %v", tc.name, err)
 		}
 		if model != tc.wantModel {
-			t.Errorf("%s: got model=%q, want %s", path, model, tc.wantModel)
+			t.Errorf("%s: got model=%q, want %s", tc.name, model, tc.wantModel)
 		}
 
 		// Missing / empty model is a 400, not a fallback.
 		for _, bad := range [][]byte{[]byte(`{}`), []byte(`{"model":""}`)} {
-			_, err = extractUnifiedModel(route, r, bad)
+			_, err = extractUnifiedModel(tc.route, r, bad)
 			var gerr *gatewayError
 			if !errors.As(err, &gerr) {
-				t.Fatalf("%s: body %s: expected gatewayError, got %v", path, bad, err)
+				t.Fatalf("%s: body %s: expected gatewayError, got %v", tc.name, bad, err)
 			}
 			if gerr.status != http.StatusBadRequest || gerr.code != errorx.ModelNotFound.Error() {
-				t.Errorf("%s: body %s: got status=%d code=%s, want 400 %s", path, bad, gerr.status, gerr.code, errorx.ModelNotFound.Error())
+				t.Errorf("%s: body %s: got status=%d code=%s, want 400 %s", tc.name, bad, gerr.status, gerr.code, errorx.ModelNotFound.Error())
 			}
 		}
 	}
@@ -386,16 +459,21 @@ func TestSetUnifiedModel(t *testing.T) {
 // reaches the wire on the passthrough routes: the body is forwarded verbatim
 // apart from this one field.
 func TestSetUnifiedModelPassthrough(t *testing.T) {
-	for _, path := range []string{"/api/unified/codex/responses/compact", "/api/unified/v1/alpha/search", "/api/unified/v1/embeddings"} {
-		out, err := setUnifiedModel(unifiedRouteByPath(t, path), []byte(`{"model":"old","query":"hi"}`), "upstream-model")
+	routes := []unifiedRoute{
+		unifiedRouteByPath(t, "/api/unified/v1/embeddings"),
+		codexUnifiedRoute("/responses/compact"),
+		codexUnifiedRoute("/alpha/search"),
+	}
+	for _, route := range routes {
+		out, err := setUnifiedModel(route, []byte(`{"model":"old","query":"hi"}`), "upstream-model")
 		if err != nil {
-			t.Fatalf("%s: %v", path, err)
+			t.Fatalf("%s: %v", route.Path, err)
 		}
 		if got := gjson.GetBytes(out, "model").Str; got != "upstream-model" {
-			t.Errorf("%s: model = %q, want upstream-model", path, got)
+			t.Errorf("%s: model = %q, want upstream-model", route.Path, got)
 		}
 		if got := gjson.GetBytes(out, "query").Str; got != "hi" {
-			t.Errorf("%s: query = %q, want hi (rest of body must survive)", path, got)
+			t.Errorf("%s: query = %q, want hi (rest of body must survive)", route.Path, got)
 		}
 	}
 }

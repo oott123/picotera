@@ -18,6 +18,7 @@ const form = ref({
   modelPath: props.endpoint?.modelPath ?? '',
   credentialsResolver: props.endpoint?.credentialsResolver ?? ('followRequest' as const),
   endpointType: (props.endpoint?.endpointType ?? 'general') as EndpointType,
+  prefixMatch: props.endpoint?.prefixMatch ?? false,
 })
 const saving = ref(false)
 const error = ref('')
@@ -29,10 +30,15 @@ const saveMutation = useMutation({
 const isModelPathLocked = computed(
   () => form.value.endpointType === 'exaSearch' || form.value.endpointType === 'modelList',
 )
+// A codex endpoint stands for one Codex upstream's base_url; its sub-paths only
+// exist as request path suffixes, so prefix matching is mandatory (the server
+// rejects the pair otherwise).
+const isPrefixMatchLocked = computed(() => form.value.endpointType === 'codex')
 watch(
   () => form.value.endpointType,
   (t) => {
     if (t === 'exaSearch' || t === 'modelList') form.value.modelPath = ''
+    if (t === 'codex') form.value.prefixMatch = true
   },
 )
 
@@ -78,7 +84,7 @@ async function submit() {
         <Input
           v-model="form.path"
           required
-          placeholder="例如 /api/v1/chat/completions"
+          :placeholder="form.prefixMatch ? '例如 /api/codex' : '例如 /api/v1/chat/completions'"
           :disabled="isEdit"
         />
       </Field>
@@ -87,6 +93,23 @@ async function submit() {
       </Field>
       <Field label="类型">
         <Select v-model="form.endpointType" :options="endpointTypeOptions" />
+      </Field>
+      <Field label="路径匹配" as="div">
+        <label class="inline-flex items-center gap-2 text-sm cursor-pointer">
+          <input
+            v-model="form.prefixMatch"
+            type="checkbox"
+            class="cursor-pointer"
+            :disabled="isPrefixMatchLocked"
+          />
+          <span>前缀匹配</span>
+        </label>
+        <p v-if="isPrefixMatchLocked" class="text-xs text-ink-faint">
+          Codex 端点必须使用前缀匹配。
+        </p>
+        <p v-else-if="form.prefixMatch" class="text-xs text-ink-faint">
+          请求路径中前缀之后的部分会原样接到上游 URL 后面；路径不能包含 {} 变量或以 / 结尾。
+        </p>
       </Field>
       <Field label="模型字段路径">
         <Input

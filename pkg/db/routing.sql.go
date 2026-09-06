@@ -12,7 +12,7 @@ import (
 )
 
 const getEndpointByPath = `-- name: GetEndpointByPath :one
-SELECT path, name, model_path, credentials_resolver, endpoint_type FROM endpoint WHERE path = $1 LIMIT 1
+SELECT path, name, model_path, credentials_resolver, endpoint_type, prefix_match FROM endpoint WHERE path = $1 LIMIT 1
 `
 
 func (q *Queries) GetEndpointByPath(ctx context.Context, path string) (Endpoint, error) {
@@ -24,6 +24,7 @@ func (q *Queries) GetEndpointByPath(ctx context.Context, path string) (Endpoint,
 		&i.ModelPath,
 		&i.CredentialsResolver,
 		&i.EndpointType,
+		&i.PrefixMatch,
 	)
 	return i, err
 }
@@ -209,6 +210,7 @@ SELECT
   p.id AS provider_id,
   pe.endpoint_path,
   e.endpoint_type AS endpoint_type,
+  e.prefix_match AS prefix_match,
   COALESCE(elem ->> 'upstreamModelName', '')::text AS upstream_model_name,
   COALESCE((elem ->> 'priority')::int, 0)::int AS priority,
   (COALESCE(elem -> 'annotations', '{}'::jsonb))::jsonb AS annotations,
@@ -251,6 +253,7 @@ type GetProvidersByEndpointTypesAndModelRow struct {
 	ProviderID              int32       `json:"providerId"`
 	EndpointPath            string      `json:"endpointPath"`
 	EndpointType            int32       `json:"endpointType"`
+	PrefixMatch             bool        `json:"prefixMatch"`
 	UpstreamModelName       string      `json:"upstreamModelName"`
 	Priority                int32       `json:"priority"`
 	Annotations             []byte      `json:"annotations"`
@@ -286,6 +289,7 @@ func (q *Queries) GetProvidersByEndpointTypesAndModel(ctx context.Context, arg G
 			&i.ProviderID,
 			&i.EndpointPath,
 			&i.EndpointType,
+			&i.PrefixMatch,
 			&i.UpstreamModelName,
 			&i.Priority,
 			&i.Annotations,

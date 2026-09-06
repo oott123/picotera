@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"strings"
+
 	"picotera/pkg/contract"
 	"picotera/pkg/db"
 
@@ -34,7 +36,17 @@ func (s *Server) handleUpsertEndpoint(ctx context.Context, input *contract.Upser
 	if input.Body.EndpointType == "modelList" && input.Body.ModelPath != "" {
 		return nil, huma.Error400BadRequest("modelList endpoint must have empty modelPath")
 	}
-	if _, _, _, err := compilePattern(input.Body.Path); err != nil {
+	// A codex endpoint stands for one Codex upstream's base_url; its sub-paths
+	// (/responses, /responses/compact, /alpha/search, …) only exist as request
+	// path suffixes, so prefix matching is not optional.
+	if input.Body.EndpointType == "codex" && !input.Body.PrefixMatch {
+		return nil, huma.Error400BadRequest("codex endpoint must enable prefixMatch")
+	}
+	if input.Body.PrefixMatch {
+		if err := validatePrefixEndpointPath(input.Body.Path); err != nil {
+			return nil, err
+		}
+	} else if _, _, _, err := compilePattern(input.Body.Path); err != nil {
 		return nil, huma.Error400BadRequest("invalid endpoint path", err)
 	}
 
@@ -44,6 +56,7 @@ func (s *Server) handleUpsertEndpoint(ctx context.Context, input *contract.Upser
 		ModelPath:           input.Body.ModelPath,
 		CredentialsResolver: contract.ToCredentialsResolver(input.Body.CredentialsResolver),
 		EndpointType:        contract.ToEndpointType(input.Body.EndpointType),
+		PrefixMatch:         input.Body.PrefixMatch,
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to upsert endpoint", err)
@@ -58,6 +71,27 @@ func (s *Server) handleUpsertEndpoint(ctx context.Context, input *contract.Upser
 	return &contract.UpsertEndpointResponse{
 		Body: *endpointView,
 	}, nil
+}
+
+// validatePrefixEndpointPath enforces the constraints a prefix endpoint's path
+// must satisfy. Prefix matching is byte-oriented: the router matches on the
+// decoded r.URL.Path but the suffix handed to the upstream URL is cut off
+// r.URL.EscapedPath() at the same offset, which only holds when the prefix
+// encodes to itself. Path variables are ruled out because a prefix consumes the
+// whole remainder of the path, leaving nothing for a token to bind to.
+func validatePrefixEndpointPath(path string) error {
+	if strings.ContainsAny(path, "{}") {
+		return huma.Error400BadRequest("prefix-match endpoint path must not contain path variables")
+	}
+	if strings.HasSuffix(path, "/") {
+		return huma.Error400BadRequest("prefix-match endpoint path must not end with /")
+	}
+	for i := 0; i < len(path); i++ {
+		if path[i] == '%' || path[i] >= 0x80 {
+			return huma.Error400BadRequest("prefix-match endpoint path must be plain ASCII without percent-encoding")
+		}
+	}
+	return nil
 }
 
 func (s *Server) handleDeleteEndpoint(ctx context.Context, input *contract.DeleteEndpointRequest) (*struct{}, error) {

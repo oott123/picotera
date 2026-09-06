@@ -51,15 +51,20 @@ type gatewayFlow struct {
 }
 
 type gatewayFlowConfig struct {
-	Kind              gatewayRouteKind
-	Endpoint          db.Endpoint
-	PathVars          map[string]string
-	SourceFormat      llmbridge.Format
-	ExtractModel      func(*http.Request, []byte, map[string]string) (gatewayModelMode, error)
-	SetBodyModel      func([]byte, string) ([]byte, error)
-	ResolveCandidates func(context.Context, gatewayModelMode, gatewayAuthState) (candidateSet, error)
-	PrepareAttempt    func(context.Context, *gatewayFlow, attemptInput) (attemptPrepared, error)
-	HandleSuccess     func(successInput)
+	Kind     gatewayRouteKind
+	Endpoint db.Endpoint
+	// RecordedEndpointPath is what the meta row records as endpoint_path. It
+	// differs from Endpoint.Path only for a prefix endpoint, where it carries the
+	// concrete sub-path (prefix + suffix); Endpoint stays the database row
+	// because resolveProviders still looks candidates up by its path.
+	RecordedEndpointPath string
+	PathVars             map[string]string
+	SourceFormat         llmbridge.Format
+	ExtractModel         func(*http.Request, []byte, map[string]string) (gatewayModelMode, error)
+	SetBodyModel         func([]byte, string) ([]byte, error)
+	ResolveCandidates    func(context.Context, gatewayModelMode, gatewayAuthState) (candidateSet, error)
+	PrepareAttempt       func(context.Context, *gatewayFlow, attemptInput) (attemptPrepared, error)
+	HandleSuccess        func(successInput)
 }
 
 type gatewayMetaState struct {
@@ -241,7 +246,7 @@ func (f *gatewayFlow) insertMetaRequest() bool {
 		ParentSpanID:  parentSpanIDPg,
 		Type:          db.RequestTypeMeta,
 		ProviderID:    pgtype.Int4{Valid: false},
-		EndpointPath:  pgtype.Text{String: f.config.Endpoint.Path, Valid: true},
+		EndpointPath:  pgtype.Text{String: f.config.RecordedEndpointPath, Valid: true},
 		ApiKeyID:      pgtype.Int4{Valid: false},
 		Model:         pgtype.Text{Valid: false},
 		UpstreamModel: pgtype.Text{Valid: false},

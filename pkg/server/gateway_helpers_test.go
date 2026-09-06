@@ -23,7 +23,7 @@ func TestBuildUpstreamRequestSkipsAuthHeader(t *testing.T) {
 	original.Header.Set("X-Keep", "keep-me")
 
 	t.Run("skips configured auth header", func(t *testing.T) {
-		req, _, err := buildUpstreamRequest(context.Background(), original, []byte(`{}`), "http://upstream.example/v1/messages", "", "", 0, nil, "X-Local-Auth")
+		req, _, err := buildUpstreamRequest(context.Background(), original, []byte(`{}`), "http://upstream.example/v1/messages", "", "", "", 0, nil, "X-Local-Auth")
 		if err != nil {
 			t.Fatalf("buildUpstreamRequest: %v", err)
 		}
@@ -36,7 +36,7 @@ func TestBuildUpstreamRequestSkipsAuthHeader(t *testing.T) {
 	})
 
 	t.Run("case-insensitive match", func(t *testing.T) {
-		req, _, err := buildUpstreamRequest(context.Background(), original, []byte(`{}`), "http://upstream.example/v1/messages", "", "", 0, nil, "x-local-auth")
+		req, _, err := buildUpstreamRequest(context.Background(), original, []byte(`{}`), "http://upstream.example/v1/messages", "", "", "", 0, nil, "x-local-auth")
 		if err != nil {
 			t.Fatalf("buildUpstreamRequest: %v", err)
 		}
@@ -46,7 +46,7 @@ func TestBuildUpstreamRequestSkipsAuthHeader(t *testing.T) {
 	})
 
 	t.Run("empty name skips nothing extra", func(t *testing.T) {
-		req, _, err := buildUpstreamRequest(context.Background(), original, []byte(`{}`), "http://upstream.example/v1/messages", "", "", 0, nil, "")
+		req, _, err := buildUpstreamRequest(context.Background(), original, []byte(`{}`), "http://upstream.example/v1/messages", "", "", "", 0, nil, "")
 		if err != nil {
 			t.Fatalf("buildUpstreamRequest: %v", err)
 		}
@@ -54,6 +54,38 @@ func TestBuildUpstreamRequestSkipsAuthHeader(t *testing.T) {
 			t.Errorf("auth header unexpectedly dropped: %q", got)
 		}
 	})
+}
+
+// TestBuildUpstreamRequestAppendPath pins the prefix endpoint's suffix landing
+// on the upstream URL — including the case where the upstream URL carries its
+// own query string, which must stay after the appended path.
+func TestBuildUpstreamRequestAppendPath(t *testing.T) {
+	original, err := http.NewRequest(http.MethodPost, "http://client.example/api/codex/responses", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+
+	cases := []struct {
+		name        string
+		upstreamURL string
+		appendPath  string
+		wantURL     string
+	}{
+		{"plain", "https://example.com/codex", "/responses", "https://example.com/codex/responses"},
+		{"nested", "https://example.com/codex", "/responses/compact", "https://example.com/codex/responses/compact"},
+		{"query string survives", "https://example.com/codex?v=1", "/responses", "https://example.com/codex/responses?v=1"},
+		{"fragment survives", "https://example.com/codex#f", "/responses", "https://example.com/codex/responses#f"},
+		{"empty suffix leaves url alone", "https://example.com/v1/messages", "", "https://example.com/v1/messages"},
+	}
+	for _, tc := range cases {
+		req, _, err := buildUpstreamRequest(context.Background(), original, []byte(`{}`), tc.upstreamURL, tc.appendPath, "", "", 0, nil, "")
+		if err != nil {
+			t.Fatalf("%s: buildUpstreamRequest: %v", tc.name, err)
+		}
+		if got := req.URL.String(); got != tc.wantURL {
+			t.Errorf("%s: url = %s, want %s", tc.name, got, tc.wantURL)
+		}
+	}
 }
 
 func TestBuildUpstreamRequestStripsPicoteraHeaders(t *testing.T) {
@@ -65,7 +97,7 @@ func TestBuildUpstreamRequestStripsPicoteraHeaders(t *testing.T) {
 	original.Header.Set("X-PicoTera-Foo", "bar")
 	original.Header.Set("X-Keep", "keep-me")
 
-	req, _, err := buildUpstreamRequest(context.Background(), original, []byte(`{}`), "http://upstream.example/v1/messages", "", "", 0, nil, "")
+	req, _, err := buildUpstreamRequest(context.Background(), original, []byte(`{}`), "http://upstream.example/v1/messages", "", "", "", 0, nil, "")
 	if err != nil {
 		t.Fatalf("buildUpstreamRequest: %v", err)
 	}

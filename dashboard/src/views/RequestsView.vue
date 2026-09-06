@@ -30,7 +30,12 @@ import {
   type AutoDataTableColumn,
   type ColumnFilterOption,
 } from '@/ui'
-import { finishReasonLabel, isUnifiedEndpoint, unifiedEndpointName } from '@/utils/requestLabels'
+import {
+  finishReasonLabel,
+  isUnifiedEndpoint,
+  longestPrefixName,
+  unifiedEndpointName,
+} from '@/utils/requestLabels'
 
 const panel = useSidePanel()
 const route = useRoute()
@@ -408,8 +413,16 @@ const columns = computed<AutoDataTableColumn<RequestView>[]>(() => {
       headerClass:
         filters.model || filters.upstreamModel ? 'shadow-[inset_0_-2px_0_var(--color-accent)]' : '',
     },
-    { key: 'status', header: '完成原因', headerClass: filters.finishReason ? 'shadow-[inset_0_-2px_0_var(--color-accent)]' : '' },
-    { key: 'tokens', header: 'Token', headerClass: filters.emptyResponse ? 'shadow-[inset_0_-2px_0_var(--color-accent)]' : '' },
+    {
+      key: 'status',
+      header: '完成原因',
+      headerClass: filters.finishReason ? 'shadow-[inset_0_-2px_0_var(--color-accent)]' : '',
+    },
+    {
+      key: 'tokens',
+      header: 'Token',
+      headerClass: filters.emptyResponse ? 'shadow-[inset_0_-2px_0_var(--color-accent)]' : '',
+    },
     { key: 'cost', header: '成本', align: 'right' },
     { key: 'timeSpentMs', header: '耗时', align: 'right' },
   )
@@ -431,7 +444,11 @@ const endpointNameByPath = computed(() => {
 function endpointDisplay(path: string | undefined | null): { name: string; unified: boolean } {
   if (!path) return { name: '—', unified: false }
   if (isUnifiedEndpoint(path)) return { name: unifiedEndpointName(path), unified: true }
-  return { name: endpointNameByPath.value.get(path) || path, unified: false }
+  // Prefix endpoints record their concrete sub-path on request rows while the
+  // endpoint list only carries the prefix, so fall back to the longest prefix
+  // match before giving up and showing the raw path.
+  const names = endpointNameByPath.value
+  return { name: names.get(path) ?? longestPrefixName(names, path) ?? path, unified: false }
 }
 
 const endpointOptions = computed<ColumnFilterOption<string>[]>(() =>
@@ -554,7 +571,7 @@ function syncFiltersToQuery() {
     !currentCursor.value
   )
     return
-    router.replace({ name: 'requests', query: Object.fromEntries(query.entries()) })
+  router.replace({ name: 'requests', query: Object.fromEntries(query.entries()) })
 }
 
 function resetPaginationMemory() {
@@ -600,9 +617,14 @@ type RequestState = 'pending' | 'ok' | 'err'
 function requestState(r: RequestView): RequestState {
   // pending ⟺ finishReason null; ok ⟺ 2xx with finishReason in {2,3,5}.
   if (r.finishReason === undefined || r.finishReason === null) return 'pending'
-  if (r.statusCode !== undefined && r.statusCode !== null
-      && r.statusCode >= 200 && r.statusCode < 300
-      && [2, 3, 5].includes(r.finishReason)) return 'ok'
+  if (
+    r.statusCode !== undefined &&
+    r.statusCode !== null &&
+    r.statusCode >= 200 &&
+    r.statusCode < 300 &&
+    [2, 3, 5].includes(r.finishReason)
+  )
+    return 'ok'
   return 'err'
 }
 
@@ -838,7 +860,9 @@ function resetCursorAndReload() {
             <span class="truncate text-ink" :title="row.endpointPath">{{
               endpointDisplay(row.endpointPath).name
             }}</span>
-            <Tag v-if="endpointDisplay(row.endpointPath).unified" variant="accent" title="统一网关">U</Tag>
+            <Tag v-if="endpointDisplay(row.endpointPath).unified" variant="accent" title="统一网关"
+              >U</Tag
+            >
           </div>
         </template>
         <template #cell-model="{ row }">
@@ -924,7 +948,10 @@ function resetCursorAndReload() {
         {{ loading ? '加载中…' : '下一页' }}
       </Button>
     </div>
-    <div v-if="(filters.requestId || filters.annotationKey) && !filters.startAt" class="text-center text-xs text-ink-faint">
+    <div
+      v-if="(filters.requestId || filters.annotationKey) && !filters.startAt"
+      class="text-center text-xs text-ink-faint"
+    >
       仅显示最近30天结果；手动设置开始时间以扩大搜索范围。
     </div>
   </div>

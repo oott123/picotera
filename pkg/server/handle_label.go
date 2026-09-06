@@ -56,6 +56,14 @@ func (s *Server) handleListEndpointLabels(ctx context.Context, _ *struct{}) (*co
 			EndpointType: contract.FromEndpointType(r.SourceType),
 		})
 	}
+	// The codex mount serves open-ended sub-paths, so it contributes one label
+	// for the prefix itself. The requests-list endpoint filter is prefix-aware
+	// (see ListRequests), so selecting it matches every sub-path's rows.
+	labels = append(labels, contract.EndpointLabel{
+		Path:         codexMountPath,
+		Name:         "Unified Codex",
+		EndpointType: contract.FromEndpointType(contract.EndpointType_Codex),
+	})
 	return &contract.ListEndpointLabelsResponse{Body: labels}, nil
 }
 
