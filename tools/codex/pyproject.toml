@@ -1,0 +1,19 @@
+[project]
+name = "codex"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "oott123", email = "git@public.oott123.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "openai>=3.8.0",
+]
+
+[project.scripts]
+codex = "codex:main"
+
+[build-system]
+requires = ["uv_build>=0.12.4,<0.13.0"]
+build-backend = "uv_build"
