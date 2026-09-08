@@ -247,7 +247,9 @@ func (h *gatewayHandler) aggregatePathResponse(input successInput, metaRespHeade
 	// respBytes/timings are already empty (gated in liveProgress), so we just
 	// skip the aggregation build here.
 	if input.Flow.otr.recordBody() {
-		if format, ok := responseAggregationFormat(input.Flow.config.Endpoint.EndpointType); ok {
+		cfg := input.Flow.config
+		suffix := strings.TrimPrefix(cfg.RecordedEndpointPath, cfg.Endpoint.Path)
+		if format, ok := responseAggregationFormat(cfg.Endpoint.EndpointType, suffix); ok {
 			if profile, ok := defaultAggregationProfile(format); ok {
 				aggregated = buildAggregatedArtifact(pctx, h.llmBridge, format, input.Response.Header.Get("Content-Type"), respBytes, profile)
 			}

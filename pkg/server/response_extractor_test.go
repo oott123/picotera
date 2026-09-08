@@ -1540,3 +1540,142 @@ func buildSignaturePayload(model string) string {
 	outer = protowire.AppendBytes(outer, middle)
 	return base64.StdEncoding.EncodeToString(outer)
 }
+
+// codexSSE mimics a ChatGPT Codex response: OpenAI Responses SSE with no
+// Content-Type header at all.
+const codexSSE = "event: response.created\n" +
+	"data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"model\":\"gpt-5-codex\"}}\n\n" +
+	"event: response.output_text.delta\n" +
+	"data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hi\"}\n\n" +
+	"event: response.completed\n" +
+	"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"usage\":{\"input_tokens\":120,\"input_tokens_details\":{\"cached_tokens\":20},\"output_tokens\":37}}}\n\n"
+
+func TestResponseExtractor_NoContentType_SniffsSSE(t *testing.T) {
+	inner := &chunkReader{chunks: []string{codexSSE}}
+	extractor := NewResponseExtractor(inner, "", time.Now().Add(-50*time.Millisecond))
+
+	got, err := io.ReadAll(extractor)
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if string(got) != codexSSE {
+		t.Errorf("bytes forwarded unchanged:\ngot:  %q\nwant: %q", string(got), codexSSE)
+	}
+
+	m := extractor.Metrics()
+	if m.InputTokens == nil || *m.InputTokens != 100 {
+		t.Errorf("InputTokens: got %v, want 100", m.InputTokens)
+	}
+	if m.OutputTokens == nil || *m.OutputTokens != 37 {
+		t.Errorf("OutputTokens: got %v, want 37", m.OutputTokens)
+	}
+	if m.CacheReadTokens == nil || *m.CacheReadTokens != 20 {
+		t.Errorf("CacheReadTokens: got %v, want 20", m.CacheReadTokens)
+	}
+	if m.TTFTMs == nil {
+		t.Error("TTFTMs: got nil, want recorded")
+	}
+	if !extractor.StreamCompleted() {
+		t.Error("StreamCompleted: got false, want true")
+	}
+}
+
+func TestResponseExtractor_NoContentType_SniffsSSEAcrossReadCalls(t *testing.T) {
+	// The first chunk is too short to decide; the second settles it mid-line, so
+	// the withheld bytes have to be replayed intact for the second event's
+	// "data:" line — and therefore TTFT — to survive.
+	head := "event: response.created\nda"
+	inner := &chunkReader{chunks: []string{"ev", head[2:], codexSSE[len(head):]}}
+	extractor := NewResponseExtractor(inner, "", time.Now().Add(-50*time.Millisecond))
+
+	got, err := io.ReadAll(extractor)
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if string(got) != codexSSE {
+		t.Errorf("bytes forwarded unchanged:\ngot:  %q\nwant: %q", string(got), codexSSE)
+	}
+
+	m := extractor.Metrics()
+	if m.OutputTokens == nil || *m.OutputTokens != 37 {
+		t.Errorf("OutputTokens: got %v, want 37", m.OutputTokens)
+	}
+	if m.TTFTMs == nil {
+		t.Error("TTFTMs: got nil, want recorded (buffered prefix must be replayed)")
+	}
+}
+
+func TestResponseExtractor_NoContentType_FallsBackToJSON(t *testing.T) {
+	jsonData := `{"id":"chatcmpl-1","usage":{"prompt_tokens":10,"completion_tokens":20}}`
+	extractor := NewResponseExtractor(strings.NewReader(jsonData), "", time.Now())
+
+	got, err := io.ReadAll(extractor)
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if string(got) != jsonData {
+		t.Errorf("bytes forwarded unchanged:\ngot:  %q\nwant: %q", string(got), jsonData)
+	}
+
+	m := extractor.Metrics()
+	if m.InputTokens == nil || *m.InputTokens != 10 {
+		t.Errorf("InputTokens: got %v, want 10", m.InputTokens)
+	}
+	if m.OutputTokens == nil || *m.OutputTokens != 20 {
+		t.Errorf("OutputTokens: got %v, want 20", m.OutputTokens)
+	}
+}
+
+func TestResponseExtractor_NoContentType_JSONArrayStreamStillWorks(t *testing.T) {
+	data, err := os.ReadFile("../../fixtures/d8u8kj0s9a291pp7cakg.json")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	extractor := NewResponseExtractor(strings.NewReader(string(data)), "", time.Now())
+
+	if _, err := io.ReadAll(extractor); err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+
+	m := extractor.Metrics()
+	if m.InputTokens == nil || *m.InputTokens != 9 {
+		t.Errorf("InputTokens: got %v, want 9", m.InputTokens)
+	}
+	if m.OutputTokens == nil || *m.OutputTokens != 11 {
+		t.Errorf("OutputTokens: got %v, want 11", m.OutputTokens)
+	}
+}
+
+func TestResponseExtractor_NoContentType_ShortBody(t *testing.T) {
+	// Shorter than the longest candidate prefix: sniffing never decides on its
+	// own and EOF must force the JSON path rather than drop the body.
+	extractor := NewResponseExtractor(strings.NewReader("null"), "", time.Now())
+
+	got, err := io.ReadAll(extractor)
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if string(got) != "null" {
+		t.Errorf("bytes forwarded unchanged: got %q", string(got))
+	}
+	if m := extractor.Metrics(); m.InputTokens != nil || m.OutputTokens != nil {
+		t.Errorf("expected no metrics from a body without usage, got %+v", m)
+	}
+}
+
+func TestResponseExtractor_JSONContentType_DoesNotSniff(t *testing.T) {
+	// The header is present and says JSON: take it at face value, no guessing.
+	extractor := NewResponseExtractor(strings.NewReader(codexSSE), "application/json", time.Now())
+
+	if _, err := io.ReadAll(extractor); err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+
+	m := extractor.Metrics()
+	if m.OutputTokens != nil {
+		t.Errorf("OutputTokens: got %v, want nil (SSE body must not be parsed as SSE)", m.OutputTokens)
+	}
+	if extractor.StreamCompleted() {
+		t.Error("StreamCompleted: got true, want false")
+	}
+}

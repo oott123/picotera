@@ -10,7 +10,12 @@ import (
 	"picotera/pkg/logx"
 )
 
-func responseAggregationFormat(endpointType int32) (llmbridge.Format, bool) {
+// responseAggregationFormat maps an endpoint to the llmbridge format its
+// response should be aggregated as. suffix is the prefix endpoint's sub-path
+// for this request (empty for ordinary endpoints); it only matters for codex,
+// whose sub-paths are open-ended and mostly carry no aggregatable payload —
+// only /responses is OpenAI Responses, mirroring codexUnifiedRoute.
+func responseAggregationFormat(endpointType int32, suffix string) (llmbridge.Format, bool) {
 	switch endpointType {
 	case contract.EndpointType_AnthropicMessages:
 		return llmbridge.FormatAnthropicMessages, true
@@ -20,12 +25,24 @@ func responseAggregationFormat(endpointType int32) (llmbridge.Format, bool) {
 		return llmbridge.FormatOpenAIResponses, true
 	case contract.EndpointType_GeminiStreamGenerateContent:
 		return llmbridge.FormatGeminiStreamGenerateContent, true
+	case contract.EndpointType_Codex:
+		if suffix == codexResponsesSuffix {
+			return llmbridge.FormatOpenAIResponses, true
+		}
+		return llmbridge.FormatUnknown, false
 	default:
 		return llmbridge.FormatUnknown, false
 	}
 }
 
 func buildAggregatedArtifact(ctx context.Context, bridge llmbridge.Bridge, format llmbridge.Format, contentType string, body []byte, profile llmbridge.OutboundProfile) *artifacts.AggregatedResponse {
+	// Some upstreams stream SSE without a Content-Type header at all. Sniff the
+	// body in that case so aggregation still runs; a header that says something
+	// else is taken at face value. The sniffed value replaces contentType
+	// outright, so StreamAggregationKind and AggregateStream stay in agreement.
+	if contentType == "" && bodyIsSSE(body) {
+		contentType = "text/event-stream"
+	}
 	kind := llmbridge.StreamAggregationKind(format, contentType)
 	if kind == llmbridge.StreamAggregationNone {
 		return nil

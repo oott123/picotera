@@ -29,15 +29,31 @@ type ResponseMetrics struct {
 	InferredModelSource int32
 }
 
+// extractorMode is how the response body is parsed. modeSniff is the initial
+// mode when the upstream sent no Content-Type; it resolves to modeSSE or
+// modeJSON once enough bytes have arrived to decide.
+type extractorMode int
+
+const (
+	modeSniff extractorMode = iota
+	modeSSE
+	modeJSON
+)
+
 // ResponseExtractor wraps an io.Reader and inspects bytes as they flow through,
 // extracting TTFT, token usage, and inferred provider/model from SSE or JSON
 // provider responses.
 type ResponseExtractor struct {
 	inner        io.Reader
-	mode         string // "sse" or "json"
+	mode         extractorMode
 	startTime    time.Time
 	metrics      ResponseMetrics
 	ttftRecorded bool
+
+	// sniffBuf holds the parse copy of the bytes seen while mode is modeSniff.
+	// It is replayed into the chosen mode once sniffing decides, so no bytes are
+	// lost; it never grows past the longest SSE line prefix (6 bytes).
+	sniffBuf []byte
 
 	// SSE: line buffer for reassembling events across Read() boundaries
 	lineBuf []byte
@@ -71,11 +87,17 @@ type ResponseExtractor struct {
 }
 
 // NewResponseExtractor creates a new extractor. contentType is the upstream
-// response Content-Type header. startTime is when the upstream request was sent.
+// response Content-Type header; an empty one (some upstreams, notably ChatGPT
+// Codex, stream SSE without the header) starts the extractor in sniff mode. A
+// header that is present but says something else is taken at face value.
+// startTime is when the upstream request was sent.
 func NewResponseExtractor(inner io.Reader, contentType string, startTime time.Time) *ResponseExtractor {
-	mode := "json"
-	if strings.Contains(strings.ToLower(contentType), "text/event-stream") {
-		mode = "sse"
+	mode := modeJSON
+	switch {
+	case strings.Contains(strings.ToLower(contentType), "text/event-stream"):
+		mode = modeSSE
+	case contentType == "":
+		mode = modeSniff
 	}
 	return &ResponseExtractor{
 		inner:     inner,
@@ -118,29 +140,68 @@ func (e *ResponseExtractor) StreamCompleted() bool {
 func (e *ResponseExtractor) Read(p []byte) (int, error) {
 	n, err := e.inner.Read(p)
 	if n > 0 {
-		chunk := p[:n]
-		switch e.mode {
-		case "sse":
-			// Strip raw CR so CRLF-framed SSE (Google's Gemini API uses
-			// \r\n\r\n event boundaries) parses identically to LF-framed.
-			// Per the SSE spec, lines are delimited by CR, LF, or CRLF and a
-			// data field value cannot contain a raw CR, so dropping CR from the
-			// parse buffer is lossless. lineBuf is parse-only; the bytes
-			// forwarded to the client (p) are untouched.
-			for _, b := range chunk {
-				if b != '\r' {
-					e.lineBuf = append(e.lineBuf, b)
-				}
-			}
-			e.processSSEBuffer()
-		case "json":
-			e.feedJSON(chunk)
-		}
+		e.feed(p[:n])
 	}
-	if err == io.EOF && e.mode == "json" && e.jsonShape != '[' && len(e.jsonBuf) > 0 {
+	if err == io.EOF && e.mode == modeSniff {
+		// The body ended before sniffing could decide (shorter than the longest
+		// candidate prefix). Undecided means not SSE.
+		e.resolveSniff(false)
+	}
+	if err == io.EOF && e.mode == modeJSON && e.jsonShape != '[' && len(e.jsonBuf) > 0 {
 		e.extractJSONMetrics()
 	}
 	return n, err
+}
+
+// feed pushes a chunk of the parse copy into the active mode. While sniffing it
+// withholds the chunk instead, until enough bytes have arrived to pick a mode.
+func (e *ResponseExtractor) feed(chunk []byte) {
+	if e.mode != modeSniff {
+		e.feedResolved(chunk)
+		return
+	}
+	e.sniffBuf = append(e.sniffBuf, chunk...)
+	sse, decided := sniffSSE(e.sniffBuf)
+	if !decided {
+		return
+	}
+	e.resolveSniff(sse)
+}
+
+// resolveSniff leaves sniff mode and replays everything sniffing withheld, so
+// the chosen parse path sees the body from its first byte.
+func (e *ResponseExtractor) resolveSniff(sse bool) {
+	if sse {
+		e.mode = modeSSE
+	} else {
+		e.mode = modeJSON
+	}
+	buffered := e.sniffBuf
+	e.sniffBuf = nil
+	if len(buffered) > 0 {
+		e.feedResolved(buffered)
+	}
+}
+
+// feedResolved dispatches a chunk to the SSE line buffer or the JSON path.
+func (e *ResponseExtractor) feedResolved(chunk []byte) {
+	switch e.mode {
+	case modeSSE:
+		// Strip raw CR so CRLF-framed SSE (Google's Gemini API uses
+		// \r\n\r\n event boundaries) parses identically to LF-framed.
+		// Per the SSE spec, lines are delimited by CR, LF, or CRLF and a
+		// data field value cannot contain a raw CR, so dropping CR from the
+		// parse buffer is lossless. lineBuf is parse-only; the bytes
+		// forwarded to the client are untouched.
+		for _, b := range chunk {
+			if b != '\r' {
+				e.lineBuf = append(e.lineBuf, b)
+			}
+		}
+		e.processSSEBuffer()
+	case modeJSON:
+		e.feedJSON(chunk)
+	}
 }
 
 // processSSEBuffer scans the line buffer for complete SSE events (delimited by \n\n),

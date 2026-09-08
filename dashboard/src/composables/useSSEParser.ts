@@ -223,14 +223,21 @@ export function parseSSEEventsForDisplay(body: string, timings?: number[]): Pars
   return result
 }
 
-export function isSSEContentType(headers: Record<string, string[]> | undefined): boolean {
-  if (!headers) return false
+/** 'absent' means the upstream sent no Content-Type at all — the only case
+ *  where sniffing the body for SSE is allowed. 'other' is taken at face value. */
+export type SSEContentTypeState = 'sse' | 'other' | 'absent'
+
+export function sseContentTypeState(
+  headers: Record<string, string[]> | undefined,
+): SSEContentTypeState {
+  if (!headers) return 'absent'
   for (const [name, values] of Object.entries(headers)) {
-    if (name.toLowerCase() === 'content-type') {
-      return values.join(', ').toLowerCase().includes('text/event-stream')
-    }
+    if (name.toLowerCase() !== 'content-type') continue
+    const value = values.join(', ')
+    if (value === '') return 'absent'
+    return value.toLowerCase().includes('text/event-stream') ? 'sse' : 'other'
   }
-  return false
+  return 'absent'
 }
 
 export function renderMarkdown(text: string): string {

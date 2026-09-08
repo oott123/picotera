@@ -4,8 +4,8 @@ import { DataTable, Th, Td, Tr, Field, SegmentedControl, StateText, IconButton, 
 import {
   extractContentFromAggregated,
   formatAggregatedLabel,
-  isSSEContentType,
   parseSSEEventsForDisplay,
+  sseContentTypeState,
   renderMarkdown,
 } from '@/composables/useSSEParser'
 import { isJsonContentType, parseJsonBody, rawBodyText } from './artifactBody'
@@ -25,7 +25,7 @@ const headersOpen = defineModel<boolean>('headersOpen', { required: true })
 const thinkingOpen = defineModel<boolean>('thinkingOpen', { required: true })
 
 const { responseRawShowTimings: showTimings } = useRequestDetailUiState()
-const isSSE = computed(() => isSSEContentType(props.payload.headers))
+const ctState = computed(() => sseContentTypeState(props.payload.headers))
 const isBinary = computed(() => props.payload.bodyEncoding === 'base64')
 const jsonBody = computed(() => {
   if (isBinary.value || !isJsonContentType(props.payload.headers)) {
@@ -33,6 +33,17 @@ const jsonBody = computed(() => {
   }
   return parseJsonBody(props.payload.body, props.payload.bodyEncoding)
 })
+
+// Parsed independently of isSSE: when the response carries no Content-Type we
+// decide it is SSE precisely because parsing produced events.
+const sseEvents = computed(() => {
+  if (isBinary.value || !props.payload.body || ctState.value === 'other') return []
+  return parseSSEEventsForDisplay(props.payload.body, props.payload.timings)
+})
+
+const isSSE = computed(
+  () => ctState.value === 'sse' || (ctState.value === 'absent' && sseEvents.value.length > 0),
+)
 
 const subViewOptions = computed(() => {
   const opts: Array<{ value: string; label: string }> = [{ value: 'raw', label: 'Raw' }]
@@ -48,11 +59,6 @@ const subViewOptions = computed(() => {
     opts.push({ value: 'rendered', label: '渲染' })
   }
   return opts
-})
-
-const sseEvents = computed(() => {
-  if (!isSSE.value || !props.payload.body) return []
-  return parseSSEEventsForDisplay(props.payload.body, props.payload.timings)
 })
 
 const content = computed(() => {

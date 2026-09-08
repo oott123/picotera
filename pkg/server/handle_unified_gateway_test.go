@@ -105,21 +105,28 @@ func TestUpstreamFormatFor(t *testing.T) {
 func TestResponseAggregationFormat(t *testing.T) {
 	cases := []struct {
 		endpointType int32
+		suffix       string
 		wantFormat   llmbridge.Format
 		wantOK       bool
 	}{
-		{contract.EndpointType_AnthropicMessages, llmbridge.FormatAnthropicMessages, true},
-		{contract.EndpointType_OpenAIChatCompletions, llmbridge.FormatOpenAIChatCompletions, true},
-		{contract.EndpointType_OpenAIResponses, llmbridge.FormatOpenAIResponses, true},
-		{contract.EndpointType_GeminiStreamGenerateContent, llmbridge.FormatGeminiStreamGenerateContent, true},
-		{contract.EndpointType_GeminiGenerateContent, llmbridge.FormatUnknown, false},
-		{contract.EndpointType_General, llmbridge.FormatUnknown, false},
-		{contract.EndpointType_Unknown, llmbridge.FormatUnknown, false},
+		{contract.EndpointType_AnthropicMessages, "", llmbridge.FormatAnthropicMessages, true},
+		{contract.EndpointType_OpenAIChatCompletions, "", llmbridge.FormatOpenAIChatCompletions, true},
+		{contract.EndpointType_OpenAIResponses, "", llmbridge.FormatOpenAIResponses, true},
+		{contract.EndpointType_GeminiStreamGenerateContent, "", llmbridge.FormatGeminiStreamGenerateContent, true},
+		{contract.EndpointType_GeminiGenerateContent, "", llmbridge.FormatUnknown, false},
+		{contract.EndpointType_General, "", llmbridge.FormatUnknown, false},
+		{contract.EndpointType_Unknown, "", llmbridge.FormatUnknown, false},
+		// Codex is a prefix endpoint: only the /responses sub-path carries an
+		// aggregatable payload.
+		{contract.EndpointType_Codex, "/responses", llmbridge.FormatOpenAIResponses, true},
+		{contract.EndpointType_Codex, "/responses/compact", llmbridge.FormatUnknown, false},
+		{contract.EndpointType_Codex, "/alpha/search", llmbridge.FormatUnknown, false},
+		{contract.EndpointType_Codex, "", llmbridge.FormatUnknown, false},
 	}
 	for _, tt := range cases {
-		gotFormat, gotOK := responseAggregationFormat(tt.endpointType)
+		gotFormat, gotOK := responseAggregationFormat(tt.endpointType, tt.suffix)
 		if gotFormat != tt.wantFormat || gotOK != tt.wantOK {
-			t.Errorf("responseAggregationFormat(%d) = (%s, %v), want (%s, %v)", tt.endpointType, gotFormat, gotOK, tt.wantFormat, tt.wantOK)
+			t.Errorf("responseAggregationFormat(%d, %q) = (%s, %v), want (%s, %v)", tt.endpointType, tt.suffix, gotFormat, gotOK, tt.wantFormat, tt.wantOK)
 		}
 	}
 }
