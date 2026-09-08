@@ -250,6 +250,50 @@ func TestNormalizeCodexSuffix(t *testing.T) {
 	}
 }
 
+// TestCodexMountPatterns wires codexMountPatterns onto a bare chi router (no
+// Server, no DB) to pin that the /backend-api alias leaves chi the same
+// wildcard remainder as the canonical prefix, so both normalize to the same
+// suffix and record the same endpoint_path.
+func TestCodexMountPatterns(t *testing.T) {
+	router := chi.NewRouter()
+	h := func(w http.ResponseWriter, r *http.Request) {
+		suffix, ok := normalizeCodexSuffix("/" + chi.URLParam(r, "*"))
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_, _ = io.WriteString(w, codexUnifiedRoute(suffix).Path)
+	}
+	for _, pattern := range codexMountPatterns {
+		router.Post(pattern, h)
+	}
+
+	cases := []struct {
+		path       string
+		wantStatus int
+		wantBody   string
+	}{
+		{"/api/unified/codex/responses", http.StatusOK, "/api/unified/codex/responses"},
+		{"/api/unified/backend-api/codex/responses", http.StatusOK, "/api/unified/codex/responses"},
+		{"/api/unified/backend-api/codex/v1/responses", http.StatusOK, "/api/unified/codex/responses"},
+		{"/api/unified/backend-api/codex/responses/compact", http.StatusOK, "/api/unified/codex/responses/compact"},
+		{"/api/unified/backend-api/codex/alpha/search", http.StatusOK, "/api/unified/codex/alpha/search"},
+		// Nothing left to dispatch on — the handler answers 404 itself.
+		{"/api/unified/backend-api/codex/v1", http.StatusNotFound, ""},
+		{"/api/unified/backend-api/codex/", http.StatusNotFound, ""},
+	}
+	for _, tc := range cases {
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, tc.path, nil))
+		if rec.Code != tc.wantStatus {
+			t.Errorf("%s: status = %d, want %d", tc.path, rec.Code, tc.wantStatus)
+		}
+		if got := rec.Body.String(); got != tc.wantBody {
+			t.Errorf("%s: body = %q, want %q", tc.path, got, tc.wantBody)
+		}
+	}
+}
+
 // TestCodexUnifiedRoute pins the per-request route values the codex mount
 // produces: /responses keeps a real source format (so it can bridge), every
 // other sub-path is codex-only passthrough, and both record the normalized

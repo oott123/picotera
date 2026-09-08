@@ -20,11 +20,13 @@ func (s *Server) handleUnifiedGenerate(route unifiedRoute) http.HandlerFunc {
 	}
 }
 
-// handleUnifiedCodex serves the /api/unified/codex/* wildcard mount. The
-// sub-path decides everything: `/responses` is an OpenAI Responses source that
-// can bridge to any generation upstream, anything else is a codex-only
-// passthrough. Both compute their route value per request rather than reading
-// it out of unifiedRoutes.
+// handleUnifiedCodex serves the codex wildcard mount, registered on both
+// prefixes in codexMountPatterns. The sub-path decides everything: `/responses`
+// is an OpenAI Responses source that can bridge to any generation upstream,
+// anything else is a codex-only passthrough. Both compute their route value per
+// request rather than reading it out of unifiedRoutes, and both record an
+// endpoint_path under codexMountPath — the /backend-api alias never shows up in
+// a request row.
 func (s *Server) handleUnifiedCodex() http.HandlerFunc {
 	h := &gatewayHandler{s}
 	return func(w http.ResponseWriter, r *http.Request) {

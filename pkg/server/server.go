@@ -397,10 +397,15 @@ func (s *Server) registerEndpoints() {
 		}
 		// Codex's sub-paths are open-ended, so it gets a wildcard mount instead
 		// of a row in unifiedRoutes; the handler normalizes the remainder and
-		// builds the route value per request.
+		// builds the route value per request. The second pattern is an alias
+		// mirroring ChatGPT's own /backend-api/codex layout — chi hands both the
+		// same remainder, so the handling is identical down to the recorded
+		// endpoint_path.
 		codex := s.handleUnifiedCodex()
-		r.Post(codexMountPattern, codex)
-		r.Options(codexMountPattern, codex)
+		for _, pattern := range codexMountPatterns {
+			r.Post(pattern, codex)
+			r.Options(pattern, codex)
+		}
 	})
 
 	// Short-circuit test route: forwards a caller-supplied body straight to a

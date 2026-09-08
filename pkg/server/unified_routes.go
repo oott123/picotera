@@ -21,8 +21,8 @@ import (
 //     requests page endpoint filter alongside the path-table endpoints.
 //
 // Codex is NOT in this list: its sub-paths are open-ended, so it is served by
-// the wildcard mount below (codexMountPattern) with a route value computed per
-// request by codexUnifiedRoute.
+// the wildcard mount below (codexMountPatterns — two prefixes sharing the one
+// mount) with a route value computed per request by codexUnifiedRoute.
 var unifiedRoutes = []unifiedRoute{
 	{Path: "/api/unified/v1/messages", Name: "Unified Anthropic Messages", Format: llmbridge.FormatAnthropicMessages, SourceType: contract.EndpointType_AnthropicMessages},
 	{Path: "/api/unified/v1/responses", Name: "Unified OpenAI Responses", Format: llmbridge.FormatOpenAIResponses, SourceType: contract.EndpointType_OpenAIResponses},
@@ -64,22 +64,34 @@ func (r unifiedRoute) passthrough() bool { return r.Format == llmbridge.FormatUn
 
 const (
 	// codexMountPath is the base_url a Codex client is configured with, and the
-	// prefix every recorded codex endpoint_path starts with.
+	// canonical prefix for recording: every codex endpoint_path starts with it,
+	// including requests that arrived on the alias below.
 	codexMountPath = "/api/unified/codex"
-	// codexMountPattern is the chi wildcard registration for it.
-	codexMountPattern = codexMountPath + "/*"
+	// codexBackendAPIMountPath is an alias of codexMountPath mirroring ChatGPT's
+	// own layout (`<host>/backend-api/codex/responses`), so a client whose
+	// base_url is `…/api/unified` reaches the same mount.
+	codexBackendAPIMountPath = "/api/unified/backend-api/codex"
 	// codexResponsesSuffix is the one codex sub-path that carries a real source
 	// format (OpenAI Responses) and can therefore be bridged to non-codex
 	// upstreams. Every other sub-path is pure passthrough.
 	codexResponsesSuffix = "/responses"
 )
 
-// normalizeCodexSuffix turns the raw path remainder after codexMountPath (the
-// chi wildcard with its leading "/" restored) into the canonical suffix. A
-// leading "/v1" segment is stripped so a base_url of `…/api/unified/codex` and
-// one of `…/api/unified/codex/v1` are equivalent. Returns false when nothing is
-// left to dispatch on — the bare mount, a trailing slash, or a bare "/v1" —
-// and the caller answers 404.
+// codexMountPatterns are the chi wildcard registrations for the codex mount.
+// Both prefixes resolve to the same handler, the same suffix normalization and
+// the same recorded endpoint_path (always codexMountPath + suffix).
+var codexMountPatterns = []string{
+	codexMountPath + "/*",
+	codexBackendAPIMountPath + "/*",
+}
+
+// normalizeCodexSuffix turns the raw path remainder after either codex mount
+// prefix (the chi wildcard with its leading "/" restored) into the canonical
+// suffix — the two prefixes leave identical remainders, so this is
+// prefix-blind. A leading "/v1" segment is stripped so a base_url of
+// `…/api/unified/codex` and one of `…/api/unified/codex/v1` are equivalent.
+// Returns false when nothing is left to dispatch on — the bare mount, a
+// trailing slash, or a bare "/v1" — and the caller answers 404.
 func normalizeCodexSuffix(raw string) (string, bool) {
 	suffix := raw
 	if suffix == "/v1" {
@@ -96,7 +108,8 @@ func normalizeCodexSuffix(raw string) (string, bool) {
 // codexUnifiedRoute builds the per-request route value for a normalized codex
 // suffix. `/responses` keeps OpenAI Responses as its source format, so it can
 // still bridge to Anthropic / Gemini / ChatCompletions upstreams; every other
-// sub-path is passthrough and therefore codex-only.
+// sub-path is passthrough and therefore codex-only. Path is always
+// codexMountPath + suffix, whichever mount prefix the request arrived on.
 func codexUnifiedRoute(suffix string) unifiedRoute {
 	route := unifiedRoute{
 		Path:           codexMountPath + suffix,
