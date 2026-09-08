@@ -150,7 +150,9 @@ func (s *Server) handleFetchModels(ctx context.Context, input *contract.FetchMod
 		return nil, huma.Error502BadGateway(fmt.Sprintf("upstream returned %d: %s", resp.StatusCode, string(body)))
 	}
 
-	body, err := io.ReadAll(io.LimitReader(decoded.Body, 1024*1024))
+	// Codex embeds a full instructions template per model, so its /models
+	// response is hundreds of KiB.
+	body, err := io.ReadAll(io.LimitReader(decoded.Body, 8*1024*1024))
 	if err != nil {
 		return nil, huma.Error502BadGateway("failed to read upstream response: " + err.Error())
 	}
@@ -212,10 +214,13 @@ func parseModelsResponse(body []byte) ([]string, error) {
 		return nil, fmt.Errorf("invalid JSON response: %w", err)
 	}
 
-	if models := extractFieldFromData(raw, "id"); len(models) > 0 {
+	if models := extractFieldFromKey(raw, "data", "id"); len(models) > 0 {
 		return models, nil
 	}
-	if models := extractFieldFromData(raw, "name"); len(models) > 0 {
+	if models := extractFieldFromKey(raw, "data", "name"); len(models) > 0 {
+		return models, nil
+	}
+	if models := extractFieldFromKey(raw, "models", "slug"); len(models) > 0 {
 		return models, nil
 	}
 	if models := extractFieldFromTopLevel(raw, "id"); len(models) > 0 {
@@ -230,12 +235,12 @@ func parseModelsResponse(body []byte) ([]string, error) {
 	return nil, fmt.Errorf("could not parse models from upstream response")
 }
 
-func extractFieldFromData(raw any, field string) []string {
+func extractFieldFromKey(raw any, containerKey, field string) []string {
 	obj, ok := raw.(map[string]any)
 	if !ok {
 		return nil
 	}
-	data, ok := obj["data"]
+	data, ok := obj[containerKey]
 	if !ok {
 		return nil
 	}
