@@ -687,6 +687,9 @@ func redactRequestCredentials(header http.Header, rawURL string) (http.Header, s
 	if header.Get("Cf-Access-Client-Secret") != "" {
 		header.Set("Cf-Access-Client-Secret", redactedPlaceholder)
 	}
+	if header.Get("Chatgpt-Account-Id") != "" {
+		header.Set("Chatgpt-Account-Id", redactedPlaceholder)
+	}
 
 	if u, err := url.Parse(rawURL); err == nil {
 		q := u.Query()
@@ -699,6 +702,7 @@ func redactRequestCredentials(header http.Header, rawURL string) (http.Header, s
 
 	return header, rawURL
 }
+
 // redactResponseHeaders redacts sensitive response headers in a cloned header
 // (the caller passes a clone), returning the redacted header. It mutates the
 // provided header in place and only touches fields that carry a secret:
