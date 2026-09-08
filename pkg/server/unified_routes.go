@@ -54,6 +54,11 @@ type unifiedRoute struct {
 	// Codex reports whether this route came from the codex mount, which is what
 	// makes `codex` an extra candidate type on the bridged /responses sub-path.
 	Codex bool
+	// PrefixMount reports whether this route came from a wildcard prefix mount,
+	// whose sub-paths are open-ended: a request body without a model field routes
+	// as no-model instead of 400. Distinct from Codex, which is about the extra
+	// candidate type — a future prefix mount only needs to set this one.
+	PrefixMount bool
 }
 
 // passthrough reports whether the route forwards bytes verbatim (no
@@ -118,6 +123,7 @@ func codexUnifiedRoute(suffix string) unifiedRoute {
 		SourceType:     contract.EndpointType_Codex,
 		UpstreamSuffix: suffix,
 		Codex:          true,
+		PrefixMount:    true,
 	}
 	if suffix == codexResponsesSuffix {
 		route.Format = llmbridge.FormatOpenAIResponses

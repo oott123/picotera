@@ -204,6 +204,97 @@ func (q *Queries) GetProvidersByEndpointAndModel(ctx context.Context, arg GetPro
 	return items, nil
 }
 
+const getProvidersByEndpointTypes = `-- name: GetProvidersByEndpointTypes :many
+SELECT
+  ''::text AS model_name,
+  p.id AS provider_id,
+  pe.endpoint_path,
+  e.endpoint_type AS endpoint_type,
+  e.prefix_match AS prefix_match,
+  ''::text AS upstream_model_name,
+  0::int AS priority,
+  '{}'::jsonb AS annotations,
+  p.name AS provider_name,
+  p.credentials AS provider_credentials,
+  p.priority AS provider_priority,
+  pe.upstream_url,
+  pe.credentials_resolver AS send_credentials_resolver,
+  p.proxy_url,
+  p.insecure_tls,
+  p.annotations AS provider_annotations,
+  '{}'::jsonb AS model_annotations,
+  p.supports_native_web_search
+FROM provider AS p
+JOIN provider_endpoint AS pe ON pe.provider_id = p.id
+JOIN endpoint AS e ON e.path = pe.endpoint_path
+WHERE e.endpoint_type = ANY($1::int[])
+  AND p.disabled = FALSE
+`
+
+type GetProvidersByEndpointTypesRow struct {
+	ModelName               string      `json:"modelName"`
+	ProviderID              int32       `json:"providerId"`
+	EndpointPath            string      `json:"endpointPath"`
+	EndpointType            int32       `json:"endpointType"`
+	PrefixMatch             bool        `json:"prefixMatch"`
+	UpstreamModelName       string      `json:"upstreamModelName"`
+	Priority                int32       `json:"priority"`
+	Annotations             []byte      `json:"annotations"`
+	ProviderName            string      `json:"providerName"`
+	ProviderCredentials     string      `json:"providerCredentials"`
+	ProviderPriority        int32       `json:"providerPriority"`
+	UpstreamUrl             string      `json:"upstreamUrl"`
+	SendCredentialsResolver int32       `json:"sendCredentialsResolver"`
+	ProxyUrl                pgtype.Text `json:"proxyUrl"`
+	InsecureTls             bool        `json:"insecureTls"`
+	ProviderAnnotations     []byte      `json:"providerAnnotations"`
+	ModelAnnotations        []byte      `json:"modelAnnotations"`
+	SupportsNativeWebSearch bool        `json:"supportsNativeWebSearch"`
+}
+
+// Sister query to GetProvidersByEndpointTypesAndModel for requests that carry
+// no model (prefix-style unified mounts whose body has no model field). Model
+// related columns are flattened to constants so both shapes project onto one
+// row type; the model table and provider_models are not consulted at all.
+func (q *Queries) GetProvidersByEndpointTypes(ctx context.Context, endpointTypes []int32) ([]GetProvidersByEndpointTypesRow, error) {
+	rows, err := q.db.Query(ctx, getProvidersByEndpointTypes, endpointTypes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetProvidersByEndpointTypesRow
+	for rows.Next() {
+		var i GetProvidersByEndpointTypesRow
+		if err := rows.Scan(
+			&i.ModelName,
+			&i.ProviderID,
+			&i.EndpointPath,
+			&i.EndpointType,
+			&i.PrefixMatch,
+			&i.UpstreamModelName,
+			&i.Priority,
+			&i.Annotations,
+			&i.ProviderName,
+			&i.ProviderCredentials,
+			&i.ProviderPriority,
+			&i.UpstreamUrl,
+			&i.SendCredentialsResolver,
+			&i.ProxyUrl,
+			&i.InsecureTls,
+			&i.ProviderAnnotations,
+			&i.ModelAnnotations,
+			&i.SupportsNativeWebSearch,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getProvidersByEndpointTypesAndModel = `-- name: GetProvidersByEndpointTypesAndModel :many
 SELECT
   $1::text AS model_name,

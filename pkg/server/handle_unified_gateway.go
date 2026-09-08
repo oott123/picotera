@@ -83,15 +83,14 @@ func (h *gatewayHandler) newUnifiedGatewayFlowConfig(route unifiedRoute, r *http
 		PathVars:             chiURLParams(r),
 		SourceFormat:         route.Format,
 		ExtractModel: func(req *http.Request, body []byte, _ map[string]string) (gatewayModelMode, error) {
-			model, err := extractUnifiedModel(route, req, body)
-			return gatewayModelMode{OriginalModel: model, HasModel: true}, err
+			return extractUnifiedModel(route, req, body)
 		},
 		SetBodyModel: func(body []byte, model string) ([]byte, error) {
 			return setUnifiedModel(route, body, model)
 		},
 		ResolveCandidates: func(ctx context.Context, mode gatewayModelMode, auth gatewayAuthState) (candidateSet, error) {
 			typeSet := candidateEndpointTypes(route, mode.Streaming)
-			providers, err := h.resolveProvidersByTypes(ctx, mode.RoutedModel, typeSet, route.SourceType)
+			providers, err := h.resolveProvidersByTypes(ctx, mode, typeSet, route.SourceType)
 			if err != nil {
 				return candidateSet{}, err
 			}

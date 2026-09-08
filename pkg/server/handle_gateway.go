@@ -74,8 +74,9 @@ func (h *gatewayHandler) newPathGatewayFlowConfig(endpoint db.Endpoint, pathVars
 			if endpoint.ModelPath == "" {
 				return gatewayModelMode{}, nil
 			}
-			model, err := extractModel(body, endpoint.ModelPath, vars)
-			return gatewayModelMode{OriginalModel: model, HasModel: true}, err
+			// A prefix endpoint's sub-paths are open-ended: a body without the
+			// model field routes as no-model rather than 400.
+			return extractModel(body, endpoint.ModelPath, vars, endpoint.PrefixMatch)
 		},
 		SetBodyModel: func(body []byte, model string) ([]byte, error) {
 			return sjson.SetBytes(body, "model", model)

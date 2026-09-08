@@ -58,6 +58,11 @@ type Querier interface {
 	// consuming Go code can treat both shapes uniformly.
 	GetProvidersByEndpoint(ctx context.Context, endpointPath string) ([]GetProvidersByEndpointRow, error)
 	GetProvidersByEndpointAndModel(ctx context.Context, arg GetProvidersByEndpointAndModelParams) ([]GetProvidersByEndpointAndModelRow, error)
+	// Sister query to GetProvidersByEndpointTypesAndModel for requests that carry
+	// no model (prefix-style unified mounts whose body has no model field). Model
+	// related columns are flattened to constants so both shapes project onto one
+	// row type; the model table and provider_models are not consulted at all.
+	GetProvidersByEndpointTypes(ctx context.Context, endpointTypes []int32) ([]GetProvidersByEndpointTypesRow, error)
 	// Sister query to GetProvidersByEndpointAndModel that selects across a SET of
 	// endpoint types instead of a single endpoint path. The unified gateway
 	// routes (/v1/messages, /v1/responses, /v1/chat/completions, and the two

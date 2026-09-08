@@ -103,6 +103,36 @@ WHERE e.endpoint_type = ANY(sqlc.arg('endpoint_types')::int[])
     OR elem -> 'endpoints' @> to_jsonb(ARRAY[pe.endpoint_path])
   );
 
+-- name: GetProvidersByEndpointTypes :many
+-- Sister query to GetProvidersByEndpointTypesAndModel for requests that carry
+-- no model (prefix-style unified mounts whose body has no model field). Model
+-- related columns are flattened to constants so both shapes project onto one
+-- row type; the model table and provider_models are not consulted at all.
+SELECT
+  ''::text AS model_name,
+  p.id AS provider_id,
+  pe.endpoint_path,
+  e.endpoint_type AS endpoint_type,
+  e.prefix_match AS prefix_match,
+  ''::text AS upstream_model_name,
+  0::int AS priority,
+  '{}'::jsonb AS annotations,
+  p.name AS provider_name,
+  p.credentials AS provider_credentials,
+  p.priority AS provider_priority,
+  pe.upstream_url,
+  pe.credentials_resolver AS send_credentials_resolver,
+  p.proxy_url,
+  p.insecure_tls,
+  p.annotations AS provider_annotations,
+  '{}'::jsonb AS model_annotations,
+  p.supports_native_web_search
+FROM provider AS p
+JOIN provider_endpoint AS pe ON pe.provider_id = p.id
+JOIN endpoint AS e ON e.path = pe.endpoint_path
+WHERE e.endpoint_type = ANY(sqlc.arg('endpoint_types')::int[])
+  AND p.disabled = FALSE;
+
 -- name: GetProvidersByEndpoint :many
 -- Sister query to GetProvidersByEndpointAndModel for "no-model" endpoints
 -- (endpoint.model_path = ''). Returns every non-disabled provider bound to the

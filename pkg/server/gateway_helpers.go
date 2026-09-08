@@ -381,32 +381,56 @@ func extractParentSpanID(h http.Header) string {
 // the model should be read from the matched path variable rather than the body.
 var pathVarRe = regexp.MustCompile(`^\{([A-Za-z_][A-Za-z0-9_]*)\}$`)
 
-// extractModel extracts the model name from the request body or, when
-// modelPath is exactly "{name}", from the matched path variables.
+// extractModel resolves the request's routing model from the request body or,
+// when modelPath is exactly "{name}", from the matched path variables.
 // Callers must skip this function entirely for no-model endpoints
 // (endpoint.model_path == "").
-func extractModel(body []byte, modelPath string, pathVars map[string]string) (string, error) {
+//
+// optional marks a prefix-style entry, whose sub-paths are open-ended and some
+// of which carry no model field at all; see modelFromBody. It only affects the
+// body branch — a path variable that didn't match is still a 400, and the two
+// are never combined anyway (a prefix endpoint's path may not contain "{}").
+func extractModel(body []byte, modelPath string, pathVars map[string]string, optional bool) (gatewayModelMode, error) {
 	if m := pathVarRe.FindStringSubmatch(modelPath); m != nil {
 		// modelPath is "{name}" — take value from the path variable.
 		name := m[1]
 		if v := pathVars[name]; v != "" {
-			return v, nil
+			return gatewayModelMode{OriginalModel: v, HasModel: true}, nil
 		}
-		return "", &gatewayError{
+		return gatewayModelMode{}, &gatewayError{
 			status:  http.StatusBadRequest,
 			message: fmt.Sprintf("model variable %q not set", name),
 			code:    errorx.ModelNotFound.Error(),
 		}
 	}
+	return modelFromBody(body, modelPath, optional)
+}
+
+// modelFromBody resolves the body's model field into a routing decision.
+// optional (prefix-style entries) turns an *absent* field into no-model
+// routing — the same path an endpoint with model_path == "" takes. A field
+// that is present but not a non-empty string is always a 400, optional or not:
+// the degradation covers "this sub-path carries no model", not bad input.
+func modelFromBody(body []byte, modelPath string, optional bool) (gatewayModelMode, error) {
 	result := gjson.GetBytes(body, modelPath)
-	if !result.Exists() || result.Str == "" {
-		return "", &gatewayError{
+	if !result.Exists() {
+		if optional {
+			return gatewayModelMode{}, nil
+		}
+		return gatewayModelMode{}, &gatewayError{
 			status:  http.StatusBadRequest,
 			message: "model not found in request body",
 			code:    errorx.ModelNotFound.Error(),
 		}
 	}
-	return result.Str, nil
+	if result.Str == "" {
+		return gatewayModelMode{}, &gatewayError{
+			status:  http.StatusBadRequest,
+			message: "model in request body must be a non-empty string",
+			code:    errorx.ModelNotFound.Error(),
+		}
+	}
+	return gatewayModelMode{OriginalModel: result.Str, HasModel: true}, nil
 }
 
 // appendUpstreamPath appends a prefix endpoint's suffix to the upstream URL.

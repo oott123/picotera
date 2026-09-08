@@ -113,3 +113,61 @@ picotera.hooks.rewriteRequest.tap('add-include-usage', function (ctx, pending) {
 			gjson.GetBytes(body, "stream_options").Raw, body)
 	}
 }
+
+// TestUnifiedNoModelBodyPassesThroughVerbatim pins the no-model contract on a
+// prefix mount: when the inbound body carried no `model` field, the extractor
+// degraded to no-model routing and UpstreamModel is "", so the upstream body
+// must be the client's bytes verbatim — sjson must not inject `"model": ""`
+// into a body that never had one.
+func TestUnifiedNoModelBodyPassesThroughVerbatim(t *testing.T) {
+	eng := jsx.NewEngine(jsx.Config{HookTimeout: 2 * time.Second, MemoryLimit: 64 << 20}, stubScriptStore{}, kv.NewMemoryStore(), stubJSXHostAPI{})
+	session, err := eng.NewSession(context.Background(), "test-req")
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	defer session.Close()
+
+	// /alpha/search: a codex passthrough sub-path whose body carries no model.
+	route := codexUnifiedRoute("/alpha/search")
+	clientBody := []byte(`{"query":"ping","max_results":3}`)
+	f := &gatewayFlow{
+		h: &gatewayHandler{Server: &Server{llmBridge: realBridge{}, config: &configx.Config{}}},
+		r: httptest.NewRequest("POST", "/api/unified/codex/alpha/search", nil),
+		config: gatewayFlowConfig{
+			Kind:         gatewayRouteUnified,
+			SourceFormat: route.Format,
+			SetBodyModel: func(body []byte, model string) ([]byte, error) {
+				return setUnifiedModel(route, body, model)
+			},
+			PrepareAttempt: identityPrepareAttempt,
+		},
+		body:    clientBody,
+		session: session,
+		model:   gatewayModelState{Mode: gatewayModelMode{}},
+	}
+	input := attemptInput{
+		AttemptCtx:    context.Background(),
+		UpstreamModel: "",
+		Sidecar: gatewayCandidateSidecar{
+			ProviderID:     1,
+			UpstreamURL:    "https://up.example/backend-api/codex",
+			AppendPath:     route.UpstreamSuffix,
+			Credentials:    "sk-test",
+			SendResolver:   contract.CredentialsResolver_BearerToken,
+			EndpointPath:   "/backend-api/codex/alpha/search",
+			EndpointType:   contract.EndpointType_Codex,
+			UpstreamFormat: llmbridge.FormatUnknown,
+		},
+	}
+
+	prepared, err := f.buildRewrittenUpstreamRequest(input)
+	if err != nil {
+		t.Fatalf("buildRewrittenUpstreamRequest: %v", err)
+	}
+	if string(prepared.RequestBody) != string(clientBody) {
+		t.Errorf("upstream body was rewritten: got %s, want %s", prepared.RequestBody, clientBody)
+	}
+	if gjson.GetBytes(prepared.RequestBody, "model").Exists() {
+		t.Errorf("no-model request got a model field injected: %s", prepared.RequestBody)
+	}
+}

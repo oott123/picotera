@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"picotera/pkg/configx"
+	"picotera/pkg/errorx"
 
 	"golang.org/x/net/http2"
 )
@@ -393,4 +395,56 @@ func TestForwardRequestEphemeralTransport(t *testing.T) {
 			t.Fatal("cached-transport response body should not carry the recycling wrapper")
 		}
 	})
+}
+
+// TestExtractModel pins the routing decision the extractor produces, in
+// particular the prefix-endpoint degradation: an *absent* body field routes as
+// no-model, while a present-but-invalid one is always a 400.
+func TestExtractModel(t *testing.T) {
+	cases := []struct {
+		name      string
+		body      string
+		modelPath string
+		pathVars  map[string]string
+		optional  bool
+		wantModel string
+		wantErr   bool
+	}{
+		{name: "body model", body: `{"model":"gpt-5"}`, modelPath: "model", wantModel: "gpt-5"},
+		{name: "nested model path", body: `{"req":{"model":"gpt-5"}}`, modelPath: "req.model", wantModel: "gpt-5"},
+		{name: "absent required", body: `{}`, modelPath: "model", wantErr: true},
+		{name: "absent optional", body: `{}`, modelPath: "model", optional: true},
+		{name: "absent optional nested", body: `{"req":{}}`, modelPath: "req.model", optional: true},
+		{name: "empty string required", body: `{"model":""}`, modelPath: "model", wantErr: true},
+		{name: "empty string optional", body: `{"model":""}`, modelPath: "model", optional: true, wantErr: true},
+		{name: "number optional", body: `{"model":123}`, modelPath: "model", optional: true, wantErr: true},
+		{name: "null optional", body: `{"model":null}`, modelPath: "model", optional: true, wantErr: true},
+		{name: "object optional", body: `{"model":{"name":"gpt-5"}}`, modelPath: "model", optional: true, wantErr: true},
+		{name: "path var", body: `{}`, modelPath: "{model}", pathVars: map[string]string{"model": "gemini-2.5-pro"}, wantModel: "gemini-2.5-pro"},
+		// The degradation covers the body branch only: an unbound path variable
+		// is a 400 even when optional. (The combination is rejected at endpoint
+		// configuration time anyway — a prefix path carries no variables.)
+		{name: "path var unset optional", body: `{"model":"gpt-5"}`, modelPath: "{model}", optional: true, wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mode, err := extractModel([]byte(tc.body), tc.modelPath, tc.pathVars, tc.optional)
+			if tc.wantErr {
+				var gerr *gatewayError
+				if !errors.As(err, &gerr) {
+					t.Fatalf("expected gatewayError, got %v", err)
+				}
+				if gerr.status != http.StatusBadRequest || gerr.code != errorx.ModelNotFound.Error() {
+					t.Errorf("got status=%d code=%s, want 400 %s", gerr.status, gerr.code, errorx.ModelNotFound.Error())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("extractModel: %v", err)
+			}
+			if mode.OriginalModel != tc.wantModel || mode.HasModel != (tc.wantModel != "") {
+				t.Errorf("got %+v, want model %q", mode, tc.wantModel)
+			}
+		})
+	}
 }

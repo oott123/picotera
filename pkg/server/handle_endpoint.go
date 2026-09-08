@@ -46,6 +46,12 @@ func (s *Server) handleUpsertEndpoint(ctx context.Context, input *contract.Upser
 		if err := validatePrefixEndpointPath(input.Body.Path); err != nil {
 			return nil, err
 		}
+		// A prefix endpoint's path carries no variables (enforced just above), so
+		// a "{name}" modelPath could never bind — the endpoint would 400 on every
+		// request. Reject the combination at configuration time instead.
+		if pathVarRe.MatchString(input.Body.ModelPath) {
+			return nil, huma.Error400BadRequest("prefix-match endpoint modelPath must not be a path variable: a prefix endpoint's path carries no variables")
+		}
 	} else if _, _, _, err := compilePattern(input.Body.Path); err != nil {
 		return nil, huma.Error400BadRequest("invalid endpoint path", err)
 	}

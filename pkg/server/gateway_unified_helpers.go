@@ -19,7 +19,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
 
@@ -91,24 +90,22 @@ func candidateEndpointTypes(route unifiedRoute, streaming bool) []int32 {
 	return types
 }
 
-// extractUnifiedModel picks the model name for the inbound request. Only the
-// two Gemini routes take it from the chi {model} path variable; every other
-// route — including the Codex passthrough ones — carries it in the body. The
-// streaming flag is no longer derived here — it comes solely from
-// detectStreaming (five rules) in resolveAndRewriteModel.
-func extractUnifiedModel(route unifiedRoute, r *http.Request, body []byte) (string, error) {
+// extractUnifiedModel resolves the routing model for the inbound request. Only
+// the two Gemini routes take it from the chi {model} path variable; every other
+// route — including the Codex passthrough ones — carries it in the body. On a
+// prefix mount (route.PrefixMount) an absent body field degrades to no-model
+// routing rather than 400; see modelFromBody. The streaming flag is no longer
+// derived here — it comes solely from detectStreaming (five rules) in
+// resolveAndRewriteModel.
+func extractUnifiedModel(route unifiedRoute, r *http.Request, body []byte) (gatewayModelMode, error) {
 	if geminiRoute(route) {
 		m := chi.URLParam(r, "model")
 		if m == "" {
-			return "", &gatewayError{status: http.StatusBadRequest, message: "missing {model} path variable", code: errorx.ModelNotFound.Error()}
+			return gatewayModelMode{}, &gatewayError{status: http.StatusBadRequest, message: "missing {model} path variable", code: errorx.ModelNotFound.Error()}
 		}
-		return m, nil
+		return gatewayModelMode{OriginalModel: m, HasModel: true}, nil
 	}
-	model := gjson.GetBytes(body, "model").Str
-	if model == "" {
-		return "", &gatewayError{status: http.StatusBadRequest, message: "model is required", code: errorx.ModelNotFound.Error()}
-	}
-	return model, nil
+	return modelFromBody(body, "model", route.PrefixMount)
 }
 
 // setUnifiedModel rewrites the model name carried by the source body. Gemini
@@ -164,21 +161,43 @@ func unifiedUpstreamPathVars(upstreamModel string) map[string]string {
 }
 
 // resolveProvidersByTypes is the unified handler's analogue of resolveProviders.
-// It runs the new sqlc query and applies the same priority sort and minimum
+// It runs the sqlc type-set query and applies the same priority sort and minimum
 // validity filter (upstream URL + credentials non-empty). srcType is the
 // inbound request's endpoint_type (the route's SourceType) and drives the
 // per-(provider, model) dedupe — see dedupeUnifiedRows.
-func (s *Server) resolveProvidersByTypes(ctx context.Context, model string, types []int32, srcType int32) ([]db.GetProvidersByEndpointTypesAndModelRow, error) {
-	rows, err := s.queries.GetProvidersByEndpointTypesAndModel(ctx, db.GetProvidersByEndpointTypesAndModelParams{
-		ModelName:     model,
-		EndpointTypes: types,
-	})
-	if err != nil {
-		logx.WithContext(ctx).WithError(err).Error("unified provider lookup failed")
-		return nil, &gatewayError{status: http.StatusInternalServerError, message: "failed to query providers", code: errorx.InternalError.Error()}
+//
+// When mode.HasModel is false (a prefix mount whose body carried no model) the
+// sister no-model query runs instead: every non-disabled provider bound to an
+// endpoint of one of the types is a candidate, independent of the model /
+// model_provider_endpoint configuration. Everything after the lookup — validity
+// filter, dedupe, priority sort — is shared.
+func (s *Server) resolveProvidersByTypes(ctx context.Context, mode gatewayModelMode, types []int32, srcType int32) ([]db.GetProvidersByEndpointTypesAndModelRow, error) {
+	var rows []db.GetProvidersByEndpointTypesAndModelRow
+	notFound := "no provider available"
+	if mode.HasModel {
+		notFound = "no provider available for model"
+		raw, err := s.queries.GetProvidersByEndpointTypesAndModel(ctx, db.GetProvidersByEndpointTypesAndModelParams{
+			ModelName:     mode.RoutedModel,
+			EndpointTypes: types,
+		})
+		if err != nil {
+			logx.WithContext(ctx).WithError(err).Error("unified provider lookup failed")
+			return nil, &gatewayError{status: http.StatusInternalServerError, message: "failed to query providers", code: errorx.InternalError.Error()}
+		}
+		rows = raw
+	} else {
+		raw, err := s.queries.GetProvidersByEndpointTypes(ctx, types)
+		if err != nil {
+			logx.WithContext(ctx).WithError(err).Error("unified no-model provider lookup failed")
+			return nil, &gatewayError{status: http.StatusInternalServerError, message: "failed to query providers", code: errorx.InternalError.Error()}
+		}
+		rows = make([]db.GetProvidersByEndpointTypesAndModelRow, 0, len(raw))
+		for _, r := range raw {
+			rows = append(rows, fromNoModelTypesRow(r))
+		}
 	}
 	if len(rows) == 0 {
-		return nil, &gatewayError{status: http.StatusNotFound, message: "no provider available for model", code: errorx.NoProviderAvailable.Error()}
+		return nil, &gatewayError{status: http.StatusNotFound, message: notFound, code: errorx.NoProviderAvailable.Error()}
 	}
 	valid := make([]db.GetProvidersByEndpointTypesAndModelRow, 0, len(rows))
 	for _, row := range rows {
@@ -187,7 +206,7 @@ func (s *Server) resolveProvidersByTypes(ctx context.Context, model string, type
 		}
 	}
 	if len(valid) == 0 {
-		return nil, &gatewayError{status: http.StatusNotFound, message: "no provider available for model", code: errorx.NoProviderAvailable.Error()}
+		return nil, &gatewayError{status: http.StatusNotFound, message: notFound, code: errorx.NoProviderAvailable.Error()}
 	}
 	valid = dedupeUnifiedRows(valid, srcType)
 	// Sort by combined priority (provider + per-model-entry) descending,
@@ -203,6 +222,33 @@ func (s *Server) resolveProvidersByTypes(ctx context.Context, model string, type
 		)
 	})
 	return valid, nil
+}
+
+// fromNoModelTypesRow projects a no-model type-set row onto the model-routed
+// row type. The two queries select the same column list — the no-model one just
+// flattens the model-related columns to constants — so this is a field-for-field
+// copy that keeps the rest of the unified path on one row shape.
+func fromNoModelTypesRow(r db.GetProvidersByEndpointTypesRow) db.GetProvidersByEndpointTypesAndModelRow {
+	return db.GetProvidersByEndpointTypesAndModelRow{
+		ModelName:               r.ModelName,
+		ProviderID:              r.ProviderID,
+		EndpointPath:            r.EndpointPath,
+		EndpointType:            r.EndpointType,
+		PrefixMatch:             r.PrefixMatch,
+		UpstreamModelName:       r.UpstreamModelName,
+		Priority:                r.Priority,
+		Annotations:             r.Annotations,
+		ProviderName:            r.ProviderName,
+		ProviderCredentials:     r.ProviderCredentials,
+		ProviderPriority:        r.ProviderPriority,
+		UpstreamUrl:             r.UpstreamUrl,
+		SendCredentialsResolver: r.SendCredentialsResolver,
+		ProxyUrl:                r.ProxyUrl,
+		InsecureTls:             r.InsecureTls,
+		ProviderAnnotations:     r.ProviderAnnotations,
+		ModelAnnotations:        r.ModelAnnotations,
+		SupportsNativeWebSearch: r.SupportsNativeWebSearch,
+	}
 }
 
 // dedupeUnifiedRows collapses the type-set query result so that each

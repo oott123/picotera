@@ -123,6 +123,9 @@ async function submit() {
                 : '可选，留空表示该端点不解析模型'
           "
         />
+        <p v-if="form.prefixMatch && form.modelPath" class="text-xs text-ink-faint">
+          对前缀匹配端点而言，如果模型字段在请求中不存在，将视为不解析模型转发。
+        </p>
       </Field>
       <Field label="凭证发送">
         <Select v-model="form.credentialsResolver" :options="credentialsResolverOptions" />

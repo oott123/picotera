@@ -371,15 +371,16 @@ func TestCandidateEndpointTypesPassthrough(t *testing.T) {
 func TestExtractUnifiedModel_BodyFormats(t *testing.T) {
 	body := []byte(`{"model":"claude-3-5-sonnet","stream":true}`)
 	r := httptest.NewRequest("POST", "/api/unified/v1/messages", nil)
-	model, err := extractUnifiedModel(unifiedRouteByPath(t, "/api/unified/v1/messages"), r, body)
+	mode, err := extractUnifiedModel(unifiedRouteByPath(t, "/api/unified/v1/messages"), r, body)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if model != "claude-3-5-sonnet" {
-		t.Errorf("got model=%q", model)
+	if !mode.HasModel || mode.OriginalModel != "claude-3-5-sonnet" {
+		t.Errorf("got %+v", mode)
 	}
 
-	// Missing model field: 400 MODEL_NOT_FOUND.
+	// Missing model field on a fixed route (not a prefix mount): 400
+	// MODEL_NOT_FOUND, no degradation to no-model routing.
 	_, err = extractUnifiedModel(unifiedRouteByPath(t, "/api/unified/v1/chat/completions"), r, []byte(`{}`))
 	if err == nil {
 		t.Errorf("expected error for missing model, got nil")
@@ -403,25 +404,46 @@ func TestExtractUnifiedModel_Passthrough(t *testing.T) {
 	// Only the Gemini routes read the URL, so one request stands in for all.
 	r := httptest.NewRequest("POST", "/api/unified/codex/responses/compact", nil)
 	for _, tc := range cases {
-		model, err := extractUnifiedModel(tc.route, r, []byte(tc.body))
+		mode, err := extractUnifiedModel(tc.route, r, []byte(tc.body))
 		if err != nil {
 			t.Fatalf("%s: %v", tc.name, err)
 		}
-		if model != tc.wantModel {
-			t.Errorf("%s: got model=%q, want %s", tc.name, model, tc.wantModel)
+		if !mode.HasModel || mode.OriginalModel != tc.wantModel {
+			t.Errorf("%s: got %+v, want model %s", tc.name, mode, tc.wantModel)
 		}
 
-		// Missing / empty model is a 400, not a fallback.
-		for _, bad := range [][]byte{[]byte(`{}`), []byte(`{"model":""}`)} {
-			_, err = extractUnifiedModel(tc.route, r, bad)
-			var gerr *gatewayError
-			if !errors.As(err, &gerr) {
-				t.Fatalf("%s: body %s: expected gatewayError, got %v", tc.name, bad, err)
+		// An absent model field degrades to no-model routing only on the prefix
+		// mount (codex); the fixed embeddings route still 400s.
+		mode, err = extractUnifiedModel(tc.route, r, []byte(`{}`))
+		if tc.route.PrefixMount {
+			if err != nil {
+				t.Fatalf("%s: absent model on prefix mount: %v", tc.name, err)
 			}
-			if gerr.status != http.StatusBadRequest || gerr.code != errorx.ModelNotFound.Error() {
-				t.Errorf("%s: body %s: got status=%d code=%s, want 400 %s", tc.name, bad, gerr.status, gerr.code, errorx.ModelNotFound.Error())
+			if mode.HasModel || mode.OriginalModel != "" {
+				t.Errorf("%s: absent model on prefix mount: got %+v, want no-model", tc.name, mode)
 			}
+		} else {
+			assertModelNotFound(t, tc.name+" absent model", err)
 		}
+
+		// A present-but-invalid model is a 400 either way — the degradation
+		// covers "this sub-path carries no model", not bad input.
+		for _, bad := range [][]byte{[]byte(`{"model":""}`), []byte(`{"model":123}`), []byte(`{"model":null}`)} {
+			_, err = extractUnifiedModel(tc.route, r, bad)
+			assertModelNotFound(t, tc.name+" body "+string(bad), err)
+		}
+	}
+}
+
+// assertModelNotFound asserts err is a 400 MODEL_NOT_FOUND gatewayError.
+func assertModelNotFound(t *testing.T, label string, err error) {
+	t.Helper()
+	var gerr *gatewayError
+	if !errors.As(err, &gerr) {
+		t.Fatalf("%s: expected gatewayError, got %v", label, err)
+	}
+	if gerr.status != http.StatusBadRequest || gerr.code != errorx.ModelNotFound.Error() {
+		t.Errorf("%s: got status=%d code=%s, want 400 %s", label, gerr.status, gerr.code, errorx.ModelNotFound.Error())
 	}
 }
 
@@ -433,20 +455,20 @@ func TestExtractUnifiedModel_GeminiFromPath(t *testing.T) {
 	r := httptest.NewRequest("POST", "/api/unified/v1beta/models/gemini-2.5-pro:streamGenerateContent", nil)
 	r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
 
-	model, err := extractUnifiedModel(unifiedRouteByPath(t, "/api/unified/v1beta/models/{model}:streamGenerateContent"), r, []byte(`{"contents":[]}`))
+	mode, err := extractUnifiedModel(unifiedRouteByPath(t, "/api/unified/v1beta/models/{model}:streamGenerateContent"), r, []byte(`{"contents":[]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if model != "gemini-2.5-pro" {
-		t.Errorf("got model=%q", model)
+	if !mode.HasModel || mode.OriginalModel != "gemini-2.5-pro" {
+		t.Errorf("got %+v", mode)
 	}
 
-	model, err = extractUnifiedModel(unifiedRouteByPath(t, "/api/unified/v1beta/models/{model}:generateContent"), r, []byte(`{"contents":[]}`))
+	mode, err = extractUnifiedModel(unifiedRouteByPath(t, "/api/unified/v1beta/models/{model}:generateContent"), r, []byte(`{"contents":[]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if model != "gemini-2.5-pro" {
-		t.Errorf("non-stream variant: got model=%q", model)
+	if !mode.HasModel || mode.OriginalModel != "gemini-2.5-pro" {
+		t.Errorf("non-stream variant: got %+v", mode)
 	}
 }
 
