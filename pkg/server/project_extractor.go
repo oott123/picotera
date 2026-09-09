@@ -43,11 +43,12 @@ const autoCreateMaxRetries = 5
 // (defensive — for the rare non-JSON body).
 var projectExtractRegexps = []*regexp.Regexp{
 	regexp.MustCompile(`Workspace root folder: (.*?)(?:\\n|\n|$|")`),
-	regexp.MustCompile(`Primary working directory: (.*?)(?:\\n|\n|$|")`),
+	regexp.MustCompile(`Primary working directory: (.*?)(?:\\n|\n|$|")`), // claude code
 	regexp.MustCompile(`Current working directory: (.*?)(?:\\n|\n|$|")`),
-	regexp.MustCompile(`<cwd>(.*?)</cwd>`),
+	regexp.MustCompile(`<cwd>(.*?)</cwd>`), // codex
 	regexp.MustCompile(`<env>(?:\\n|\n)Working directory: (.*?)(?:\\n|\n|$|")`),
 	regexp.MustCompile(`Today is [0-9-]+, and the current working directory is '(.*?)'.(?:\\n|\n|$|")`), // omp
+	regexp.MustCompile(`current working directory: '(.*?)'.`),                                           // omp (18.1.14)
 }
 
 type projectExtractor struct {
