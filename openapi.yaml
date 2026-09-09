@@ -1582,6 +1582,16 @@ components:
         timeSpentMs:
           format: int32
           type: integer
+        toolCost:
+          format: double
+          type: number
+        toolCostCurrency:
+          type: string
+        toolUsage:
+          items:
+            $ref: "#/components/schemas/ToolUsageEntryView"
+          nullable: true
+          type: array
         traceId:
           type: string
         ttftMs:
@@ -1652,6 +1662,26 @@ components:
         - enabled
         - createdAt
         - updatedAt
+      type: object
+    ToolUsageEntryView:
+      additionalProperties: false
+      properties:
+        inputTokens:
+          format: int64
+          type: integer
+        name:
+          type: string
+        numImages:
+          format: int64
+          type: integer
+        numRequests:
+          format: int64
+          type: integer
+        outputTokens:
+          format: int64
+          type: integer
+      required:
+        - name
       type: object
     TraceCostView:
       additionalProperties: false

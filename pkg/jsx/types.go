@@ -205,7 +205,9 @@ type RequestRef struct {
 // RequestFinishedView is the input to the requestFinished hook: the meta row's
 // terminal state, accumulated in memory (never read back from the database).
 // Fields that never happened are zero (e.g. a pure-failure path has no tokens,
-// cost, or providerId).
+// cost, or providerId). ToolUsage is the one exception to "zero": it is always
+// an array, empty when the upstream reported no tool usage, so a script can
+// iterate it unconditionally.
 type RequestFinishedView struct {
 	RequestID          string  `json:"requestId"`
 	StatusCode         int32   `json:"statusCode"`
@@ -223,6 +225,10 @@ type RequestFinishedView struct {
 	ProviderID         int32   `json:"providerId"`
 	Model              string  `json:"model"`
 	UpstreamModel      string  `json:"upstreamModel"`
+	// ToolUsage carries the exact bytes written to the request row's tool_usage
+	// column, inlined verbatim into the hook's initializer — so the script sees
+	// a real JS array and this layer needs no entry type of its own.
+	ToolUsage json.RawMessage `json:"toolUsage"`
 }
 
 // ContextPatch is the Go-side patch applied to globalThis.ctx. Only non-nil

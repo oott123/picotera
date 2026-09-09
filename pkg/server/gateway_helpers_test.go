@@ -448,3 +448,24 @@ func TestExtractModel(t *testing.T) {
 		})
 	}
 }
+
+func TestToolUsageJSON(t *testing.T) {
+	if got := toolUsageJSON(ResponseMetrics{}); got != nil {
+		t.Errorf("no tool usage: got %q, want nil (SQL NULL)", got)
+	}
+	if got := toolUsageJSON(ResponseMetrics{ToolUsage: []ToolUsageEntry{}}); got != nil {
+		t.Errorf("empty slice: got %q, want nil (SQL NULL)", got)
+	}
+
+	// Zero counters must not appear in the JSON — omitempty is what implements
+	// "a zero is the same as not reported".
+	m := ResponseMetrics{ToolUsage: []ToolUsageEntry{
+		{Name: "image_gen", InputTokens: 222, OutputTokens: 1630},
+		{Name: "web_search", NumRequests: 1},
+	}}
+	want := `[{"name":"image_gen","inputTokens":222,"outputTokens":1630},` +
+		`{"name":"web_search","numRequests":1}]`
+	if got := string(toolUsageJSON(m)); got != want {
+		t.Errorf("toolUsageJSON:\ngot:  %s\nwant: %s", got, want)
+	}
+}

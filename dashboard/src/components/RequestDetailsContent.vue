@@ -2,7 +2,12 @@
 import { ref, watch, computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
-import type { RequestView, ProviderLabel, RequestLiveView } from '@/api'
+import type {
+  RequestView,
+  ProviderLabel,
+  RequestLiveView,
+  ToolUsageEntryView,
+} from '@/api'
 import { listRequestSpans, getRequestLive, interruptRequest } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
 import { StateText, Field, Tag, IconButton, Icon, Tabs, MoneyDisplay, Button } from '@/ui'
@@ -135,6 +140,15 @@ function outputSpeed(r: RequestView | null): string {
 
 function fmtNum(n: number | undefined | null) {
   return n === undefined || n === null ? '—' : n.toLocaleString()
+}
+
+function toolUsageSummary(t: ToolUsageEntryView): string {
+  const parts: string[] = []
+  if (t.numRequests) parts.push(`${fmtNum(t.numRequests)}`)
+  if (t.inputTokens) parts.push(`in: ${fmtNum(t.inputTokens)}`)
+  if (t.outputTokens) parts.push(`out: ${fmtNum(t.outputTokens)}`)
+  if (t.numImages) parts.push(`${fmtNum(t.numImages)}`)
+  return parts.length ? parts.join(', ') : '—'
 }
 
 function providerLabel(id: number | undefined | null) {
@@ -502,16 +516,38 @@ watch(detailTabs, (tabs) => {
             </div>
           </section>
 
-          <section v-if="selected.modelCost != null" class="flex flex-col gap-2.5">
+          <section v-if="selected.toolUsage?.length" class="flex flex-col gap-2.5">
+            <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.04em]"
+              >工具用量</span
+            >
+            <div class="grid grid-cols-2 gap-2.5">
+              <Field v-for="t in selected.toolUsage" :key="t.name" :label="t.name" as="div">
+                <span class="font-mono tabular-nums text-sm">{{ toolUsageSummary(t) }}</span>
+              </Field>
+            </div>
+          </section>
+
+          <section
+            v-if="selected.modelCost != null || selected.toolCost != null"
+            class="flex flex-col gap-2.5"
+          >
             <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.04em]"
               >成本</span
             >
             <div class="grid grid-cols-2 gap-2.5">
-              <Field label="模型价" as="div">
+              <Field v-if="selected.modelCost != null" label="模型" as="div">
                 <span class="font-mono tabular-nums text-sm">
                   <MoneyDisplay
                     :amount="selected.modelCost ?? null"
                     :currency="selected.modelCostCurrency ?? ''"
+                  />
+                </span>
+              </Field>
+              <Field v-if="selected.toolCost != null" label="工具" as="div">
+                <span class="font-mono tabular-nums text-sm">
+                  <MoneyDisplay
+                    :amount="selected.toolCost ?? null"
+                    :currency="selected.toolCostCurrency ?? ''"
                   />
                 </span>
               </Field>

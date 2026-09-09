@@ -13,6 +13,20 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+// ToolUsageEntry is one upstream tool's usage, normalized from the response's
+// tool_usage object. Only non-zero counters are kept: upstreams enumerate the
+// tools they support rather than the ones that ran (a Codex response carries a
+// zero-filled image_gen on every request), so a zero carries no information.
+// "Reported zero" and "not reported" are therefore deliberately the same thing
+// here, which is why these are plain ints rather than pointers.
+type ToolUsageEntry struct {
+	Name         string `json:"name"`
+	NumRequests  int64  `json:"numRequests,omitempty"`
+	InputTokens  int64  `json:"inputTokens,omitempty"`
+	OutputTokens int64  `json:"outputTokens,omitempty"`
+	NumImages    int64  `json:"numImages,omitempty"`
+}
+
 // ResponseMetrics holds extracted TTFT, token usage, and inferred provider/model
 // from a provider response.
 type ResponseMetrics struct {
@@ -27,6 +41,9 @@ type ResponseMetrics struct {
 	// InferredModelSource is a db.InferredModelSource* enum value describing
 	// where InferredModel came from (signature vs response model field).
 	InferredModelSource int32
+	// ToolUsage is the normalized top-level tool_usage object, in the upstream's
+	// literal key order. Nil when the upstream never reported one.
+	ToolUsage []ToolUsageEntry
 }
 
 // extractorMode is how the response body is parsed. modeSniff is the initial
@@ -255,6 +272,9 @@ func (e *ResponseExtractor) processSSEEvent(eventBytes []byte) {
 	e.extractAnthropicSSE(payload)
 	// Try Gemini format
 	e.extractGeminiSSE(payload)
+
+	// Tool usage sits at the payload's top level in every format.
+	e.extractToolUsage(gjson.Parse(payload))
 
 	// Infer provider/model from this payload.
 	e.inferProvider(payload)
@@ -557,6 +577,7 @@ func (e *ResponseExtractor) processGeminiArrayElement(elem []byte) {
 	}
 
 	e.setGeminiUsage(result.Get("usageMetadata"))
+	e.extractToolUsage(result)
 	e.inferModelField(payload)
 	e.detectStreamError(payload)
 	e.detectStreamCompletion(payload)
@@ -593,6 +614,71 @@ func (e *ResponseExtractor) setGeminiUsage(usage gjson.Result) {
 		}
 		e.metrics.OutputTokens = &out
 	}
+}
+
+// toolUsagePaths are where an upstream reports tool_usage. It is a sibling of
+// the format's usage object: the payload's top level for OpenAI Chat, Anthropic,
+// Gemini and non-stream bodies, and inside the "response" envelope for OpenAI
+// Responses SSE events (where usage likewise lives at response.usage). First
+// match wins; no payload carries both.
+var toolUsagePaths = []string{"tool_usage", "response.tool_usage"}
+
+// extractToolUsage normalizes a payload's tool_usage object into
+// ToolUsageEntry values, covering OpenAI Chat / Responses, Anthropic and Gemini,
+// streamed or not.
+//
+// Last non-empty occurrence wins, matching the overwrite semantics the usage
+// fields already have. OpenAI Responses repeats tool_usage on response.created /
+// response.in_progress / response.completed, with only the last one carrying the
+// final counts, so last-wins is what makes the stream converge.
+func (e *ResponseExtractor) extractToolUsage(result gjson.Result) {
+	var tu gjson.Result
+	for _, path := range toolUsagePaths {
+		if v := result.Get(path); v.IsObject() {
+			tu = v
+			break
+		}
+	}
+	if !tu.IsObject() {
+		return
+	}
+
+	var entries []ToolUsageEntry
+	tu.ForEach(func(key, value gjson.Result) bool {
+		if !value.IsObject() {
+			return true
+		}
+		entry := ToolUsageEntry{
+			Name:         key.String(),
+			NumRequests:  toolUsageInt(value, "num_requests"),
+			InputTokens:  toolUsageInt(value, "input_tokens"),
+			OutputTokens: toolUsageInt(value, "output_tokens"),
+			NumImages:    toolUsageInt(value, "num_images"),
+		}
+		// Every counter zero (or absent) means the tool never ran — drop it
+		// rather than record a row of zeros.
+		if entry.NumRequests == 0 && entry.InputTokens == 0 &&
+			entry.OutputTokens == 0 && entry.NumImages == 0 {
+			return true
+		}
+		entries = append(entries, entry)
+		return true
+	})
+	if len(entries) == 0 {
+		return
+	}
+	e.metrics.ToolUsage = entries
+}
+
+// toolUsageInt reads one whitelisted tool_usage counter. Anything that is not a
+// JSON number counts as not reported — no lenient string-to-number coercion —
+// and so does a reported zero, which omitempty then drops from the entry.
+func toolUsageInt(usage gjson.Result, key string) int64 {
+	f := usage.Get(key)
+	if f.Type != gjson.Number {
+		return 0
+	}
+	return f.Int()
 }
 
 // extractJSONMetrics parses the accumulated JSON body and extracts usage metrics.
@@ -672,6 +758,8 @@ func (e *ResponseExtractor) extractJSONMetrics() {
 			e.metrics.CacheReadTokens = &c
 		}
 	}
+
+	e.extractToolUsage(result)
 }
 
 // inferProvider extracts the upstream provider identity from a payload.

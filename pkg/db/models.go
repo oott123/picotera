@@ -122,6 +122,9 @@ type Request struct {
 	ExternalRequestID   pgtype.Text      `json:"externalRequestId"`
 	ExternalResponseID  pgtype.Text      `json:"externalResponseId"`
 	Annotations         []byte           `json:"annotations"`
+	ToolUsage           []byte           `json:"toolUsage"`
+	ToolCost            pgtype.Numeric   `json:"toolCost"`
+	ToolCostCurrency    pgtype.Text      `json:"toolCostCurrency"`
 }
 
 type RequestOutcomeBucketed struct {

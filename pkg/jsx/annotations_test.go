@@ -1,6 +1,7 @@
 package jsx
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -305,6 +306,7 @@ func TestRunRequestFinished_TapReadsEveryField(t *testing.T) {
 		ProviderID:         7,
 		Model:              "sonnet",
 		UpstreamModel:      "claude-sonnet",
+		ToolUsage:          json.RawMessage(`[{"name":"web_search","numRequests":1}]`),
 	}
 	if err := s.RunRequestFinished(input); err != nil {
 		t.Fatalf("RunRequestFinished: %v", err)
@@ -320,7 +322,8 @@ func TestRunRequestFinished_TapReadsEveryField(t *testing.T) {
 		`"timeSpentMs":1200,"ttftMs":300,"inputTokens":11,"outputTokens":22,` +
 		`"cacheReadTokens":33,"cacheWriteTokens":44,"cacheWrite1hTokens":55,` +
 		`"modelCost":0.125,"modelCostCurrency":"USD","providerId":7,` +
-		`"model":"sonnet","upstreamModel":"claude-sonnet"}`
+		`"model":"sonnet","upstreamModel":"claude-sonnet",` +
+		`"toolUsage":[{"name":"web_search","numRequests":1}]}`
 	if *call.Value != want {
 		t.Fatalf("info =\n%s\nwant\n%s", *call.Value, want)
 	}

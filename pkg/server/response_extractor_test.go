@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1677,5 +1678,216 @@ func TestResponseExtractor_JSONContentType_DoesNotSniff(t *testing.T) {
 	}
 	if extractor.StreamCompleted() {
 		t.Error("StreamCompleted: got true, want false")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// tool_usage extraction
+// ---------------------------------------------------------------------------
+
+// toolUsageEqual compares two entry slices field by field. A zero counter is
+// indistinguishable from an unreported one by design, so plain equality is the
+// whole comparison.
+func toolUsageEqual(a, b []ToolUsageEntry) bool {
+	return slices.Equal(a, b)
+}
+
+func TestResponseExtractor_ToolUsage(t *testing.T) {
+	tests := []struct {
+		name        string
+		contentType string
+		body        string
+		want        []ToolUsageEntry
+	}{
+		{
+			// OpenAI Responses nests tool_usage in the event's response envelope,
+			// as a sibling of response.usage — not at the event's top level.
+			name:        "openai responses sse completed event",
+			contentType: "text/event-stream",
+			body: "event: response.completed\n" +
+				`data: {"type":"response.completed","response":{"usage":{"input_tokens":100,"output_tokens":50},` +
+				`"tool_usage":{"image_gen":{"input_tokens":222,"input_tokens_details":{"image_tokens":0,"text_tokens":222},` +
+				`"output_tokens":1630,"output_tokens_details":{"image_tokens":1630,"text_tokens":0},"total_tokens":1852},` +
+				`"web_search":{"num_requests":1}}}}` + "\n\n",
+			want: []ToolUsageEntry{
+				{Name: "image_gen", InputTokens: 222, OutputTokens: 1630},
+				{Name: "web_search", NumRequests: 1},
+			},
+		},
+		{
+			// Chat Completions / Anthropic / Gemini keep usage at the payload's
+			// top level, so tool_usage sits there too.
+			name:        "top-level sibling of a top-level usage",
+			contentType: "text/event-stream",
+			body: `data: {"usage":{"prompt_tokens":100,"completion_tokens":50},` +
+				`"tool_usage":{"web_search":{"num_requests":1}}}` + "\n\n",
+			want: []ToolUsageEntry{{Name: "web_search", NumRequests: 1}},
+		},
+		{
+			name:        "non-stream json body",
+			contentType: "application/json",
+			body: `{"usage":{"prompt_tokens":10,"completion_tokens":20},` +
+				`"tool_usage":{"image_gen":{"input_tokens":222,"output_tokens":1630,"num_images":2},"web_search":{"num_requests":3}}}`,
+			want: []ToolUsageEntry{
+				{Name: "image_gen", InputTokens: 222, OutputTokens: 1630, NumImages: 2},
+				{Name: "web_search", NumRequests: 3},
+			},
+		},
+		{
+			name:        "anthropic sse message_delta - top-level path is format-agnostic",
+			contentType: "text/event-stream",
+			body: "event: message_delta\n" +
+				`data: {"type":"message_delta","usage":{"output_tokens":42},"tool_usage":{"web_search":{"num_requests":2}}}` + "\n\n",
+			want: []ToolUsageEntry{{Name: "web_search", NumRequests: 2}},
+		},
+		{
+			name:        "absent",
+			contentType: "application/json",
+			body:        `{"usage":{"prompt_tokens":10,"completion_tokens":20}}`,
+			want:        nil,
+		},
+		{
+			name:        "not an object - array",
+			contentType: "application/json",
+			body:        `{"tool_usage":[{"name":"web_search"}]}`,
+			want:        nil,
+		},
+		{
+			name:        "not an object - string",
+			contentType: "application/json",
+			body:        `{"tool_usage":"web_search"}`,
+			want:        nil,
+		},
+		{
+			name:        "not an object - null",
+			contentType: "application/json",
+			body:        `{"tool_usage":null}`,
+			want:        nil,
+		},
+		{
+			name:        "non-object value is skipped, siblings survive",
+			contentType: "application/json",
+			body:        `{"tool_usage":{"a":1,"web_search":{"num_requests":1}}}`,
+			want:        []ToolUsageEntry{{Name: "web_search", NumRequests: 1}},
+		},
+		{
+			name:        "empty usage object is dropped - nothing ran",
+			contentType: "application/json",
+			body:        `{"tool_usage":{"web_search":{}}}`,
+			want:        nil,
+		},
+		{
+			name:        "whitelisted field of the wrong type counts as not reported",
+			contentType: "application/json",
+			body:        `{"tool_usage":{"web_search":{"num_requests":"1","input_tokens":true,"output_tokens":5}}}`,
+			want:        []ToolUsageEntry{{Name: "web_search", OutputTokens: 5}},
+		},
+		{
+			name:        "an all-zero tool is dropped entirely",
+			contentType: "application/json",
+			body:        `{"tool_usage":{"image_gen":{"input_tokens":0,"output_tokens":0,"num_images":0}}}`,
+			want:        nil,
+		},
+		{
+			name:        "zero counters are omitted, non-zero siblings survive",
+			contentType: "application/json",
+			body:        `{"tool_usage":{"image_gen":{"input_tokens":0,"output_tokens":1630,"num_images":0}}}`,
+			want:        []ToolUsageEntry{{Name: "image_gen", OutputTokens: 1630}},
+		},
+		{
+			name:        "an all-zero tool is dropped, a used sibling is kept",
+			contentType: "application/json",
+			body:        `{"tool_usage":{"image_gen":{"input_tokens":0,"output_tokens":0},"web_search":{"num_requests":1}}}`,
+			want:        []ToolUsageEntry{{Name: "web_search", NumRequests: 1}},
+		},
+		{
+			name:        "entry order follows the upstream object",
+			contentType: "application/json",
+			body:        `{"tool_usage":{"z":{"num_requests":1},"a":{"num_requests":2}}}`,
+			want: []ToolUsageEntry{
+				{Name: "z", NumRequests: 1},
+				{Name: "a", NumRequests: 2},
+			},
+		},
+		{
+			name:        "last non-empty occurrence wins",
+			contentType: "text/event-stream",
+			body: `data: {"tool_usage":{"web_search":{"num_requests":1}}}` + "\n\n" +
+				`data: {"tool_usage":{"image_gen":{"num_images":4}}}` + "\n\n",
+			want: []ToolUsageEntry{{Name: "image_gen", NumImages: 4}},
+		},
+		{
+			name:        "a later empty tool_usage does not clear the earlier one",
+			contentType: "text/event-stream",
+			body: `data: {"tool_usage":{"web_search":{"num_requests":1}}}` + "\n\n" +
+				`data: {"tool_usage":{}}` + "\n\n",
+			want: []ToolUsageEntry{{Name: "web_search", NumRequests: 1}},
+		},
+		{
+			// Verbatim from a Codex /responses stream (request dag9d1gs9a269lib21cg):
+			// tool_usage repeats on created / in_progress / completed and only the
+			// last one carries the final counts, so last-wins is what converges.
+			name:        "codex responses stream repeats tool_usage until completed",
+			contentType: "text/event-stream",
+			body: `data: {"type":"response.created","response":{"tool_usage":{"image_gen":{"input_tokens":0,` +
+				`"input_tokens_details":{"image_tokens":0,"text_tokens":0},"output_tokens":0,` +
+				`"output_tokens_details":{"image_tokens":0,"text_tokens":0},"total_tokens":0},` +
+				`"web_search":{"num_requests":0}}}}` + "\n\n" +
+				`data: {"type":"response.completed","response":{"tool_usage":{"image_gen":{"input_tokens":0,` +
+				`"input_tokens_details":{"image_tokens":0,"text_tokens":0},"output_tokens":0,` +
+				`"output_tokens_details":{"image_tokens":0,"text_tokens":0},"total_tokens":0},` +
+				`"web_search":{"num_requests":1}},"usage":{"input_tokens":33601,` +
+				`"input_tokens_details":{"cache_write_tokens":0,"cached_tokens":3712},"output_tokens":545,` +
+				`"output_tokens_details":{"reasoning_tokens":370},"total_tokens":34146}}}` + "\n\n",
+			want: []ToolUsageEntry{{Name: "web_search", NumRequests: 1}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			extractor := NewResponseExtractor(strings.NewReader(tt.body), tt.contentType, time.Now())
+			if _, err := io.ReadAll(extractor); err != nil {
+				t.Fatalf("ReadAll: %v", err)
+			}
+			if got := extractor.Metrics().ToolUsage; !toolUsageEqual(got, tt.want) {
+				t.Errorf("ToolUsage:\ngot:  %+v\nwant: %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResponseExtractor_ToolUsage_DoesNotDisturbUsage(t *testing.T) {
+	body := "event: response.completed\n" +
+		`data: {"type":"response.completed","response":{"usage":{"input_tokens":100,"output_tokens":50},` +
+		`"tool_usage":{"web_search":{"num_requests":1}}}}` + "\n\n"
+	extractor := NewResponseExtractor(strings.NewReader(body), "text/event-stream", time.Now())
+	if _, err := io.ReadAll(extractor); err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+
+	m := extractor.Metrics()
+	if m.InputTokens == nil || *m.InputTokens != 100 {
+		t.Errorf("InputTokens: got %v, want 100", m.InputTokens)
+	}
+	if m.OutputTokens == nil || *m.OutputTokens != 50 {
+		t.Errorf("OutputTokens: got %v, want 50", m.OutputTokens)
+	}
+}
+
+func TestResponseExtractor_ToolUsage_GeminiJSONArrayStream(t *testing.T) {
+	body := `[{"candidates":[{"content":{"parts":[{"text":"hi"}]}}],"usageMetadata":{"promptTokenCount":8,"candidatesTokenCount":3},` +
+		`"tool_usage":{"web_search":{"num_requests":1}}}]`
+	extractor := NewResponseExtractor(strings.NewReader(body), "application/json", time.Now())
+	if _, err := io.ReadAll(extractor); err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+
+	m := extractor.Metrics()
+	want := []ToolUsageEntry{{Name: "web_search", NumRequests: 1}}
+	if !toolUsageEqual(m.ToolUsage, want) {
+		t.Errorf("ToolUsage:\ngot:  %+v\nwant: %+v", m.ToolUsage, want)
+	}
+	if m.OutputTokens == nil || *m.OutputTokens != 3 {
+		t.Errorf("OutputTokens: got %v, want 3", m.OutputTokens)
 	}
 }

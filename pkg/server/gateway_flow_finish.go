@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 
 	"picotera/pkg/db"
 	"picotera/pkg/jsx"
@@ -12,6 +13,10 @@ import (
 // every update the flow applies through updateMeta. It backs the requestFinished
 // hook's input so the hook never has to read the row back. Fields whose column
 // was never written (or was written as SQL NULL) stay zero.
+//
+// tool_cost / tool_cost_currency are deliberately not mirrored: nothing writes
+// them yet and they are not in the hook's view, so a field here would only ever
+// hold the zero value. They join when tool pricing lands.
 type metaOutcome struct {
 	// set records that the finish reason has been written, i.e. the request
 	// reached a terminal state. Only then is requestFinished meaningful.
@@ -32,6 +37,7 @@ type metaOutcome struct {
 	model              string
 	upstreamModel      string
 	modelCost          float64
+	toolUsage          []byte
 }
 
 // merge folds a partial update into the snapshot: only the columns whose set_*
@@ -89,6 +95,9 @@ func (o *metaOutcome) merge(p db.UpdateRequestParams) {
 	if p.SetUpstreamModel {
 		o.upstreamModel = p.UpstreamModel.String
 	}
+	if p.SetToolUsage {
+		o.toolUsage = p.ToolUsage
+	}
 }
 
 // updateMeta applies a partial update to the meta row and mirrors it into
@@ -110,6 +119,12 @@ func (f *gatewayFlow) runRequestFinished() {
 		return
 	}
 	o := f.metaFinal
+	// The view's toolUsage is always an array, so a script can iterate it
+	// without a null check.
+	toolUsage := json.RawMessage(o.toolUsage)
+	if len(toolUsage) == 0 {
+		toolUsage = json.RawMessage("[]")
+	}
 	err := f.session.RunRequestFinished(jsx.RequestFinishedView{
 		RequestID:          f.meta.ID,
 		StatusCode:         o.statusCode,
@@ -127,6 +142,7 @@ func (f *gatewayFlow) runRequestFinished() {
 		ProviderID:         o.providerID,
 		Model:              o.model,
 		UpstreamModel:      o.upstreamModel,
+		ToolUsage:          toolUsage,
 	})
 	if err != nil {
 		logx.WithContext(f.ctxs.Request).WithError(err).Warn("requestFinished hook failed")

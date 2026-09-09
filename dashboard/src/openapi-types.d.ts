@@ -1796,6 +1796,10 @@ export interface components {
             statusCode?: number;
             /** Format: int32 */
             timeSpentMs?: number;
+            /** Format: double */
+            toolCost?: number;
+            toolCostCurrency?: string;
+            toolUsage?: components["schemas"]["ToolUsageEntryView"][] | null;
             traceId?: string;
             /** Format: int32 */
             ttftMs?: number;
@@ -1831,6 +1835,17 @@ export interface components {
             name: string;
             source: string;
             updatedAt: string;
+        };
+        ToolUsageEntryView: {
+            /** Format: int64 */
+            inputTokens?: number;
+            name: string;
+            /** Format: int64 */
+            numImages?: number;
+            /** Format: int64 */
+            numRequests?: number;
+            /** Format: int64 */
+            outputTokens?: number;
         };
         TraceCostView: {
             /** Format: double */

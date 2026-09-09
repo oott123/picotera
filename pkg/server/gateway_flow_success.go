@@ -264,6 +264,7 @@ func (h *gatewayHandler) completeGatewaySuccess(input successInput, m ResponseMe
 	defer cancel()
 	ttftMs, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, cacheWrite1hTokens := metricsToPG(m)
 	modelCost, modelCcy := h.costsFor(bgCtx, input.RoutedModel, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, cacheWrite1hTokens)
+	toolUsage := toolUsageJSON(m)
 
 	// An in-stream error event (HTTP 200 with an error.message payload) marks
 	// both rows failed while keeping the real upstream status code and metrics.
@@ -290,6 +291,7 @@ func (h *gatewayHandler) completeGatewaySuccess(input successInput, m ResponseMe
 		CacheWrite1hTokens(cacheWrite1hTokens).
 		ModelCost(modelCost).
 		ModelCostCurrency(modelCcy).
+		ToolUsage(toolUsage).
 		FinishReason(pgtype.Int4{Int32: upstreamFr, Valid: true}).
 		InferredProvider(pgtype.Text{String: m.InferredProvider, Valid: m.InferredProvider != ""}).
 		InferredModel(pgtype.Text{String: m.InferredModel, Valid: m.InferredModel != ""}).
@@ -308,6 +310,7 @@ func (h *gatewayHandler) completeGatewaySuccess(input successInput, m ResponseMe
 		CacheWrite1hTokens(cacheWrite1hTokens).
 		ModelCost(modelCost).
 		ModelCostCurrency(modelCcy).
+		ToolUsage(toolUsage).
 		FinishReason(pgtype.Int4{Int32: metaFr, Valid: true}).
 		InferredProvider(pgtype.Text{String: m.InferredProvider, Valid: m.InferredProvider != ""}).
 		InferredModel(pgtype.Text{String: m.InferredModel, Valid: m.InferredModel != ""}).

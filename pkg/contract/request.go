@@ -46,7 +46,22 @@ type RequestView struct {
 	ExternalResponseID  string   `json:"externalResponseId,omitempty"`
 	UserID              int64    `json:"userId,omitempty"`
 
+	ToolUsage        []ToolUsageEntryView `json:"toolUsage,omitempty"`
+	ToolCost         *float64             `json:"toolCost,omitempty"`
+	ToolCostCurrency string               `json:"toolCostCurrency,omitempty"`
+
 	Annotations map[string]string `json:"annotations,omitempty"`
+}
+
+// ToolUsageEntryView is one upstream tool's usage as recorded on the request
+// row. Only non-zero counters are present — a tool the upstream listed but
+// never ran is not recorded at all. Entry order is the upstream's own key order.
+type ToolUsageEntryView struct {
+	Name         string `json:"name"`
+	NumRequests  int64  `json:"numRequests,omitempty"`
+	InputTokens  int64  `json:"inputTokens,omitempty"`
+	OutputTokens int64  `json:"outputTokens,omitempty"`
+	NumImages    int64  `json:"numImages,omitempty"`
 }
 
 type TraceCostView struct {
@@ -105,6 +120,9 @@ type requestLike struct {
 	UserID              pgtype.Int8
 	TraceID             pgtype.Text
 	Annotations         []byte
+	ToolUsage           []byte
+	ToolCost            pgtype.Numeric
+	ToolCostCurrency    pgtype.Text
 }
 
 func toRequestView(r requestLike) *RequestView {
@@ -185,6 +203,14 @@ func toRequestView(r requestLike) *RequestView {
 	if r.ModelCostCurrency.Valid {
 		view.ModelCostCurrency = r.ModelCostCurrency.String
 	}
+	if r.ToolCost.Valid {
+		if f, err := numericToFloat(r.ToolCost); err == nil {
+			view.ToolCost = &f
+		}
+	}
+	if r.ToolCostCurrency.Valid {
+		view.ToolCostCurrency = r.ToolCostCurrency.String
+	}
 	if r.UserMessagePreview.Valid {
 		view.UserMessagePreview = r.UserMessagePreview.String
 	}
@@ -221,6 +247,14 @@ func toRequestView(r requestLike) *RequestView {
 		var anno map[string]string
 		if err := json.Unmarshal(r.Annotations, &anno); err == nil {
 			view.Annotations = anno
+		}
+	}
+	// tool_usage is likewise written only by our own response extractor, so the
+	// same tolerant decode applies: a failure leaves the field nil.
+	if len(r.ToolUsage) > 0 {
+		var tu []ToolUsageEntryView
+		if err := json.Unmarshal(r.ToolUsage, &tu); err == nil {
+			view.ToolUsage = tu
 		}
 	}
 	return view
@@ -260,6 +294,9 @@ func ToRequestView(r *db.GetRequestRow) *RequestView {
 		UserID:              r.UserID,
 		TraceID:             r.TraceID,
 		Annotations:         r.Annotations,
+		ToolUsage:           r.ToolUsage,
+		ToolCost:            r.ToolCost,
+		ToolCostCurrency:    r.ToolCostCurrency,
 	})
 }
 
@@ -296,6 +333,9 @@ func ToListRequestRowView(r *db.ListRequestsRow) *RequestView {
 		ExternalResponseID:  r.ExternalResponseID,
 		UserID:              r.UserID,
 		Annotations:         r.Annotations,
+		ToolUsage:           r.ToolUsage,
+		ToolCost:            r.ToolCost,
+		ToolCostCurrency:    r.ToolCostCurrency,
 	})
 }
 
@@ -333,6 +373,9 @@ func ToListRequestsBySpanRowView(r *db.ListRequestsBySpanRow) *RequestView {
 		UserID:              r.UserID,
 		TraceID:             r.TraceID,
 		Annotations:         r.Annotations,
+		ToolUsage:           r.ToolUsage,
+		ToolCost:            r.ToolCost,
+		ToolCostCurrency:    r.ToolCostCurrency,
 	})
 }
 

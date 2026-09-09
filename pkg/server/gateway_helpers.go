@@ -1080,6 +1080,19 @@ func metricsToPG(m ResponseMetrics) (ttftMs pgtype.Int4, inputTokens pgtype.Int4
 	return
 }
 
+// toolUsageJSON marshals extracted tool usage for the tool_usage JSONB column.
+// Returns nil when nothing was extracted, so the column is written as SQL NULL.
+func toolUsageJSON(m ResponseMetrics) []byte {
+	if len(m.ToolUsage) == 0 {
+		return nil
+	}
+	b, err := json.Marshal(m.ToolUsage)
+	if err != nil {
+		return nil
+	}
+	return b
+}
+
 // candidateProviderID returns the provider id from a candidate. With typed
 // fields, JSON round-tripping decodes numbers straight into int32, so no
 // fallback handling is needed.

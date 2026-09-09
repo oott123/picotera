@@ -132,6 +132,26 @@ func (u *requestUpdate) ModelCostCurrency(v pgtype.Text) *requestUpdate {
 	return u
 }
 
+func (u *requestUpdate) ToolUsage(v []byte) *requestUpdate {
+	u.p.SetToolUsage = true
+	u.p.ToolUsage = v
+	return u
+}
+
+// ToolCost and ToolCostCurrency have no caller yet — the write path is wired up
+// so tool pricing can be plugged in without touching the query layer again.
+func (u *requestUpdate) ToolCost(v pgtype.Numeric) *requestUpdate {
+	u.p.SetToolCost = true
+	u.p.ToolCost = v
+	return u
+}
+
+func (u *requestUpdate) ToolCostCurrency(v pgtype.Text) *requestUpdate {
+	u.p.SetToolCostCurrency = true
+	u.p.ToolCostCurrency = v
+	return u
+}
+
 func (u *requestUpdate) FinishReason(v pgtype.Int4) *requestUpdate {
 	u.p.SetFinishReason = true
 	u.p.FinishReason = v

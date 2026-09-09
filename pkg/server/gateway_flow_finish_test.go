@@ -136,3 +136,26 @@ func TestMetaOutcome_UntouchedColumnsStayZero(t *testing.T) {
 		t.Fatalf("untouched columns leaked values: %+v", o)
 	}
 }
+
+func TestMetaOutcome_MergeToolUsage(t *testing.T) {
+	raw := []byte(`[{"name":"web_search","numRequests":1}]`)
+
+	var o metaOutcome
+	o.merge(newRequestUpdate("meta-1", testCreatedAt).ToolUsage(raw).p)
+	if string(o.toolUsage) != string(raw) {
+		t.Fatalf("toolUsage = %q, want %q", o.toolUsage, raw)
+	}
+
+	// An update that does not declare the column leaves the snapshot alone.
+	o.merge(newRequestUpdate("meta-1", testCreatedAt).
+		StatusCode(pgtype.Int4{Int32: 200, Valid: true}).p)
+	if string(o.toolUsage) != string(raw) {
+		t.Fatalf("toolUsage clobbered by an unrelated update: %q", o.toolUsage)
+	}
+
+	// Declaring it with a nil payload is an explicit SQL NULL: clear it.
+	o.merge(newRequestUpdate("meta-1", testCreatedAt).ToolUsage(nil).p)
+	if o.toolUsage != nil {
+		t.Fatalf("toolUsage = %q, want nil", o.toolUsage)
+	}
+}
