@@ -66,6 +66,7 @@
       rewriteModel: new Waterfall(),
       rewriteProviderModels: new Waterfall(),
       afterUpstreamError: new Waterfall(),
+      getToolUsageCost: new Waterfall(),
       requestFinished: new Waterfall(),
     },
     request: {

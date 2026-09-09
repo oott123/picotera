@@ -189,6 +189,27 @@ type ProviderModelEntry struct {
 	Disabled          bool              `json:"disabled,omitempty"`
 }
 
+// ToolUsageEntry is one tool's usage as the getToolUsageCost hook sees it. It
+// mirrors the JSON shape of server.ToolUsageEntry / contract.ToolUsageEntryView.
+// Declared here to avoid a reverse dependency from jsx → server/contract.
+type ToolUsageEntry struct {
+	Name         string `json:"name"`
+	Model        string `json:"model,omitempty"`
+	NumRequests  int64  `json:"numRequests,omitempty"`
+	InputTokens  int64  `json:"inputTokens,omitempty"`
+	OutputTokens int64  `json:"outputTokens,omitempty"`
+	NumImages    int64  `json:"numImages,omitempty"`
+}
+
+// ToolUsageCostView is both the input and the output of the getToolUsageCost
+// hook: extracted tool usage plus the cost to record for it. A nil ToolCost
+// (which requires an empty ToolCostCurrency) writes both cost columns as NULL.
+type ToolUsageCostView struct {
+	ToolUsage        []ToolUsageEntry `json:"toolUsage"`
+	ToolCost         *float64         `json:"toolCost"`
+	ToolCostCurrency string           `json:"toolCostCurrency"`
+}
+
 // RequestRef is the JS-visible identity of a request row (ctx.metaRequest and
 // ctx.upstreamRequest). It carries no annotation map — scripts write annotations
 // through picotera.request.setAnnotation(id, key, value) instead.
@@ -208,6 +229,9 @@ type RequestRef struct {
 // cost, or providerId). ToolUsage is the one exception to "zero": it is always
 // an array, empty when the upstream reported no tool usage, so a script can
 // iterate it unconditionally.
+//
+// ToolUsage / ToolCost / ToolCostCurrency are whatever getToolUsageCost
+// committed — it runs before the row is written and this hook after.
 type RequestFinishedView struct {
 	RequestID          string  `json:"requestId"`
 	StatusCode         int32   `json:"statusCode"`
@@ -222,6 +246,8 @@ type RequestFinishedView struct {
 	CacheWrite1hTokens int32   `json:"cacheWrite1hTokens"`
 	ModelCost          float64 `json:"modelCost"`
 	ModelCostCurrency  string  `json:"modelCostCurrency"`
+	ToolCost           float64 `json:"toolCost"`
+	ToolCostCurrency   string  `json:"toolCostCurrency"`
 	ProviderID         int32   `json:"providerId"`
 	Model              string  `json:"model"`
 	UpstreamModel      string  `json:"upstreamModel"`

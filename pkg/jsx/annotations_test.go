@@ -303,6 +303,8 @@ func TestRunRequestFinished_TapReadsEveryField(t *testing.T) {
 		CacheWrite1hTokens: 55,
 		ModelCost:          0.125,
 		ModelCostCurrency:  "USD",
+		ToolCost:           0.5,
+		ToolCostCurrency:   "EUR",
 		ProviderID:         7,
 		Model:              "sonnet",
 		UpstreamModel:      "claude-sonnet",
@@ -321,7 +323,8 @@ func TestRunRequestFinished_TapReadsEveryField(t *testing.T) {
 	want := `{"requestId":"meta-1","statusCode":200,"finishReason":3,"errorMessage":"",` +
 		`"timeSpentMs":1200,"ttftMs":300,"inputTokens":11,"outputTokens":22,` +
 		`"cacheReadTokens":33,"cacheWriteTokens":44,"cacheWrite1hTokens":55,` +
-		`"modelCost":0.125,"modelCostCurrency":"USD","providerId":7,` +
+		`"modelCost":0.125,"modelCostCurrency":"USD","toolCost":0.5,"toolCostCurrency":"EUR",` +
+		`"providerId":7,` +
 		`"model":"sonnet","upstreamModel":"claude-sonnet",` +
 		`"toolUsage":[{"name":"web_search","numRequests":1}]}`
 	if *call.Value != want {

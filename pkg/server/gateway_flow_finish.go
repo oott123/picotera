@@ -13,10 +13,6 @@ import (
 // every update the flow applies through updateMeta. It backs the requestFinished
 // hook's input so the hook never has to read the row back. Fields whose column
 // was never written (or was written as SQL NULL) stay zero.
-//
-// tool_cost / tool_cost_currency are deliberately not mirrored: nothing writes
-// them yet and they are not in the hook's view, so a field here would only ever
-// hold the zero value. They join when tool pricing lands.
 type metaOutcome struct {
 	// set records that the finish reason has been written, i.e. the request
 	// reached a terminal state. Only then is requestFinished meaningful.
@@ -34,9 +30,11 @@ type metaOutcome struct {
 	providerID         int32
 	errorMessage       string
 	modelCostCurrency  string
+	toolCostCurrency   string
 	model              string
 	upstreamModel      string
 	modelCost          float64
+	toolCost           float64
 	toolUsage          []byte
 }
 
@@ -85,6 +83,17 @@ func (o *metaOutcome) merge(p db.UpdateRequestParams) {
 	}
 	if p.SetModelCostCurrency {
 		o.modelCostCurrency = p.ModelCostCurrency.String
+	}
+	if p.SetToolCost {
+		o.toolCost = 0
+		if p.ToolCost.Valid {
+			if fv, err := p.ToolCost.Float64Value(); err == nil && fv.Valid {
+				o.toolCost = fv.Float64
+			}
+		}
+	}
+	if p.SetToolCostCurrency {
+		o.toolCostCurrency = p.ToolCostCurrency.String
 	}
 	if p.SetProviderID {
 		o.providerID = p.ProviderID.Int32
@@ -139,6 +148,8 @@ func (f *gatewayFlow) runRequestFinished() {
 		CacheWrite1hTokens: o.cacheWrite1hTokens,
 		ModelCost:          o.modelCost,
 		ModelCostCurrency:  o.modelCostCurrency,
+		ToolCost:           o.toolCost,
+		ToolCostCurrency:   o.toolCostCurrency,
 		ProviderID:         o.providerID,
 		Model:              o.model,
 		UpstreamModel:      o.upstreamModel,

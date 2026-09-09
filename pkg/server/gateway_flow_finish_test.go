@@ -132,8 +132,27 @@ func TestMetaOutcome_UntouchedColumnsStayZero(t *testing.T) {
 		t.Fatalf("statusCode = %d", o.statusCode)
 	}
 	if o.set || o.model != "" || o.upstreamModel != "" || o.errorMessage != "" ||
-		o.providerID != 0 || o.ttftMs != 0 || o.modelCostCurrency != "" {
+		o.providerID != 0 || o.ttftMs != 0 || o.modelCostCurrency != "" ||
+		o.toolCost != 0 || o.toolCostCurrency != "" {
 		t.Fatalf("untouched columns leaked values: %+v", o)
+	}
+}
+
+func TestMetaOutcome_MergeToolCost(t *testing.T) {
+	var o metaOutcome
+	o.merge(newRequestUpdate("meta-1", testCreatedAt).
+		ToolCost(pgtype.Numeric{Int: big.NewInt(2500000), Exp: -6, Valid: true}).
+		ToolCostCurrency(pgtype.Text{String: "USD", Valid: true}).p)
+	if o.toolCost != 2.5 || o.toolCostCurrency != "USD" {
+		t.Fatalf("tool cost = %v %q", o.toolCost, o.toolCostCurrency)
+	}
+
+	// An explicit SQL NULL (the no-cost case) merges as the zero value.
+	o.merge(newRequestUpdate("meta-1", testCreatedAt).
+		ToolCost(pgtype.Numeric{Valid: false}).
+		ToolCostCurrency(pgtype.Text{Valid: false}).p)
+	if o.toolCost != 0 || o.toolCostCurrency != "" {
+		t.Fatalf("NULL did not merge as zero: %v %q", o.toolCost, o.toolCostCurrency)
 	}
 }
 

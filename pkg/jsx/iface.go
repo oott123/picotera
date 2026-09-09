@@ -50,6 +50,12 @@ type Session interface {
 	// upstream attempt failed. Passthrough keeps the initial value (break=false).
 	RunAfterUpstreamError(initial UpstreamErrorView) (AfterUpstreamErrorDecision, error)
 
+	// RunGetToolUsageCost runs the getToolUsageCost waterfall just before the
+	// tool usage and its cost are written to the request rows. Passthrough keeps
+	// the initial value; a malformed result is an error, because billing data is
+	// better dropped loudly than coerced.
+	RunGetToolUsageCost(initial ToolUsageCostView) (ToolUsageCostView, error)
+
 	// SetUpstreamRequest installs ctx.upstreamRequest for the current attempt.
 	// ref == nil sets it to null (the state before an upstream row exists).
 	SetUpstreamRequest(ref *RequestRef) error

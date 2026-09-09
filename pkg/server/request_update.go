@@ -138,8 +138,6 @@ func (u *requestUpdate) ToolUsage(v []byte) *requestUpdate {
 	return u
 }
 
-// ToolCost and ToolCostCurrency have no caller yet — the write path is wired up
-// so tool pricing can be plugged in without touching the query layer again.
 func (u *requestUpdate) ToolCost(v pgtype.Numeric) *requestUpdate {
 	u.p.SetToolCost = true
 	u.p.ToolCost = v

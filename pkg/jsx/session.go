@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -796,4 +797,143 @@ func (s *qjsSession) RunAfterUpstreamError(initial UpstreamErrorView) (AfterUpst
 		return zero, fmt.Errorf("jsx: afterUpstreamError decode: %w", err)
 	}
 	return out, nil
+}
+
+// toolCostMax bounds toolCost so it still fits the NUMERIC(20, 6) column, whose
+// integer part is 14 digits wide.
+const toolCostMax = 1e14
+
+// toolUsageEntryKeys is the whitelist of keys an entry may carry; an unknown one
+// is an error, since a misspelled field name would silently drop billing data.
+var toolUsageEntryKeys = []string{"name", "model", "numRequests", "inputTokens", "outputTokens", "numImages"}
+
+// RunGetToolUsageCost runs the getToolUsageCost waterfall with the tool usage
+// extracted from the upstream response. Passthrough (undefined / null /
+// returning ctx / returning the unchanged input object) keeps the initial value;
+// anything else is validated strictly in the glue and again host-side, because
+// the result is written verbatim into the three tool columns.
+func (s *qjsSession) RunGetToolUsageCost(initial ToolUsageCostView) (ToolUsageCostView, error) {
+	if initial.ToolUsage == nil {
+		initial.ToolUsage = []ToolUsageEntry{}
+	}
+	init, err := mustJSON(initial)
+	if err != nil {
+		return initial, err
+	}
+	keys, err := mustJSON(toolUsageEntryKeys)
+	if err != nil {
+		return initial, err
+	}
+	expr := `(function () {
+		var input = ` + init + `;
+		var allowed = ` + keys + `;
+		var counters = ['numRequests', 'inputTokens', 'outputTokens', 'numImages'];
+		var r = picotera.hooks.getToolUsageCost.runWaterfall(globalThis.ctx, input);
+		if (r === globalThis.ctx || r === input || typeof r === 'undefined' || r === null) return undefined;
+		if (typeof r !== 'object' || Array.isArray(r)) {
+			throw new Error("jsx: getToolUsageCost result must be an object");
+		}
+		if (!Array.isArray(r.toolUsage)) {
+			throw new Error("jsx: getToolUsageCost toolUsage must be an array");
+		}
+		var usage = [];
+		for (var i = 0; i < r.toolUsage.length; i++) {
+			var e = r.toolUsage[i];
+			if (e === null || typeof e !== 'object' || Array.isArray(e)) {
+				throw new Error("jsx: getToolUsageCost toolUsage[" + i + "] must be an object");
+			}
+			var ekeys = Object.keys(e);
+			for (var j = 0; j < ekeys.length; j++) {
+				if (allowed.indexOf(ekeys[j]) < 0) {
+					throw new Error("jsx: getToolUsageCost unknown toolUsage[" + i + "] key " + ekeys[j]);
+				}
+			}
+			if (typeof e.name !== 'string' || e.name === '') {
+				throw new Error("jsx: getToolUsageCost toolUsage[" + i + "].name must be a non-empty string");
+			}
+			var out = { name: e.name };
+			if (typeof e.model !== 'undefined' && e.model !== null) {
+				if (typeof e.model !== 'string') {
+					throw new Error("jsx: getToolUsageCost toolUsage[" + i + "].model must be a string");
+				}
+				out.model = e.model;
+			}
+			for (var k = 0; k < counters.length; k++) {
+				var ck = counters[k], cv = e[ck];
+				if (typeof cv === 'undefined' || cv === null) continue;
+				if (!Number.isSafeInteger(cv) || cv < 0) {
+					throw new Error("jsx: getToolUsageCost toolUsage[" + i + "]." + ck + " must be a non-negative safe integer");
+				}
+				out[ck] = cv;
+			}
+			usage.push(out);
+		}
+		var cost = null;
+		if (typeof r.toolCost !== 'undefined' && r.toolCost !== null) {
+			if (typeof r.toolCost !== 'number' || !Number.isFinite(r.toolCost) || r.toolCost < 0 || r.toolCost >= ` + fmt.Sprintf("%g", toolCostMax) + `) {
+				throw new Error("jsx: getToolUsageCost toolCost must be a finite number in [0, 1e14)");
+			}
+			cost = r.toolCost;
+		}
+		var ccy = '';
+		if (cost === null) {
+			if (typeof r.toolCostCurrency !== 'undefined' && r.toolCostCurrency !== null && r.toolCostCurrency !== '') {
+				throw new Error("jsx: getToolUsageCost toolCostCurrency must be absent or empty when toolCost is empty");
+			}
+		} else {
+			if (typeof r.toolCostCurrency !== 'string' || r.toolCostCurrency === '') {
+				throw new Error("jsx: getToolUsageCost toolCostCurrency must be a non-empty string when toolCost is set");
+			}
+			ccy = r.toolCostCurrency;
+		}
+		return { toolUsage: usage, toolCost: cost, toolCostCurrency: ccy };
+	})()`
+	data, undef, err := s.evalJSON("getToolUsageCost", internalFilename("hook-getToolUsageCost.js"), expr)
+	if err != nil || undef {
+		return initial, err
+	}
+	var out ToolUsageCostView
+	if err := json.Unmarshal(data, &out); err != nil {
+		return initial, fmt.Errorf("jsx: getToolUsageCost decode: %w", err)
+	}
+	if out.ToolUsage == nil {
+		out.ToolUsage = []ToolUsageEntry{}
+	}
+	// Defensive re-validation, as in RunBeforeMetaRequest.
+	if err := validateToolUsageCost(&out); err != nil {
+		return initial, err
+	}
+	return out, nil
+}
+
+func validateToolUsageCost(v *ToolUsageCostView) error {
+	for i, e := range v.ToolUsage {
+		if e.Name == "" {
+			return fmt.Errorf("jsx: getToolUsageCost: toolUsage[%d].name must not be empty", i)
+		}
+		for name, c := range map[string]int64{
+			"numRequests":  e.NumRequests,
+			"inputTokens":  e.InputTokens,
+			"outputTokens": e.OutputTokens,
+			"numImages":    e.NumImages,
+		} {
+			if c < 0 {
+				return fmt.Errorf("jsx: getToolUsageCost: toolUsage[%d].%s must not be negative", i, name)
+			}
+		}
+	}
+	if v.ToolCost == nil {
+		if v.ToolCostCurrency != "" {
+			return fmt.Errorf("jsx: getToolUsageCost: toolCostCurrency must be empty when toolCost is empty")
+		}
+		return nil
+	}
+	c := *v.ToolCost
+	if math.IsNaN(c) || math.IsInf(c, 0) || c < 0 || c >= toolCostMax {
+		return fmt.Errorf("jsx: getToolUsageCost: toolCost %v out of range [0, 1e14)", c)
+	}
+	if v.ToolCostCurrency == "" {
+		return fmt.Errorf("jsx: getToolUsageCost: toolCostCurrency must not be empty when toolCost is set")
+	}
+	return nil
 }

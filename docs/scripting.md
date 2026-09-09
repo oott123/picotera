@@ -1,6 +1,6 @@
 # PicoTera 脚本开发文档
 
-PicoTera 支持用 JavaScript 脚本定制网关行为：在请求处理的各个阶段执行脚本逻辑，实现路由定制、请求改写、熔断重试、用量记账等。脚本由管理员在仪表盘「脚本」页面维护；本文档面向脚本作者，描述脚本可用的全部接口：九个 hook 的执行顺序与输入输出、全局上下文 `ctx` 的字段，以及 `picotera` 全局对象下的各个 API。
+PicoTera 支持用 JavaScript 脚本定制网关行为：在请求处理的各个阶段执行脚本逻辑，实现路由定制、请求改写、熔断重试、用量记账等。脚本由管理员在仪表盘「脚本」页面维护；本文档面向脚本作者，描述脚本可用的全部接口：十个 hook 的执行顺序与输入输出、全局上下文 `ctx` 的字段，以及 `picotera` 全局对象下的各个 API。
 
 文中类型标注采用 TypeScript 风格（如 `Record<string, string>` 表示字符串键值对对象），仅用于说明，脚本本身是普通 JavaScript。
 
@@ -19,7 +19,7 @@ PicoTera 支持用 JavaScript 脚本定制网关行为：在请求处理的各�
 
 ## Hook 一览与执行顺序
 
-九个 hook：
+十个 hook：
 
 | Hook | 概要 |
 | --- | --- |
@@ -30,6 +30,7 @@ PicoTera 支持用 JavaScript 脚本定制网关行为：在请求处理的各�
 | `beforeTransform` | 统一网关的跨格式转换前：定制出站转换配置 |
 | `rewriteRequest` | 改写即将发出的上游请求（URL、请求头、请求体）；「获取模型列表」拉取前也会执行一次 |
 | `afterUpstreamError` | 上游尝试失败后：决定中断透传还是继续 |
+| `getToolUsageCost` | 请求成功后：改写工具用量并给出工具费用（每次成功请求一次） |
 | `rewriteProviderModels` | 「获取模型列表」时改写渠道的模型配置 |
 | `requestFinished` | 请求结束后观察结果（只读记账，每请求一次） |
 
@@ -52,7 +53,8 @@ flowchart TD
     I -->|失败| K[afterUpstreamError]
     K -->|"break: true"| L[透传错误给客户端]
     K -->|"break: false"| D
-    J --> M[requestFinished]
+    J --> P[getToolUsageCost]
+    P --> M[requestFinished]
     L --> M
     O --> M
 ```
@@ -63,7 +65,8 @@ flowchart TD
 4. **尝试循环**：按排序结果逐候选尝试。每次尝试执行 `beforeRequest` → 构建上游请求（统一网关外加 `beforeTransform` 与格式转换）→ `rewriteRequest` → 发送。
    - **重试**：一次失败且未中断时，循环回到同一候选，此时 `beforeRequest` 输入的 `next` 默认为 `true`（前进到下一候选）；返回 `next: false` 即原地重试。`ctx.attempt.currentRetryCount` / `totalAttemptCount` 供决策。
    - 尝试总次数有上限（默认 50 次）。
-5. **`requestFinished`**：请求进入终态后执行一次，返回值被忽略，用于记账、打注解等观察性用途。
+5. **`getToolUsageCost`**：某次尝试成功、上游响应读取完毕后执行一次，把工具用量与工具费用写进请求记录。
+6. **`requestFinished`**：请求进入终态后执行一次，返回值被忽略，用于记账、打注解等观察性用途。
 
 「获取模型列表」（在渠道表单中向上游拉取模型名）是一条独立管理链路，与上述流程无关：拉取前执行一次 `rewriteRequest`，拉取后执行一次 `rewriteProviderModels`，两者共用同一个会话的 `ctx`（脚本挂在 `ctx` 上的自定义字段可以跨这两个 hook 传递）。
 
@@ -307,6 +310,60 @@ picotera.hooks.afterUpstreamError.tap('circuit-breaking', function (ctx, input) 
 })
 ```
 
+### getToolUsageCost
+
+**时机**：每次**成功**的请求一次——上游响应读取完毕、请求记录写库之前。失败的请求、以及被 `beforeMetaRequest` 短路的请求不执行（没有上游响应，也就没有工具用量）。
+
+PicoTera 会从上游响应里抽取工具用量（web 搜索次数、图片生成张数等）写入 `toolUsage`，但**不计算工具费用**——各家上游的工具计价规则差异太大。本 hook 就是补上这块：拿到抽取结果，返回修正后的用量和你自己算出来的费用。
+
+**输入 / 返回**：
+
+```ts
+interface ToolUsageCost {
+  toolUsage: ToolUsageEntry[]     // 抽取到的用量；上游没报告时为 []
+  toolCost: number | null         // 工具费用；初值恒为 null
+  toolCostCurrency: string        // 费用币种；初值恒为 ''
+}
+
+interface ToolUsageEntry {
+  name: string            // 工具名，如 web_search、image_gen
+  model?: string          // 上游为该工具声明的模型（通常只有图片生成有）
+  numRequests?: number    // 调用次数
+  inputTokens?: number
+  outputTokens?: number
+  numImages?: number      // 生成图片张数
+}
+```
+
+`toolUsage` 恒为数组，可以直接遍历不用判空。返回 `undefined` / `null` / `ctx` / 原样的 `input` 对象表示不干预，保持初值。
+
+**写入语义**：脚本返回什么就记什么。
+
+- 返回 `toolUsage: []` 会把抽取到的用量清空。
+- 值为 `0` 的计数器不会写入；四个计数器全为 0 的条目被整条丢弃，声明了 `model` 也一样（上游枚举的是它**支持**的工具，而不是实际调用过的，例如 Codex 每次响应都带一个全零的 `image_gen`）。
+- `toolCost` 为空时费用与币种都不记录。币种不校验，也不查汇率表。
+- 主请求记录与本次成功的上游请求记录写入同一份结果。
+
+**校验规则（严格，违反即视为 hook 出错）**：
+
+- 返回值必须是普通对象；数组、字符串、数字均报错。
+- `toolUsage` 必须存在且是数组，元素必须是普通对象。
+- 条目的键只能是上表列出的六个（拼错即报错——否则计费字段会被静默丢弃）。
+- `name` 必填，非空字符串；`model` 出现时必须是字符串；四个计数器出现时必须是 `>= 0` 的安全整数。
+- `toolCost` 为 `null` / 缺省表示不计费；否则必须是 `[0, 1e14)` 内的有限数字。
+- `toolCostCurrency`：`toolCost` 是数字时必须是非空字符串；`toolCost` 为空时必须缺省或空串。
+
+**出错行为**：本 hook 是观察性的——响应此时已经发给客户端了。抛错、校验失败或超时只记一条 warn 日志，`toolUsage` 回退为抽取到的原值、费用两列留空，请求本身和成功率统计都不受影响。
+
+```js
+// 按 web 搜索次数计费
+picotera.hooks.getToolUsageCost.tap('price-search', function (ctx, input) {
+  const searches = input.toolUsage.find(t => t.name === 'web_search')?.numRequests ?? 0
+  if (!searches) return
+  return { toolUsage: input.toolUsage, toolCost: searches * 0.01, toolCostCurrency: 'USD' }
+})
+```
+
 ### requestFinished
 
 **时机**：每次请求结束后执行一次（无论成功失败），返回值被忽略。典型用途：用量记账、按结果给请求打注解。
@@ -328,13 +385,16 @@ interface RequestFinishedView {
   cacheWrite1hTokens: number
   modelCost: number         // 本次请求费用
   modelCostCurrency: string // 费用币种
+  toolCost: number          // 工具费用，见 getToolUsageCost
+  toolCostCurrency: string  // 工具费用币种
   providerId: number        // 实际成功的渠道
   model: string
   upstreamModel: string
+  toolUsage: ToolUsageEntry[] // 工具用量，见 getToolUsageCost；恒为数组
 }
 ```
 
-未发生的事件对应零值（例如全程失败的请求没有 token、费用与 providerId）。`finishReason` 枚举：`1` 内部错误、`2` 客户端取消、`3` 正常结束、`4` 上游响应头超时、`5` 流式读取超时、`6` 流中错误、`7` 手动中断。
+未发生的事件对应零值（例如全程失败的请求没有 token、费用与 providerId）；`toolUsage` 例外，恒为数组，可直接遍历。三个工具字段读到的是 `getToolUsageCost` 提交的最终结果。`finishReason` 枚举：`1` 内部错误、`2` 客户端取消、`3` 正常结束、`4` 上游响应头超时、`5` 流式读取超时、`6` 流中错误、`7` 手动中断。
 
 **注意**：认证失败等在脚本环境创建前就被拒绝的请求不会触发此 hook。
 
@@ -589,12 +649,12 @@ picotera.fetch(url: string, init?: {
 ## 错误与失败行为
 
 - hook 回调抛错或超时：当前请求立即失败（返回 502；超时返回 503），不再尝试其他渠道，错误信息作为响应内容。
-- 例外：`afterUpstreamError`、`requestFinished` 出错只记日志、按未干预处理，不影响请求。
+- 例外：`afterUpstreamError`、`getToolUsageCost`、`requestFinished` 出错只记日志、按未干预处理，不影响请求。
 - 脚本加载本身出错：所有请求都会失败，请先在测试环境验证脚本语法。
 
 ## 示例
 
-更多可直接使用的示例见 [`docs/example-scripts/`](./example-scripts/)：熔断、重试规则、模型名归一化、按注解过滤渠道等。
+更多可直接使用的示例见 [`docs/example-scripts/`](./example-scripts/)：熔断、重试规则、模型名归一化、按注解过滤渠道、工具用量计费等。
 
 ```js
 // 改写模型名 + 在请求时添加参数
