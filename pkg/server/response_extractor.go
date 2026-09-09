@@ -885,12 +885,21 @@ func (e *ResponseExtractor) inferProvider(payload string) {
 	}
 }
 
-// inferModelField records the first non-empty "model" or "message.model" field seen.
+// respModelPaths are the places a payload declares the model it answered with.
+// They mirror usageRawPaths one-for-one: "model" for OpenAI Chat, Anthropic
+// non-stream bodies and OpenAI Responses non-stream bodies; "response.model"
+// for OpenAI Responses SSE, where the model sits in the same "response"
+// envelope as the usage; "message.model" for Anthropic message_start;
+// "modelVersion" for Gemini.
+var respModelPaths = []string{"model", "response.model", "message.model", "modelVersion"}
+
+// inferModelField records the first non-empty model field seen, trying
+// respModelPaths in order within each payload.
 func (e *ResponseExtractor) inferModelField(payload string) {
 	if e.respModel != "" {
 		return
 	}
-	for _, path := range []string{"model", "message.model", "modelVersion"} {
+	for _, path := range respModelPaths {
 		if v := gjson.Get(payload, path); v.Exists() && v.Type == gjson.String && v.String() != "" {
 			e.respModel = v.String()
 			return

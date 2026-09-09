@@ -1040,6 +1040,24 @@ func TestResponseExtractor_SSE_InferredModel_MessageModelField(t *testing.T) {
 	}
 }
 
+func TestResponseExtractor_SSE_InferredModel_ResponseModelField(t *testing.T) {
+	events := []string{
+		"event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"model\":\"gpt-5-codex\",\"status\":\"in_progress\"}}\n\n",
+	}
+	inner := &chunkReader{chunks: []string{strings.Join(events, "")}}
+	extractor := NewResponseExtractor(inner, "text/event-stream", time.Now())
+
+	_, _ = io.ReadAll(extractor)
+
+	m := extractor.Metrics()
+	if m.InferredModel != "gpt-5-codex" {
+		t.Errorf("InferredModel: got %q, want %q", m.InferredModel, "gpt-5-codex")
+	}
+	if m.InferredModelSource != db.InferredModelSourceResponse {
+		t.Errorf("InferredModelSource: got %d, want response", m.InferredModelSource)
+	}
+}
+
 func TestResponseExtractor_SSE_InferredModel_TopLevelModelWins(t *testing.T) {
 	events := []string{
 		"data: {\"model\":\"top-level-model\"}\n\n",
