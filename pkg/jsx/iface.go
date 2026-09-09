@@ -53,7 +53,9 @@ type Session interface {
 	// RunGetToolUsageCost runs the getToolUsageCost waterfall just before the
 	// tool usage and its cost are written to the request rows. Passthrough keeps
 	// the initial value; a malformed result is an error, because billing data is
-	// better dropped loudly than coerced.
+	// better dropped loudly than coerced. The input also carries the upstream's
+	// raw usage / tool_usage objects, which are read-only — the result is rebuilt
+	// from the three tool fields alone.
 	RunGetToolUsageCost(initial ToolUsageCostView) (ToolUsageCostView, error)
 
 	// SetUpstreamRequest installs ctx.upstreamRequest for the current attempt.
@@ -62,7 +64,8 @@ type Session interface {
 
 	// RunRequestFinished runs the requestFinished waterfall after the meta row's
 	// finish reason landed. It is purely observational: the waterfall's result is
-	// discarded and only an evaluation error is returned.
+	// discarded and only an evaluation error is returned. The input carries the
+	// row's raw usage / tool_usage objects alongside the normalized counters.
 	RunRequestFinished(input RequestFinishedView) error
 
 	Logs() []LogEntry

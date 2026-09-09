@@ -125,6 +125,8 @@ type Request struct {
 	ToolUsage           []byte           `json:"toolUsage"`
 	ToolCost            pgtype.Numeric   `json:"toolCost"`
 	ToolCostCurrency    pgtype.Text      `json:"toolCostCurrency"`
+	UsageRaw            []byte           `json:"usageRaw"`
+	ToolUsageRaw        []byte           `json:"toolUsageRaw"`
 }
 
 type RequestOutcomeBucketed struct {

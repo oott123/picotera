@@ -1592,6 +1592,9 @@ components:
             $ref: "#/components/schemas/ToolUsageEntryView"
           nullable: true
           type: array
+        toolUsageRaw:
+          additionalProperties: {}
+          type: object
         traceId:
           type: string
         ttftMs:
@@ -1602,6 +1605,9 @@ components:
           type: integer
         upstreamModel:
           type: string
+        usageRaw:
+          additionalProperties: {}
+          type: object
         userId:
           format: int64
           type: integer

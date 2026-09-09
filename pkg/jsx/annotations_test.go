@@ -309,6 +309,8 @@ func TestRunRequestFinished_TapReadsEveryField(t *testing.T) {
 		Model:              "sonnet",
 		UpstreamModel:      "claude-sonnet",
 		ToolUsage:          json.RawMessage(`[{"name":"web_search","numRequests":1}]`),
+		UsageRaw:           json.RawMessage(`{"input_tokens":11,"output_tokens_details":{"reasoning_tokens":9}}`),
+		ToolUsageRaw:       json.RawMessage(`{"image_gen":{"num_images":0},"web_search":{"num_requests":1}}`),
 	}
 	if err := s.RunRequestFinished(input); err != nil {
 		t.Fatalf("RunRequestFinished: %v", err)
@@ -326,9 +328,31 @@ func TestRunRequestFinished_TapReadsEveryField(t *testing.T) {
 		`"modelCost":0.125,"modelCostCurrency":"USD","toolCost":0.5,"toolCostCurrency":"EUR",` +
 		`"providerId":7,` +
 		`"model":"sonnet","upstreamModel":"claude-sonnet",` +
-		`"toolUsage":[{"name":"web_search","numRequests":1}]}`
+		`"toolUsage":[{"name":"web_search","numRequests":1}],` +
+		`"usageRaw":{"input_tokens":11,"output_tokens_details":{"reasoning_tokens":9}},` +
+		`"toolUsageRaw":{"image_gen":{"num_images":0},"web_search":{"num_requests":1}}}`
 	if *call.Value != want {
 		t.Fatalf("info =\n%s\nwant\n%s", *call.Value, want)
+	}
+}
+
+// A failed request never wrote the raw columns, so the tap sees null there
+// while toolUsage still arrives as an iterable array.
+func TestRunRequestFinished_UnreportedRawIsNull(t *testing.T) {
+	host := &fakeHostAPI{}
+	s := newTestSessionWithHost(t, host, db.Script{ID: "a", Source: `
+		picotera.hooks.requestFinished.tap("raw", function (ctx, info) {
+			if (info.usageRaw !== null) throw new Error("want null usageRaw");
+			if (info.toolUsageRaw !== null) throw new Error("want null toolUsageRaw");
+			picotera.request.setAnnotation(info.requestId, 'ok', '1');
+		});
+	`})
+	input := RequestFinishedView{RequestID: "meta-1", ToolUsage: json.RawMessage("[]")}
+	if err := s.RunRequestFinished(input); err != nil {
+		t.Fatalf("RunRequestFinished: %v", err)
+	}
+	if len(host.annoCalls) != 1 {
+		t.Fatalf("calls = %+v, want one", host.annoCalls)
 	}
 }
 

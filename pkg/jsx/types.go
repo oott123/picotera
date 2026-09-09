@@ -205,9 +205,15 @@ type ToolUsageEntry struct {
 // hook: extracted tool usage plus the cost to record for it. A nil ToolCost
 // (which requires an empty ToolCostCurrency) writes both cost columns as NULL.
 type ToolUsageCostView struct {
-	ToolUsage        []ToolUsageEntry `json:"toolUsage"`
-	ToolCost         *float64         `json:"toolCost"`
-	ToolCostCurrency string           `json:"toolCostCurrency"`
+	ToolUsage []ToolUsageEntry `json:"toolUsage"`
+	// UsageRaw / ToolUsageRaw are the upstream's own usage / tool_usage objects,
+	// verbatim. Read-only: the hook's result is rebuilt from toolUsage /
+	// toolCost / toolCostCurrency alone, so returning them changes nothing.
+	// null when the upstream reported none.
+	UsageRaw         json.RawMessage `json:"usageRaw"`
+	ToolUsageRaw     json.RawMessage `json:"toolUsageRaw"`
+	ToolCost         *float64        `json:"toolCost"`
+	ToolCostCurrency string          `json:"toolCostCurrency"`
 }
 
 // RequestRef is the JS-visible identity of a request row (ctx.metaRequest and
@@ -255,6 +261,13 @@ type RequestFinishedView struct {
 	// column, inlined verbatim into the hook's initializer — so the script sees
 	// a real JS array and this layer needs no entry type of its own.
 	ToolUsage json.RawMessage `json:"toolUsage"`
+	// UsageRaw / ToolUsageRaw are the upstream's own usage / tool_usage objects
+	// as recorded on the row, inlined the same way. Unlike ToolUsage they are
+	// null rather than empty when the upstream reported none — the raw columns
+	// are only written on the success paths, so a failed request always sees
+	// null. Both come from the same in-memory snapshot as the rest of the view.
+	UsageRaw     json.RawMessage `json:"usageRaw"`
+	ToolUsageRaw json.RawMessage `json:"toolUsageRaw"`
 }
 
 // ContextPatch is the Go-side patch applied to globalThis.ctx. Only non-nil

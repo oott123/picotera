@@ -93,12 +93,18 @@ func toolCostToNumeric(cost *float64, currency string) (pgtype.Numeric, pgtype.T
 // The hook is advisory: an error is logged and falls back to the extracted usage
 // with no cost, leaving the finish reason untouched so a scripting mistake never
 // shows up as an upstream failure.
+//
+// The raw usage / tool_usage objects go in as read-only context for pricing. They
+// are not among the returned columns: their callers write ResponseMetrics' own
+// values, so a script can never rewrite "what the upstream said".
 func (f *gatewayFlow) resolveToolUsageCost(m ResponseMetrics) ([]byte, pgtype.Numeric, pgtype.Text) {
 	if f.session == nil {
 		return marshalToolUsage(m.ToolUsage), pgtype.Numeric{}, pgtype.Text{}
 	}
 	out, err := f.session.RunGetToolUsageCost(jsx.ToolUsageCostView{
-		ToolUsage: toolUsageEntriesToJSX(m.ToolUsage),
+		ToolUsage:    toolUsageEntriesToJSX(m.ToolUsage),
+		UsageRaw:     json.RawMessage(m.UsageRaw),
+		ToolUsageRaw: json.RawMessage(m.ToolUsageRaw),
 	})
 	if err != nil {
 		logx.WithContext(f.ctxs.Request).WithError(err).Warn("getToolUsageCost hook failed")

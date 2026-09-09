@@ -12,7 +12,7 @@ import (
 )
 
 const getRequest = `-- name: GetRequest :one
-SELECT r.id, r.span_id, r.parent_span_id, r.provider_id, r.endpoint_path, r.api_key_id, r.model, r.input_tokens, r.cache_read_tokens, r.output_tokens, r.cache_write_tokens, r.status_code, r.error_message, r.ttft_ms, r.time_spent_ms, r.created_at, r.type, r.upstream_model, r.model_cost, r.model_cost_currency, r.user_message_preview, r.cache_write_1h_tokens, r.project_id, r.finish_reason, r.inferred_provider, r.inferred_model, r.inferred_model_source, r.user_id, r.external_request_id, r.external_response_id, r.annotations, r.tool_usage, r.tool_cost, r.tool_cost_currency, t.id AS trace_id
+SELECT r.id, r.span_id, r.parent_span_id, r.provider_id, r.endpoint_path, r.api_key_id, r.model, r.input_tokens, r.cache_read_tokens, r.output_tokens, r.cache_write_tokens, r.status_code, r.error_message, r.ttft_ms, r.time_spent_ms, r.created_at, r.type, r.upstream_model, r.model_cost, r.model_cost_currency, r.user_message_preview, r.cache_write_1h_tokens, r.project_id, r.finish_reason, r.inferred_provider, r.inferred_model, r.inferred_model_source, r.user_id, r.external_request_id, r.external_response_id, r.annotations, r.tool_usage, r.tool_cost, r.tool_cost_currency, r.usage_raw, r.tool_usage_raw, t.id AS trace_id
 FROM request r
 LEFT JOIN traces t ON t.parent_span_id = r.parent_span_id AND t.user_id = r.user_id
 WHERE r.id = $1
@@ -61,6 +61,8 @@ type GetRequestRow struct {
 	ToolUsage           []byte           `json:"toolUsage"`
 	ToolCost            pgtype.Numeric   `json:"toolCost"`
 	ToolCostCurrency    pgtype.Text      `json:"toolCostCurrency"`
+	UsageRaw            []byte           `json:"usageRaw"`
+	ToolUsageRaw        []byte           `json:"toolUsageRaw"`
 	TraceID             pgtype.Text      `json:"traceId"`
 }
 
@@ -102,6 +104,8 @@ func (q *Queries) GetRequest(ctx context.Context, arg GetRequestParams) (GetRequ
 		&i.ToolUsage,
 		&i.ToolCost,
 		&i.ToolCostCurrency,
+		&i.UsageRaw,
+		&i.ToolUsageRaw,
 		&i.TraceID,
 	)
 	return i, err
@@ -280,6 +284,7 @@ SELECT r.id, r.span_id, r.parent_span_id, r.type, r.provider_id, r.endpoint_path
        r.status_code, r.error_message, r.ttft_ms, r.time_spent_ms, r.created_at,
        r.model_cost, r.model_cost_currency,
        r.tool_usage, r.tool_cost, r.tool_cost_currency,
+       r.usage_raw, r.tool_usage_raw,
        r.user_message_preview, r.project_id, r.finish_reason,
        r.inferred_provider, r.inferred_model, r.inferred_model_source,
        r.user_id,
@@ -395,6 +400,8 @@ type ListRequestsRow struct {
 	ToolUsage           []byte           `json:"toolUsage"`
 	ToolCost            pgtype.Numeric   `json:"toolCost"`
 	ToolCostCurrency    pgtype.Text      `json:"toolCostCurrency"`
+	UsageRaw            []byte           `json:"usageRaw"`
+	ToolUsageRaw        []byte           `json:"toolUsageRaw"`
 	UserMessagePreview  pgtype.Text      `json:"userMessagePreview"`
 	ProjectID           pgtype.Int4      `json:"projectId"`
 	FinishReason        pgtype.Int4      `json:"finishReason"`
@@ -459,6 +466,8 @@ func (q *Queries) ListRequests(ctx context.Context, arg ListRequestsParams) ([]L
 			&i.ToolUsage,
 			&i.ToolCost,
 			&i.ToolCostCurrency,
+			&i.UsageRaw,
+			&i.ToolUsageRaw,
 			&i.UserMessagePreview,
 			&i.ProjectID,
 			&i.FinishReason,
@@ -494,6 +503,7 @@ SELECT r.id, r.span_id, r.parent_span_id, r.type, r.provider_id, r.endpoint_path
        r.created_at,
        r.model_cost, r.model_cost_currency,
        r.tool_usage, r.tool_cost, r.tool_cost_currency,
+       r.usage_raw, r.tool_usage_raw,
        r.user_message_preview, r.project_id, r.finish_reason,
        r.inferred_provider, r.inferred_model, r.inferred_model_source,
        r.user_id,
@@ -538,6 +548,8 @@ type ListRequestsBySpanRow struct {
 	ToolUsage           []byte           `json:"toolUsage"`
 	ToolCost            pgtype.Numeric   `json:"toolCost"`
 	ToolCostCurrency    pgtype.Text      `json:"toolCostCurrency"`
+	UsageRaw            []byte           `json:"usageRaw"`
+	ToolUsageRaw        []byte           `json:"toolUsageRaw"`
 	UserMessagePreview  pgtype.Text      `json:"userMessagePreview"`
 	ProjectID           pgtype.Int4      `json:"projectId"`
 	FinishReason        pgtype.Int4      `json:"finishReason"`
@@ -585,6 +597,8 @@ func (q *Queries) ListRequestsBySpan(ctx context.Context, arg ListRequestsBySpan
 			&i.ToolUsage,
 			&i.ToolCost,
 			&i.ToolCostCurrency,
+			&i.UsageRaw,
+			&i.ToolUsageRaw,
 			&i.UserMessagePreview,
 			&i.ProjectID,
 			&i.FinishReason,
@@ -653,13 +667,15 @@ UPDATE request SET
   tool_usage = CASE WHEN $37::bool THEN $38::jsonb ELSE tool_usage END,
   tool_cost = CASE WHEN $39::bool THEN $40::numeric ELSE tool_cost END,
   tool_cost_currency = CASE WHEN $41::bool THEN $42::text ELSE tool_cost_currency END,
-  finish_reason = CASE WHEN $43::bool THEN $44::int ELSE finish_reason END,
-  inferred_provider = CASE WHEN $45::bool THEN $46::text ELSE inferred_provider END,
-  inferred_model = CASE WHEN $47::bool THEN $48::text ELSE inferred_model END,
-  inferred_model_source = CASE WHEN $49::bool THEN $50::smallint ELSE inferred_model_source END,
-  user_message_preview = CASE WHEN $51::bool THEN $52::text ELSE user_message_preview END,
-  external_response_id = CASE WHEN $53::bool THEN $54::text ELSE external_response_id END
-WHERE id = $55::text AND created_at = $56::timestamp
+  usage_raw = CASE WHEN $43::bool THEN $44::jsonb ELSE usage_raw END,
+  tool_usage_raw = CASE WHEN $45::bool THEN $46::jsonb ELSE tool_usage_raw END,
+  finish_reason = CASE WHEN $47::bool THEN $48::int ELSE finish_reason END,
+  inferred_provider = CASE WHEN $49::bool THEN $50::text ELSE inferred_provider END,
+  inferred_model = CASE WHEN $51::bool THEN $52::text ELSE inferred_model END,
+  inferred_model_source = CASE WHEN $53::bool THEN $54::smallint ELSE inferred_model_source END,
+  user_message_preview = CASE WHEN $55::bool THEN $56::text ELSE user_message_preview END,
+  external_response_id = CASE WHEN $57::bool THEN $58::text ELSE external_response_id END
+WHERE id = $59::text AND created_at = $60::timestamp
 `
 
 type UpdateRequestParams struct {
@@ -705,6 +721,10 @@ type UpdateRequestParams struct {
 	ToolCost               pgtype.Numeric   `json:"toolCost"`
 	SetToolCostCurrency    bool             `json:"setToolCostCurrency"`
 	ToolCostCurrency       pgtype.Text      `json:"toolCostCurrency"`
+	SetUsageRaw            bool             `json:"setUsageRaw"`
+	UsageRaw               []byte           `json:"usageRaw"`
+	SetToolUsageRaw        bool             `json:"setToolUsageRaw"`
+	ToolUsageRaw           []byte           `json:"toolUsageRaw"`
 	SetFinishReason        bool             `json:"setFinishReason"`
 	FinishReason           pgtype.Int4      `json:"finishReason"`
 	SetInferredProvider    bool             `json:"setInferredProvider"`
@@ -765,6 +785,10 @@ func (q *Queries) UpdateRequest(ctx context.Context, arg UpdateRequestParams) er
 		arg.ToolCost,
 		arg.SetToolCostCurrency,
 		arg.ToolCostCurrency,
+		arg.SetUsageRaw,
+		arg.UsageRaw,
+		arg.SetToolUsageRaw,
+		arg.ToolUsageRaw,
 		arg.SetFinishReason,
 		arg.FinishReason,
 		arg.SetInferredProvider,

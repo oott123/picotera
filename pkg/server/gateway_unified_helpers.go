@@ -660,6 +660,8 @@ func (h *gatewayHandler) unifiedStreamSuccess(input successInput) {
 		ToolUsage(toolUsage).
 		ToolCost(toolCost).
 		ToolCostCurrency(toolCcy).
+		UsageRaw(m.UsageRaw).
+		ToolUsageRaw(m.ToolUsageRaw).
 		FinishReason(pgtype.Int4{Int32: upstreamFr, Valid: true}).
 		InferredProvider(pgtype.Text{String: m.InferredProvider, Valid: m.InferredProvider != ""}).
 		InferredModel(pgtype.Text{String: m.InferredModel, Valid: m.InferredModel != ""}).
@@ -681,6 +683,8 @@ func (h *gatewayHandler) unifiedStreamSuccess(input successInput) {
 		ToolUsage(toolUsage).
 		ToolCost(toolCost).
 		ToolCostCurrency(toolCcy).
+		UsageRaw(m.UsageRaw).
+		ToolUsageRaw(m.ToolUsageRaw).
 		FinishReason(pgtype.Int4{Int32: metaFr, Valid: true}).
 		InferredProvider(pgtype.Text{String: m.InferredProvider, Valid: m.InferredProvider != ""}).
 		InferredModel(pgtype.Text{String: m.InferredModel, Valid: m.InferredModel != ""}).

@@ -39,7 +39,7 @@ When building new screens, compose these primitives — don't reach for a third-
 - `useSidePanel` — global slide-over stack with stable `key` for row selection tracking.
 - `useArtifact` — loads and decompresses request/response artifacts from MinIO.
 - `useSSEParser` — parses SSE event streams, extracts content from multiple LLM providers (OpenAI Chat/Responses, Anthropic, Gemini), renders markdown. Supports timing injection per event.
-- `useRequestDetailUiState` — manages request detail view tab state (overview/request/response/logs), body view mode, header/thinking visibility toggles.
+- `useRequestDetailUiState` — manages request detail view tab state (overview/request/response/conversation/logs/usage), body view mode, header/thinking visibility toggles.
 - `useCurrencyContext` — provides inject/provide pattern for currency conversion with exchange rate lookups.
 - `useExchangeRates` — fetches exchange rate data.
 - `useProjectsMap` / `useProvidersMap` — reactive lookup maps for projects and providers by ID.

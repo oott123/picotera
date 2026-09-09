@@ -48,6 +48,16 @@ type ResponseMetrics struct {
 	// ToolUsage is the normalized top-level tool_usage object, in the upstream's
 	// literal key order. Nil when the upstream never reported one.
 	ToolUsage []ToolUsageEntry
+	// UsageRaw is the last non-empty usage object the upstream reported, stored
+	// verbatim. Unlike the five token fields it is not accumulated key-by-key: a
+	// later occurrence replaces the whole object, so the value stays
+	// byte-faithful to one upstream event. Nil when none was reported.
+	UsageRaw []byte
+	// ToolUsageRaw is the last non-empty tool_usage object, stored verbatim —
+	// including the entries normalizeToolUsage drops for being all-zero, which
+	// is why this can hold a value while ToolUsage is nil. Nil when none was
+	// reported.
+	ToolUsageRaw []byte
 }
 
 // extractorMode is how the response body is parsed. modeSniff is the initial
@@ -277,8 +287,10 @@ func (e *ResponseExtractor) processSSEEvent(eventBytes []byte) {
 	// Try Gemini format
 	e.extractGeminiSSE(payload)
 
-	// Tool usage sits at the payload's top level in every format.
-	e.extractToolUsage(gjson.Parse(payload))
+	// Raw usage / tool usage, recorded verbatim beside the normalized counters.
+	parsed := gjson.Parse(payload)
+	e.captureUsageRaw(parsed)
+	e.extractToolUsage(parsed)
 
 	// Infer provider/model from this payload.
 	e.inferProvider(payload)
@@ -581,6 +593,7 @@ func (e *ResponseExtractor) processGeminiArrayElement(elem []byte) {
 	}
 
 	e.setGeminiUsage(result.Get("usageMetadata"))
+	e.captureUsageRaw(result)
 	e.extractToolUsage(result)
 	e.inferModelField(payload)
 	e.detectStreamError(payload)
@@ -620,33 +633,71 @@ func (e *ResponseExtractor) setGeminiUsage(usage gjson.Result) {
 	}
 }
 
-// toolUsageScopes are the objects that hold tool_usage together with its
-// siblings usage and tools. tool_usage sits beside the format's usage object:
-// the payload's top level for OpenAI Chat, Anthropic, Gemini and non-stream
-// bodies, and the "response" envelope for OpenAI Responses SSE events (where
-// usage likewise lives at response.usage). First match wins; no payload carries
-// both. An empty string means the payload itself.
-var toolUsageScopes = []string{"", "response"}
+// usageRawPaths are the objects that hold the format's usage counters. First
+// match per payload wins; the four paths cover every supported upstream format:
+// "usage" for OpenAI Chat (SSE final frame / non-stream), Anthropic
+// message_delta and Anthropic non-stream bodies; "response.usage" for OpenAI
+// Responses SSE; "message.usage" for Anthropic message_start; "usageMetadata"
+// for Gemini in all three of its shapes.
+var usageRawPaths = []string{"usage", "response.usage", "message.usage", "usageMetadata"}
 
-// extractToolUsage normalizes a payload's tool_usage object into
-// ToolUsageEntry values, covering OpenAI Chat / Responses, Anthropic and Gemini,
-// streamed or not.
+// captureUsageRaw records the payload's usage object verbatim. Last non-empty
+// occurrence wins — the whole object, never a key-by-key merge, so the column
+// stays byte-faithful to one upstream event. The consequence for Anthropic
+// streams is that message_delta's usage replaces message_start's outright, so
+// the input / cache breakdown does not survive into the raw value; the five
+// normalized token fields are unaffected since they accumulate per field.
+func (e *ResponseExtractor) captureUsageRaw(result gjson.Result) {
+	for _, path := range usageRawPaths {
+		v := result.Get(path)
+		if !v.IsObject() || !hasKeys(v) {
+			continue
+		}
+		e.metrics.UsageRaw = []byte(v.Raw)
+		return
+	}
+}
+
+// hasKeys reports whether an object has at least one member. An empty object
+// counts as "not reported", same as an absent one.
+func hasKeys(v gjson.Result) bool {
+	found := false
+	v.ForEach(func(_, _ gjson.Result) bool { found = true; return false })
+	return found
+}
+
+// toolUsagePaths are the paths a payload's tool_usage object can sit at, each
+// paired with the sibling tools declaration array read from the same object
+// (that pairing is why this is a table of pairs and not a plain []string like
+// usageRawPaths). tool_usage sits beside the format's usage object: the
+// payload's top level for OpenAI Chat, Anthropic, Gemini and non-stream bodies,
+// and the "response" envelope for OpenAI Responses SSE events, where usage
+// likewise lives at response.usage. First match wins; no payload carries both.
+var toolUsagePaths = []struct{ usage, tools string }{
+	{usage: "tool_usage", tools: "tools"},
+	{usage: "response.tool_usage", tools: "response.tools"},
+}
+
+// extractToolUsage records a payload's tool_usage object both verbatim (into
+// ToolUsageRaw) and normalized into ToolUsageEntry values, covering OpenAI Chat
+// / Responses, Anthropic and Gemini, streamed or not.
 //
 // Last non-empty occurrence wins, matching the overwrite semantics the usage
 // fields already have. OpenAI Responses repeats tool_usage on response.created /
 // response.in_progress / response.completed, with only the last one carrying the
 // final counts, so last-wins is what makes the stream converge.
+//
+// The raw record is unconditional: normalization can still drop every entry (a
+// Codex response carries an all-zero image_gen every time), so the two fields
+// may legitimately end up one set and one nil.
 func (e *ResponseExtractor) extractToolUsage(result gjson.Result) {
-	for _, path := range toolUsageScopes {
-		scope := result
-		if path != "" {
-			scope = result.Get(path)
-		}
-		tu := scope.Get("tool_usage")
-		if !tu.IsObject() {
+	for _, p := range toolUsagePaths {
+		tu := result.Get(p.usage)
+		if !tu.IsObject() || !hasKeys(tu) {
 			continue
 		}
-		if entries := normalizeToolUsage(tu, scope.Get("tools")); len(entries) > 0 {
+		e.metrics.ToolUsageRaw = []byte(tu.Raw)
+		if entries := normalizeToolUsage(tu, result.Get(p.tools)); len(entries) > 0 {
 			e.metrics.ToolUsage = entries
 		}
 		return
@@ -803,6 +854,7 @@ func (e *ResponseExtractor) extractJSONMetrics() {
 		}
 	}
 
+	e.captureUsageRaw(result)
 	e.extractToolUsage(result)
 }
 

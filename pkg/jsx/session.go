@@ -267,6 +267,8 @@ func (s *qjsSession) SetUpstreamRequest(ref *RequestRef) error {
 // terminal state. The waterfall's value is discarded — the hook is purely
 // observational (usage accounting, outcome-based annotations).
 func (s *qjsSession) RunRequestFinished(input RequestFinishedView) error {
+	input.UsageRaw = rawOrNull(input.UsageRaw)
+	input.ToolUsageRaw = rawOrNull(input.ToolUsageRaw)
 	init, err := mustJSON(input)
 	if err != nil {
 		return err
@@ -325,6 +327,15 @@ func mustJSON(v any) (string, error) {
 		return "", fmt.Errorf("jsx: marshal initial: %w", err)
 	}
 	return string(b), nil
+}
+
+// rawOrNull normalizes a possibly-empty RawMessage to valid JSON. An empty
+// (non-nil) RawMessage would fail json.Marshal; "not reported" is null.
+func rawOrNull(b json.RawMessage) json.RawMessage {
+	if len(b) == 0 {
+		return json.RawMessage("null")
+	}
+	return b
 }
 
 // RunRewriteModel runs the rewriteModel waterfall. A non-string result keeps
@@ -816,6 +827,8 @@ func (s *qjsSession) RunGetToolUsageCost(initial ToolUsageCostView) (ToolUsageCo
 	if initial.ToolUsage == nil {
 		initial.ToolUsage = []ToolUsageEntry{}
 	}
+	initial.UsageRaw = rawOrNull(initial.UsageRaw)
+	initial.ToolUsageRaw = rawOrNull(initial.ToolUsageRaw)
 	init, err := mustJSON(initial)
 	if err != nil {
 		return initial, err

@@ -1923,6 +1923,233 @@ func TestResponseExtractor_ToolUsage_DoesNotDisturbUsage(t *testing.T) {
 	}
 }
 
+// TestResponseExtractor_UsageRaw covers which usageRawPaths entry each upstream
+// format hits and the whole-object last-wins rule. The want values are compared
+// byte-for-byte: the column is meant to be verbatim upstream JSON.
+func TestResponseExtractor_UsageRaw(t *testing.T) {
+	tests := []struct {
+		name        string
+		contentType string
+		body        string
+		want        string
+	}{
+		{
+			// The raw object keeps the prompt_tokens_details breakdown that
+			// normalization folds into two counters.
+			name:        "openai chat non-stream hits the top-level usage",
+			contentType: "application/json",
+			body:        `{"usage":{"prompt_tokens":120,"prompt_tokens_details":{"cached_tokens":20},"completion_tokens":50,"total_tokens":170}}`,
+			want:        `{"prompt_tokens":120,"prompt_tokens_details":{"cached_tokens":20},"completion_tokens":50,"total_tokens":170}`,
+		},
+		{
+			name:        "openai responses sse hits response.usage",
+			contentType: "text/event-stream",
+			body: `data: {"type":"response.completed","response":{"usage":{"input_tokens":33601,` +
+				`"input_tokens_details":{"cached_tokens":3712},"output_tokens":545,` +
+				`"output_tokens_details":{"reasoning_tokens":370}}}}` + "\n\n",
+			want: `{"input_tokens":33601,"input_tokens_details":{"cached_tokens":3712},"output_tokens":545,"output_tokens_details":{"reasoning_tokens":370}}`,
+		},
+		{
+			name:        "anthropic non-stream hits the top-level usage",
+			contentType: "application/json",
+			body:        `{"usage":{"input_tokens":10,"output_tokens":20,"cache_read_input_tokens":5}}`,
+			want:        `{"input_tokens":10,"output_tokens":20,"cache_read_input_tokens":5}`,
+		},
+		{
+			name:        "anthropic message_start alone hits message.usage",
+			contentType: "text/event-stream",
+			body: `data: {"type":"message_start","message":{"usage":{"input_tokens":7,` +
+				`"cache_read_input_tokens":3}}}` + "\n\n",
+			want: `{"input_tokens":7,"cache_read_input_tokens":3}`,
+		},
+		{
+			// Whole-object overwrite: message_delta's usage replaces the
+			// message_start object rather than merging into it, so the input /
+			// cache breakdown does not survive.
+			name:        "anthropic message_delta replaces message_start's usage wholesale",
+			contentType: "text/event-stream",
+			body: `data: {"type":"message_start","message":{"usage":{"input_tokens":7,"cache_read_input_tokens":3}}}` + "\n\n" +
+				`data: {"type":"message_delta","usage":{"output_tokens":42}}` + "\n\n",
+			want: `{"output_tokens":42}`,
+		},
+		{
+			name:        "gemini hits usageMetadata",
+			contentType: "text/event-stream",
+			body:        `data: {"usageMetadata":{"promptTokenCount":8,"candidatesTokenCount":3,"trafficType":"ON_DEMAND"}}` + "\n\n",
+			want:        `{"promptTokenCount":8,"candidatesTokenCount":3,"trafficType":"ON_DEMAND"}`,
+		},
+		{
+			// Gemini's early chunks carry a count-less usageMetadata; the final
+			// chunk's complete one replaces it.
+			name:        "gemini count-less first chunk is replaced by the final one",
+			contentType: "text/event-stream",
+			body: `data: {"usageMetadata":{"trafficType":"ON_DEMAND"}}` + "\n\n" +
+				`data: {"usageMetadata":{"promptTokenCount":8,"candidatesTokenCount":3,"trafficType":"ON_DEMAND"}}` + "\n\n",
+			want: `{"promptTokenCount":8,"candidatesTokenCount":3,"trafficType":"ON_DEMAND"}`,
+		},
+		{
+			name:        "gemini json array stream",
+			contentType: "application/json",
+			body:        `[{"candidates":[{"content":{"parts":[{"text":"hi"}]}}],"usageMetadata":{"promptTokenCount":8}}]`,
+			want:        `{"promptTokenCount":8}`,
+		},
+		{
+			name:        "absent",
+			contentType: "application/json",
+			body:        `{"id":"x"}`,
+			want:        "",
+		},
+		{
+			// Chat Completions sends usage: null on every incremental frame.
+			name:        "null is not a hit",
+			contentType: "text/event-stream",
+			body:        `data: {"choices":[{"delta":{"content":"hi"}}],"usage":null}` + "\n\n",
+			want:        "",
+		},
+		{
+			name:        "empty object is not a hit",
+			contentType: "application/json",
+			body:        `{"usage":{}}`,
+			want:        "",
+		},
+		{
+			name:        "non-object is not a hit",
+			contentType: "application/json",
+			body:        `{"usage":"none"}`,
+			want:        "",
+		},
+		{
+			name:        "a later empty usage does not clear the earlier one",
+			contentType: "text/event-stream",
+			body: `data: {"usage":{"prompt_tokens":10,"completion_tokens":20}}` + "\n\n" +
+				`data: {"usage":null}` + "\n\n",
+			want: `{"prompt_tokens":10,"completion_tokens":20}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			extractor := NewResponseExtractor(strings.NewReader(tt.body), tt.contentType, time.Now())
+			if _, err := io.ReadAll(extractor); err != nil {
+				t.Fatalf("ReadAll: %v", err)
+			}
+			if got := string(extractor.Metrics().UsageRaw); got != tt.want {
+				t.Errorf("UsageRaw:\ngot:  %s\nwant: %s", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestResponseExtractor_UsageRaw_DoesNotDisturbTokens pins the two paths as
+// independent: the raw object loses message_start's counters to the whole-object
+// overwrite while the per-field token accumulation keeps them.
+func TestResponseExtractor_UsageRaw_DoesNotDisturbTokens(t *testing.T) {
+	body := `data: {"type":"message_start","message":{"usage":{"input_tokens":7,"cache_read_input_tokens":3}}}` + "\n\n" +
+		`data: {"type":"message_delta","usage":{"output_tokens":42}}` + "\n\n"
+	extractor := NewResponseExtractor(strings.NewReader(body), "text/event-stream", time.Now())
+	if _, err := io.ReadAll(extractor); err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+
+	m := extractor.Metrics()
+	if got := string(m.UsageRaw); got != `{"output_tokens":42}` {
+		t.Errorf("UsageRaw: got %s, want {\"output_tokens\":42}", got)
+	}
+	if m.InputTokens == nil || *m.InputTokens != 7 {
+		t.Errorf("InputTokens: got %v, want 7", m.InputTokens)
+	}
+	if m.CacheReadTokens == nil || *m.CacheReadTokens != 3 {
+		t.Errorf("CacheReadTokens: got %v, want 3", m.CacheReadTokens)
+	}
+	if m.OutputTokens == nil || *m.OutputTokens != 42 {
+		t.Errorf("OutputTokens: got %v, want 42", m.OutputTokens)
+	}
+}
+
+// TestResponseExtractor_ToolUsageRaw covers the raw tool usage capture, whose
+// point is exactly the information normalization discards.
+func TestResponseExtractor_ToolUsageRaw(t *testing.T) {
+	tests := []struct {
+		name        string
+		contentType string
+		body        string
+		want        string
+		wantNorm    []ToolUsageEntry
+	}{
+		{
+			// The whole reason the raw column exists: a Codex response reports a
+			// zero-filled image_gen every time, which normalization drops.
+			name:        "an all-zero tool survives in raw while normalization drops it",
+			contentType: "application/json",
+			body:        `{"tool_usage":{"image_gen":{"input_tokens":0,"output_tokens":0,"num_images":0}}}`,
+			want:        `{"image_gen":{"input_tokens":0,"output_tokens":0,"num_images":0}}`,
+			wantNorm:    nil,
+		},
+		{
+			name:        "openai responses sse hits response.tool_usage",
+			contentType: "text/event-stream",
+			body:        `data: {"type":"response.completed","response":{"tool_usage":{"web_search":{"num_requests":1}}}}` + "\n\n",
+			want:        `{"web_search":{"num_requests":1}}`,
+			wantNorm:    []ToolUsageEntry{{Name: "web_search", NumRequests: 1}},
+		},
+		{
+			// An empty object counts as "not reported" on both paths, so a
+			// top-level one no longer masks the response envelope.
+			name:        "an empty top-level tool_usage does not mask response.tool_usage",
+			contentType: "text/event-stream",
+			body:        `data: {"tool_usage":{},"response":{"tool_usage":{"web_search":{"num_requests":2}}}}` + "\n\n",
+			want:        `{"web_search":{"num_requests":2}}`,
+			wantNorm:    []ToolUsageEntry{{Name: "web_search", NumRequests: 2}},
+		},
+		{
+			// Last non-empty wins, matching the normalized column.
+			name:        "responses stream keeps the last occurrence",
+			contentType: "text/event-stream",
+			body: `data: {"type":"response.created","response":{"tool_usage":{"web_search":{"num_requests":0}}}}` + "\n\n" +
+				`data: {"type":"response.completed","response":{"tool_usage":{"web_search":{"num_requests":1}}}}` + "\n\n",
+			want:     `{"web_search":{"num_requests":1}}`,
+			wantNorm: []ToolUsageEntry{{Name: "web_search", NumRequests: 1}},
+		},
+		{
+			name:        "absent",
+			contentType: "application/json",
+			body:        `{"usage":{"prompt_tokens":10}}`,
+			want:        "",
+			wantNorm:    nil,
+		},
+		{
+			name:        "empty object is not a hit",
+			contentType: "application/json",
+			body:        `{"tool_usage":{}}`,
+			want:        "",
+			wantNorm:    nil,
+		},
+		{
+			name:        "non-object is not a hit",
+			contentType: "application/json",
+			body:        `{"tool_usage":[{"name":"web_search"}]}`,
+			want:        "",
+			wantNorm:    nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			extractor := NewResponseExtractor(strings.NewReader(tt.body), tt.contentType, time.Now())
+			if _, err := io.ReadAll(extractor); err != nil {
+				t.Fatalf("ReadAll: %v", err)
+			}
+			m := extractor.Metrics()
+			if got := string(m.ToolUsageRaw); got != tt.want {
+				t.Errorf("ToolUsageRaw:\ngot:  %s\nwant: %s", got, tt.want)
+			}
+			if !toolUsageEqual(m.ToolUsage, tt.wantNorm) {
+				t.Errorf("ToolUsage:\ngot:  %+v\nwant: %+v", m.ToolUsage, tt.wantNorm)
+			}
+		})
+	}
+}
+
 func TestResponseExtractor_ToolUsage_GeminiJSONArrayStream(t *testing.T) {
 	body := `[{"candidates":[{"content":{"parts":[{"text":"hi"}]}}],"usageMetadata":{"promptTokenCount":8,"candidatesTokenCount":3},` +
 		`"tool_usage":{"web_search":{"num_requests":1}}}]`

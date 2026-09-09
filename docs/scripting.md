@@ -321,6 +321,8 @@ PicoTera 会从上游响应里抽取工具用量（web 搜索次数、图片生�
 ```ts
 interface ToolUsageCost {
   toolUsage: ToolUsageEntry[]     // 抽取到的用量；上游没报告时为 []
+  usageRaw: object | null         // 【只读】上游原始 usage 对象；未报告时为 null
+  toolUsageRaw: object | null     // 【只读】上游原始 tool_usage 对象；未报告时为 null
   toolCost: number | null         // 工具费用；初值恒为 null
   toolCostCurrency: string        // 费用币种；初值恒为 ''
 }
@@ -337,12 +339,15 @@ interface ToolUsageEntry {
 
 `toolUsage` 恒为数组，可以直接遍历不用判空。返回 `undefined` / `null` / `ctx` / 原样的 `input` 对象表示不干预，保持初值。
 
+`usageRaw` / `toolUsageRaw` 是上游报的原始对象，形状随上游而定，用来按上游真实计价规则算钱。`usageRaw` 采用整对象末次覆盖：Anthropic 流式最终留下的是 `message_delta` 的 `usage`，其中没有 `message_start` 的输入与缓存明细。
+
 **写入语义**：脚本返回什么就记什么。
 
 - 返回 `toolUsage: []` 会把抽取到的用量清空。
 - 值为 `0` 的计数器不会写入；四个计数器全为 0 的条目被整条丢弃，声明了 `model` 也一样（上游枚举的是它**支持**的工具，而不是实际调用过的，例如 Codex 每次响应都带一个全零的 `image_gen`）。
 - `toolCost` 为空时费用与币种都不记录。币种不校验，也不查汇率表。
 - 主请求记录与本次成功的上游请求记录写入同一份结果。
+- 两个 raw 字段只读：返回值只取 `toolUsage` / `toolCost` / `toolCostCurrency` 三项重建，带上它们既不报错也不生效，落库始终是抽取到的原值。
 
 **校验规则（严格，违反即视为 hook 出错）**：
 
@@ -391,10 +396,14 @@ interface RequestFinishedView {
   model: string
   upstreamModel: string
   toolUsage: ToolUsageEntry[] // 工具用量，见 getToolUsageCost；恒为数组
+  usageRaw: object | null     // 上游原始 usage 对象；未报告时为 null
+  toolUsageRaw: object | null // 上游原始 tool_usage 对象；未报告时为 null
 }
 ```
 
 未发生的事件对应零值（例如全程失败的请求没有 token、费用与 providerId）；`toolUsage` 例外，恒为数组，可直接遍历。三个工具字段读到的是 `getToolUsageCost` 提交的最终结果。`finishReason` 枚举：`1` 内部错误、`2` 客户端取消、`3` 正常结束、`4` 上游响应头超时、`5` 流式读取超时、`6` 流中错误、`7` 手动中断。
+
+两个 raw 字段与 `getToolUsageCost` 读到的是同一份原始对象，`usageRaw` 同样是整对象末次覆盖（Anthropic 流式留下 `message_delta` 的 `usage`）。它们只在成功路径写入，所以失败的请求恒为 `null`；未报告时也是 `null`，而不是 `toolUsage` 那样的空数组。
 
 **注意**：认证失败等在脚本环境创建前就被拒绝的请求不会触发此 hook。
 

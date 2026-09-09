@@ -13,6 +13,7 @@ import { queryKeys } from '@/api/queryKeys'
 import { StateText, Field, Tag, IconButton, Icon, Tabs, MoneyDisplay, Button } from '@/ui'
 import RawArtifactView from './RawArtifactView.vue'
 import LogsArtifactView from './LogsArtifactView.vue'
+import UsageRawView from './UsageRawView.vue'
 import ConversationArtifactView from './ConversationArtifactView.vue'
 import TimedRawView from './TimedRawView.vue'
 import { useRequestDetailUiState, type DetailTab } from '@/composables/useRequestDetailUiState'
@@ -219,6 +220,9 @@ const {
   liveShowTimings,
 } = useRequestDetailUiState()
 const isMeta = computed(() => !!selected.value && selected.value.id === selected.value.spanId)
+// The raw usage columns are only written on the success paths, so the tab is
+// absent for failed rows rather than showing an empty state.
+const hasUsageRaw = computed(() => !!selected.value?.usageRaw || !!selected.value?.toolUsageRaw)
 const detailTabs = computed(() => {
   const base: { value: DetailTab; label: string }[] = [
     { value: 'overview', label: '概览' },
@@ -227,6 +231,7 @@ const detailTabs = computed(() => {
     { value: 'conversation', label: '对话' },
   ]
   if (isMeta.value) base.push({ value: 'logs', label: '日志' })
+  if (hasUsageRaw.value) base.push({ value: 'usage', label: '用量' })
   return base
 })
 watch(detailTabs, (tabs) => {
@@ -603,6 +608,11 @@ watch(detailTabs, (tabs) => {
           :response-url="selected.responseArtifactUrl"
         />
         <LogsArtifactView v-else-if="detailTab === 'logs'" :url="selected.responseArtifactUrl" />
+        <UsageRawView
+          v-else-if="detailTab === 'usage'"
+          :usage-raw="selected.usageRaw"
+          :tool-usage-raw="selected.toolUsageRaw"
+        />
       </template>
     </template>
   </div>

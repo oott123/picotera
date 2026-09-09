@@ -150,6 +150,18 @@ func (u *requestUpdate) ToolCostCurrency(v pgtype.Text) *requestUpdate {
 	return u
 }
 
+func (u *requestUpdate) UsageRaw(v []byte) *requestUpdate {
+	u.p.SetUsageRaw = true
+	u.p.UsageRaw = v
+	return u
+}
+
+func (u *requestUpdate) ToolUsageRaw(v []byte) *requestUpdate {
+	u.p.SetToolUsageRaw = true
+	u.p.ToolUsageRaw = v
+	return u
+}
+
 func (u *requestUpdate) FinishReason(v pgtype.Int4) *requestUpdate {
 	u.p.SetFinishReason = true
 	u.p.FinishReason = v

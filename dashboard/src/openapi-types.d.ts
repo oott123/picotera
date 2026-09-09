@@ -1800,12 +1800,18 @@ export interface components {
             toolCost?: number;
             toolCostCurrency?: string;
             toolUsage?: components["schemas"]["ToolUsageEntryView"][] | null;
+            toolUsageRaw?: {
+                [key: string]: unknown;
+            };
             traceId?: string;
             /** Format: int32 */
             ttftMs?: number;
             /** Format: int32 */
             type: number;
             upstreamModel?: string;
+            usageRaw?: {
+                [key: string]: unknown;
+            };
             /** Format: int64 */
             userId?: number;
             userMessagePreview?: string;

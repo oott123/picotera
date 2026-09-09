@@ -36,6 +36,8 @@ type metaOutcome struct {
 	modelCost          float64
 	toolCost           float64
 	toolUsage          []byte
+	usageRaw           []byte
+	toolUsageRaw       []byte
 }
 
 // merge folds a partial update into the snapshot: only the columns whose set_*
@@ -107,6 +109,12 @@ func (o *metaOutcome) merge(p db.UpdateRequestParams) {
 	if p.SetToolUsage {
 		o.toolUsage = p.ToolUsage
 	}
+	if p.SetUsageRaw {
+		o.usageRaw = p.UsageRaw
+	}
+	if p.SetToolUsageRaw {
+		o.toolUsageRaw = p.ToolUsageRaw
+	}
 }
 
 // updateMeta applies a partial update to the meta row and mirrors it into
@@ -154,6 +162,11 @@ func (f *gatewayFlow) runRequestFinished() {
 		Model:              o.model,
 		UpstreamModel:      o.upstreamModel,
 		ToolUsage:          toolUsage,
+		// The raw pair carries no "empty" representation the way toolUsage's []
+		// does — "not reported" is null, which the jsx layer normalizes an empty
+		// RawMessage into.
+		UsageRaw:     json.RawMessage(o.usageRaw),
+		ToolUsageRaw: json.RawMessage(o.toolUsageRaw),
 	})
 	if err != nil {
 		logx.WithContext(f.ctxs.Request).WithError(err).Warn("requestFinished hook failed")

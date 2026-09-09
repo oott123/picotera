@@ -50,6 +50,15 @@ type RequestView struct {
 	ToolCost         *float64             `json:"toolCost,omitempty"`
 	ToolCostCurrency string               `json:"toolCostCurrency,omitempty"`
 
+	// UsageRaw / ToolUsageRaw are the upstream's own usage / tool_usage objects
+	// recorded verbatim, of whatever shape that upstream reports. They are the
+	// un-normalized counterpart of the token fields and ToolUsage, so they can
+	// legitimately disagree with them — ToolUsage drops the all-zero entries
+	// UsageRaw keeps, and the token fields subtract cached tokens from the
+	// input. Absent when the column is NULL.
+	UsageRaw     map[string]any `json:"usageRaw,omitempty"`
+	ToolUsageRaw map[string]any `json:"toolUsageRaw,omitempty"`
+
 	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
@@ -126,6 +135,8 @@ type requestLike struct {
 	ToolUsage           []byte
 	ToolCost            pgtype.Numeric
 	ToolCostCurrency    pgtype.Text
+	UsageRaw            []byte
+	ToolUsageRaw        []byte
 }
 
 func toRequestView(r requestLike) *RequestView {
@@ -260,6 +271,19 @@ func toRequestView(r requestLike) *RequestView {
 			view.ToolUsage = tu
 		}
 	}
+	// Same for the two raw columns, whose only writer is that extractor too.
+	if len(r.UsageRaw) > 0 {
+		var u map[string]any
+		if err := json.Unmarshal(r.UsageRaw, &u); err == nil {
+			view.UsageRaw = u
+		}
+	}
+	if len(r.ToolUsageRaw) > 0 {
+		var tu map[string]any
+		if err := json.Unmarshal(r.ToolUsageRaw, &tu); err == nil {
+			view.ToolUsageRaw = tu
+		}
+	}
 	return view
 }
 
@@ -300,6 +324,8 @@ func ToRequestView(r *db.GetRequestRow) *RequestView {
 		ToolUsage:           r.ToolUsage,
 		ToolCost:            r.ToolCost,
 		ToolCostCurrency:    r.ToolCostCurrency,
+		UsageRaw:            r.UsageRaw,
+		ToolUsageRaw:        r.ToolUsageRaw,
 	})
 }
 
@@ -339,6 +365,8 @@ func ToListRequestRowView(r *db.ListRequestsRow) *RequestView {
 		ToolUsage:           r.ToolUsage,
 		ToolCost:            r.ToolCost,
 		ToolCostCurrency:    r.ToolCostCurrency,
+		UsageRaw:            r.UsageRaw,
+		ToolUsageRaw:        r.ToolUsageRaw,
 	})
 }
 
@@ -379,6 +407,8 @@ func ToListRequestsBySpanRowView(r *db.ListRequestsBySpanRow) *RequestView {
 		ToolUsage:           r.ToolUsage,
 		ToolCost:            r.ToolCost,
 		ToolCostCurrency:    r.ToolCostCurrency,
+		UsageRaw:            r.UsageRaw,
+		ToolUsageRaw:        r.ToolUsageRaw,
 	})
 }
 

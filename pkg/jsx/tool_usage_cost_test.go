@@ -1,6 +1,7 @@
 package jsx
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -21,6 +22,15 @@ func tucInitial() ToolUsageCostView {
 	}
 }
 
+// tucPassthrough is tucInitial() as the hook hands it back untouched: the two
+// unreported raw fields have been normalized to JSON null on the way in.
+func tucPassthrough() ToolUsageCostView {
+	v := tucInitial()
+	v.UsageRaw = json.RawMessage("null")
+	v.ToolUsageRaw = json.RawMessage("null")
+	return v
+}
+
 // runTUC runs the hook over tucInitial() and fails the test on error.
 func runTUC(t *testing.T, scripts ...db.Script) ToolUsageCostView {
 	t.Helper()
@@ -34,7 +44,7 @@ func runTUC(t *testing.T, scripts ...db.Script) ToolUsageCostView {
 
 func TestGetToolUsageCost_PassthroughWithoutTap(t *testing.T) {
 	out := runTUC(t)
-	if !reflect.DeepEqual(out, tucInitial()) {
+	if !reflect.DeepEqual(out, tucPassthrough()) {
 		t.Errorf("out = %+v, want the initial value", out)
 	}
 }
@@ -42,7 +52,7 @@ func TestGetToolUsageCost_PassthroughWithoutTap(t *testing.T) {
 func TestGetToolUsageCost_PassthroughValues(t *testing.T) {
 	for _, body := range []string{`return;`, `return undefined;`, `return null;`, `return ctx;`, `return input;`} {
 		out := runTUC(t, tucScript(body))
-		if !reflect.DeepEqual(out, tucInitial()) {
+		if !reflect.DeepEqual(out, tucPassthrough()) {
 			t.Errorf("%s: out = %+v, want the initial value", body, out)
 		}
 	}
@@ -156,7 +166,7 @@ func TestGetToolUsageCost_ValidationErrors(t *testing.T) {
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("err = %v, want it to mention %q", err, tc.want)
 			}
-			if !reflect.DeepEqual(out, tucInitial()) {
+			if !reflect.DeepEqual(out, tucPassthrough()) {
 				t.Errorf("out = %+v, want the initial value on error", out)
 			}
 		})
@@ -172,7 +182,7 @@ func TestGetToolUsageCost_TapThrows(t *testing.T) {
 	if !strings.Contains(err.Error(), "boom") {
 		t.Errorf("err = %v, want it to mention boom", err)
 	}
-	if !reflect.DeepEqual(out, tucInitial()) {
+	if !reflect.DeepEqual(out, tucPassthrough()) {
 		t.Errorf("out = %+v, want the initial value on error", out)
 	}
 }
@@ -188,7 +198,68 @@ func TestGetToolUsageCost_TaintedSessionFastFails(t *testing.T) {
 	if err != ErrHookTimeout {
 		t.Fatalf("want ErrHookTimeout on a tainted session, got %v", err)
 	}
-	if !reflect.DeepEqual(out, tucInitial()) {
+	if !reflect.DeepEqual(out, tucPassthrough()) {
 		t.Errorf("out = %+v, want the initial value on error", out)
+	}
+}
+
+func TestGetToolUsageCost_TapReadsRawUsage(t *testing.T) {
+	// The raw objects are of whatever shape the upstream reported, so the tap
+	// reaches into keys no Go type in this layer knows about.
+	s := newTestSession(t, tucScript(`
+		var reasoning = input.usageRaw.output_tokens_details.reasoning_tokens
+		var images = input.toolUsageRaw.image_gen.num_images
+		return { toolUsage: input.toolUsage, toolCost: reasoning + images, toolCostCurrency: 'USD' };
+	`))
+	initial := tucInitial()
+	initial.UsageRaw = json.RawMessage(`{"input_tokens":120,"output_tokens_details":{"reasoning_tokens":370}}`)
+	initial.ToolUsageRaw = json.RawMessage(`{"image_gen":{"num_images":2},"web_search":{"num_requests":2}}`)
+	out, err := s.RunGetToolUsageCost(initial)
+	if err != nil {
+		t.Fatalf("RunGetToolUsageCost: %v", err)
+	}
+	if out.ToolCost == nil || *out.ToolCost != 372 {
+		t.Errorf("toolCost = %v, want 372", out.ToolCost)
+	}
+}
+
+func TestGetToolUsageCost_UnreportedRawIsNull(t *testing.T) {
+	s := newTestSession(t, tucScript(`
+		if (input.usageRaw !== null) throw new Error("want null usageRaw");
+		if (input.toolUsageRaw !== null) throw new Error("want null toolUsageRaw");
+		return { toolUsage: input.toolUsage, toolCost: 1, toolCostCurrency: 'USD' };
+	`))
+	out, err := s.RunGetToolUsageCost(tucInitial())
+	if err != nil {
+		t.Fatalf("RunGetToolUsageCost: %v", err)
+	}
+	if out.ToolCost == nil || *out.ToolCost != 1 {
+		t.Errorf("toolCost = %v, want 1", out.ToolCost)
+	}
+}
+
+func TestGetToolUsageCost_ReturnedRawIsIgnored(t *testing.T) {
+	// The raw fields are read-only structurally: the glue rebuilds the result
+	// from the three tool fields, so spreading the input back neither trips
+	// validation nor carries the raw objects into the result.
+	s := newTestSession(t, tucScript(`
+		return Object.assign({}, input, { toolCost: 0.5, toolCostCurrency: 'USD' });
+	`))
+	initial := tucInitial()
+	initial.UsageRaw = json.RawMessage(`{"input_tokens":120}`)
+	initial.ToolUsageRaw = json.RawMessage(`{"web_search":{"num_requests":2}}`)
+	out, err := s.RunGetToolUsageCost(initial)
+	if err != nil {
+		t.Fatalf("RunGetToolUsageCost: %v", err)
+	}
+	if out.UsageRaw != nil || out.ToolUsageRaw != nil {
+		t.Errorf("raw fields = %s / %s, want them absent from the result", out.UsageRaw, out.ToolUsageRaw)
+	}
+	want := []ToolUsageEntry{{Name: "web_search", NumRequests: 2}}
+	if !reflect.DeepEqual(out.ToolUsage, want) {
+		t.Errorf("toolUsage = %+v, want %+v", out.ToolUsage, want)
+	}
+	if out.ToolCost == nil || *out.ToolCost != 0.5 || out.ToolCostCurrency != "USD" {
+		t.Errorf("cost = %v %q, want 0.5 USD", out.ToolCost, out.ToolCostCurrency)
 	}
 }
