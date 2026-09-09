@@ -1,12 +1,14 @@
 import base64
 import httpx2
 import os
+import time
 
 def encode_image(file_path):
   with open(file_path, "rb") as f:
     base64_image = base64.b64encode(f.read()).decode("utf-8")
   return base64_image
 
+base_url = os.environ["OPENAI_BASE_URL"] or "http://localhost:9898/backend-api/codex"
 prompt = """
 # Role: 顶尖日系二次元插画师 & 资深世界观视觉概念设计师 (World-building Concept Artist)
 
@@ -50,26 +52,30 @@ prompt = """
 # {世界观}: 重返未来1999
 # {时间线/状态}: 第二次暴雨前
 # {具体地点}: 圣洛夫基金会
-# {额外要求}: 遵守参考图的角色设定，服饰自由发挥
+# {额外要求}: 遵守参考图的角色设定，服饰自由发挥, large simple color masses, low visual frequency, restrained edge density, clear edge hierarchy, minimal internal contour lines, broad shadow shapes, suppress micro-texture and micro-contrast, no unnecessary specular highlights
+"""
+prompt_2 = """
+生成一张构图和色彩非常干净的电脑壁纸，电脑壁纸的主要角色参考附图。large simple color masses, low visual frequency, restrained edge density, clear edge hierarchy, minimal internal contour lines, broad shadow shapes, suppress micro-texture and micro-contrast, no unnecessary specular highlights
 """
 
 req = httpx2.post(
-  "http://localhost:9898/backend-api/codex/images/generations",
+  f"{base_url}/images/edits",
   headers = {
     "Authorization": f"Bearer {os.environ["OPENAI_API_KEY"]}",
   },
   json = {
-    "prompt": prompt,
+    "prompt": prompt_2,
     "background": "auto",
     "size": "auto",
     "quality": "auto",
-    "model": "gpt-image-2.5-sunburst",
+    "model": "gpt-image-2", # -sunburst
     "images": [
       { "image_url": f"data:image/jpeg;base64,{encode_image('./assets/char_resized.jpg')}" }
     ],
   },
   timeout = 3600.0
 )
+req.raise_for_status()
 
 result = req.json()
 print(result["usage"])
@@ -77,5 +83,5 @@ print(result["usage"])
 image_base64 = result["data"][0]["b64_json"]
 image_bytes = base64.b64decode(image_base64)
 
-with open("./assets/out.png", "wb") as f:
+with open(f"./assets/{time.time()}.png", "wb") as f:
   f.write(image_bytes)
