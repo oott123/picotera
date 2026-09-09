@@ -1801,6 +1801,55 @@ func TestResponseExtractor_ToolUsage(t *testing.T) {
 			want:        []ToolUsageEntry{{Name: "web_search", NumRequests: 1}},
 		},
 		{
+			// image_gen usage is declared as tools[].type "image_generation" —
+			// the two vocabularies disagree, hence the alias table.
+			name:        "model comes from the matching tools[] declaration",
+			contentType: "text/event-stream",
+			body: `data: {"type":"response.completed","response":{"tool_usage":{"image_gen":{"num_images":1,` +
+				`"input_tokens":222,"output_tokens":1630},"web_search":{"num_requests":2}},` +
+				`"tools":[{"type":"web_search","search_context_size":"medium"},` +
+				`{"type":"image_generation","model":"gpt-image-2-codex","size":"auto"}]}}` + "\n\n",
+			want: []ToolUsageEntry{
+				{Name: "image_gen", Model: "gpt-image-2-codex", InputTokens: 222, OutputTokens: 1630, NumImages: 1},
+				// web_search matches verbatim but declares no model.
+				{Name: "web_search", NumRequests: 2},
+			},
+		},
+		{
+			name:        "no tools array - entries keep no model",
+			contentType: "application/json",
+			body:        `{"tool_usage":{"image_gen":{"num_images":1}}}`,
+			want:        []ToolUsageEntry{{Name: "image_gen", NumImages: 1}},
+		},
+		{
+			name:        "declared tool without a model field",
+			contentType: "application/json",
+			body: `{"tool_usage":{"image_gen":{"num_images":1}},` +
+				`"tools":[{"type":"image_generation","size":"auto"}]}`,
+			want: []ToolUsageEntry{{Name: "image_gen", NumImages: 1}},
+		},
+		{
+			name:        "a non-string model is ignored",
+			contentType: "application/json",
+			body: `{"tool_usage":{"image_gen":{"num_images":1}},` +
+				`"tools":[{"type":"image_generation","model":7}]}`,
+			want: []ToolUsageEntry{{Name: "image_gen", NumImages: 1}},
+		},
+		{
+			name:        "tools is not an array",
+			contentType: "application/json",
+			body:        `{"tool_usage":{"image_gen":{"num_images":1}},"tools":"image_generation"}`,
+			want:        []ToolUsageEntry{{Name: "image_gen", NumImages: 1}},
+		},
+		{
+			// A declared model does not rescue a tool that never ran.
+			name:        "declared image_generation with all-zero usage stays dropped",
+			contentType: "application/json",
+			body: `{"tool_usage":{"image_gen":{"input_tokens":0,"output_tokens":0,"num_images":0}},` +
+				`"tools":[{"type":"image_generation","model":"gpt-image-2-codex"}]}`,
+			want: nil,
+		},
+		{
 			name:        "entry order follows the upstream object",
 			contentType: "application/json",
 			body:        `{"tool_usage":{"z":{"num_requests":1},"a":{"num_requests":2}}}`,

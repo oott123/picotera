@@ -38,8 +38,9 @@
      同样在 `response` 信封里。
 
    因此原始需求中「把 tool_usage 合并到 usage json 里，一起传到解析函数里」这一实现手法仍不适用 ——
-   合并要为每种格式各写一份路径。改为在同一批解析调用点扫描一个固定的候选路径表
-   （`tool_usage` → `response.tool_usage`，先命中先用），两条路径覆盖全部四种格式，共用一份代码。
+   合并要为每种格式各写一份路径。改为在同一批解析调用点扫描一个固定的候选作用域表
+   （payload 顶层 → `response`，先命中先用），两个作用域覆盖全部四种格式，共用一份代码。作用域
+   而非完整路径，是因为澄清 #6 还要在同一层里读 `tool_usage` 的兄弟 `tools`。
 
    另注：Responses 流会在 `response.created` / `response.in_progress` / `response.completed`
    **每个事件都重复** `tool_usage`，前两次通常是全 0，只有 `completed` 带最终计数 —— 这正是
@@ -80,3 +81,17 @@
    `int64 + omitempty`，指针只是多余的复杂度；OpenAPI 里对应字段也从 nullable 变成普通可选整数。
 
    上面 `dag9d1gs9a269lib21cg` 那条请求最终落库为 `[{"name":"web_search","numRequests":1}]`。
+
+6. **条目带上该工具声明的 `model`。** 响应里 `tools` 数组与 `tool_usage` 同级，条目形如
+   `{"type":"image_generation","model":"gpt-image-2-codex","size":"auto",…}`。按工具名匹配后把
+   `model` 一并写进条目（`{"name":"image_gen","model":"gpt-image-2-codex","numImages":1}`）。
+
+   实测（扫描本地全部 1451 份 artifact）得到两个约束：
+
+   - **只有 `image_generation` 带 `model`**，`web_search` / `function` / `custom` / `namespace` /
+     `tool_search` 都没有。所以 `model` 是可选字段，缺失是常态。
+   - **`tool_usage` 的 key 与 `tools[].type` 的词表对不上**：用量记在 `image_gen` 名下，工具却声明为
+     `image_generation`。因此匹配需要一张显式别名表 `toolUsageToolType`（目前只有这一条），
+     表里没有的名字按字面匹配（`web_search` 就是字面相等）。
+
+   声明了 model 但用量全 0 的工具**仍然整条丢弃** —— 客户端挂载了但没用过，不算用量。

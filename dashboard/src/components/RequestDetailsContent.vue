@@ -144,6 +144,7 @@ function fmtNum(n: number | undefined | null) {
 
 function toolUsageSummary(t: ToolUsageEntryView): string {
   const parts: string[] = []
+  if (t.model) parts.push(t.model)
   if (t.numRequests) parts.push(`${fmtNum(t.numRequests)}`)
   if (t.inputTokens) parts.push(`in: ${fmtNum(t.inputTokens)}`)
   if (t.outputTokens) parts.push(`out: ${fmtNum(t.outputTokens)}`)

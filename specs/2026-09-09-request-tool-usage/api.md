@@ -14,7 +14,7 @@
 {
   // ... 既有字段
   "toolUsage": [
-    { "name": "image_gen", "inputTokens": 222, "outputTokens": 1630 },
+    { "name": "image_gen", "model": "gpt-image-2-codex", "inputTokens": 222, "outputTokens": 1630 },
     { "name": "web_search", "numRequests": 1 }
   ],
   "toolCost": 0.0123,
@@ -29,6 +29,7 @@
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `name` | `string` | 是 | 工具名，来自上游 `tool_usage` 对象的 key |
+| `model` | `string` | 否 | 该工具在响应 `tools[]` 里声明的模型（只有图片生成有，网页搜索没有） |
 | `numRequests` | `int64` | 否 | 调用次数 |
 | `inputTokens` | `int64` | 否 | 输入 token |
 | `outputTokens` | `int64` | 否 | 输出 token |

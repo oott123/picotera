@@ -1839,6 +1839,7 @@ export interface components {
         ToolUsageEntryView: {
             /** Format: int64 */
             inputTokens?: number;
+            model?: string;
             name: string;
             /** Format: int64 */
             numImages?: number;

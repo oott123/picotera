@@ -19,8 +19,12 @@ import (
 // zero-filled image_gen on every request), so a zero carries no information.
 // "Reported zero" and "not reported" are therefore deliberately the same thing
 // here, which is why these are plain ints rather than pointers.
+//
+// Model is the model the upstream declared for this tool in the sibling tools
+// array (image_generation carries one; web_search does not), empty when absent.
 type ToolUsageEntry struct {
 	Name         string `json:"name"`
+	Model        string `json:"model,omitempty"`
 	NumRequests  int64  `json:"numRequests,omitempty"`
 	InputTokens  int64  `json:"inputTokens,omitempty"`
 	OutputTokens int64  `json:"outputTokens,omitempty"`
@@ -616,12 +620,13 @@ func (e *ResponseExtractor) setGeminiUsage(usage gjson.Result) {
 	}
 }
 
-// toolUsagePaths are where an upstream reports tool_usage. It is a sibling of
-// the format's usage object: the payload's top level for OpenAI Chat, Anthropic,
-// Gemini and non-stream bodies, and inside the "response" envelope for OpenAI
-// Responses SSE events (where usage likewise lives at response.usage). First
-// match wins; no payload carries both.
-var toolUsagePaths = []string{"tool_usage", "response.tool_usage"}
+// toolUsageScopes are the objects that hold tool_usage together with its
+// siblings usage and tools. tool_usage sits beside the format's usage object:
+// the payload's top level for OpenAI Chat, Anthropic, Gemini and non-stream
+// bodies, and the "response" envelope for OpenAI Responses SSE events (where
+// usage likewise lives at response.usage). First match wins; no payload carries
+// both. An empty string means the payload itself.
+var toolUsageScopes = []string{"", "response"}
 
 // extractToolUsage normalizes a payload's tool_usage object into
 // ToolUsageEntry values, covering OpenAI Chat / Responses, Anthropic and Gemini,
@@ -632,17 +637,27 @@ var toolUsagePaths = []string{"tool_usage", "response.tool_usage"}
 // response.in_progress / response.completed, with only the last one carrying the
 // final counts, so last-wins is what makes the stream converge.
 func (e *ResponseExtractor) extractToolUsage(result gjson.Result) {
-	var tu gjson.Result
-	for _, path := range toolUsagePaths {
-		if v := result.Get(path); v.IsObject() {
-			tu = v
-			break
+	for _, path := range toolUsageScopes {
+		scope := result
+		if path != "" {
+			scope = result.Get(path)
 		}
-	}
-	if !tu.IsObject() {
+		tu := scope.Get("tool_usage")
+		if !tu.IsObject() {
+			continue
+		}
+		if entries := normalizeToolUsage(tu, scope.Get("tools")); len(entries) > 0 {
+			e.metrics.ToolUsage = entries
+		}
 		return
 	}
+}
 
+// normalizeToolUsage maps an upstream tool_usage object onto entries, dropping
+// every tool whose counters are all zero. tools is the sibling declaration array
+// the model name is read from; an absent or malformed one simply yields no
+// models.
+func normalizeToolUsage(tu, tools gjson.Result) []ToolUsageEntry {
 	var entries []ToolUsageEntry
 	tu.ForEach(func(key, value gjson.Result) bool {
 		if !value.IsObject() {
@@ -656,18 +671,47 @@ func (e *ResponseExtractor) extractToolUsage(result gjson.Result) {
 			NumImages:    toolUsageInt(value, "num_images"),
 		}
 		// Every counter zero (or absent) means the tool never ran — drop it
-		// rather than record a row of zeros.
+		// rather than record a row of zeros. A declared model does not rescue
+		// it: a tool the client offered but never used is still unused.
 		if entry.NumRequests == 0 && entry.InputTokens == 0 &&
 			entry.OutputTokens == 0 && entry.NumImages == 0 {
 			return true
 		}
+		entry.Model = toolDeclaredModel(tools, entry.Name)
 		entries = append(entries, entry)
 		return true
 	})
-	if len(entries) == 0 {
-		return
+	return entries
+}
+
+// toolUsageToolType maps a tool_usage key to the tools[].type declaring the same
+// tool, for the names where the two vocabularies disagree — OpenAI Responses
+// reports usage under "image_gen" but declares the tool as "image_generation".
+// Names absent here match verbatim (web_search does).
+var toolUsageToolType = map[string]string{"image_gen": "image_generation"}
+
+// toolDeclaredModel returns the model the upstream declared for a tool, e.g. the
+// gpt-image-* behind an image_gen entry. Empty when the tool was not declared or
+// carries no model — only image_generation does; web_search never has one.
+func toolDeclaredModel(tools gjson.Result, name string) string {
+	if !tools.IsArray() {
+		return ""
 	}
-	e.metrics.ToolUsage = entries
+	want := name
+	if alias, ok := toolUsageToolType[name]; ok {
+		want = alias
+	}
+	var model string
+	tools.ForEach(func(_, tool gjson.Result) bool {
+		if tool.Get("type").String() != want {
+			return true
+		}
+		if m := tool.Get("model"); m.Type == gjson.String {
+			model = m.String()
+		}
+		return false // first declaration of this type wins
+	})
+	return model
 }
 
 // toolUsageInt reads one whitelisted tool_usage counter. Anything that is not a

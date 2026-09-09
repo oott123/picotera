@@ -55,9 +55,12 @@ type RequestView struct {
 
 // ToolUsageEntryView is one upstream tool's usage as recorded on the request
 // row. Only non-zero counters are present — a tool the upstream listed but
-// never ran is not recorded at all. Entry order is the upstream's own key order.
+// never ran is not recorded at all. Model is the model the upstream declared
+// for the tool (image generation has one, web search does not).
+// Entry order is the upstream's own key order.
 type ToolUsageEntryView struct {
 	Name         string `json:"name"`
+	Model        string `json:"model,omitempty"`
 	NumRequests  int64  `json:"numRequests,omitempty"`
 	InputTokens  int64  `json:"inputTokens,omitempty"`
 	OutputTokens int64  `json:"outputTokens,omitempty"`
