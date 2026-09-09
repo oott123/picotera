@@ -64,11 +64,11 @@ req = httpx2.post(
     "Authorization": f"Bearer {os.environ["OPENAI_API_KEY"]}",
   },
   json = {
-    "prompt": prompt_2,
+    "prompt": prompt,
     "background": "auto",
     "size": "auto",
     "quality": "auto",
-    "model": "gpt-image-2", # -sunburst
+    "model": "gpt-image-2.5", # -sunburst
     "images": [
       { "image_url": f"data:image/jpeg;base64,{encode_image('./assets/char_resized.jpg')}" }
     ],

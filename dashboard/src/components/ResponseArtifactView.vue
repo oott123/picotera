@@ -10,7 +10,12 @@ import {
 } from '@/composables/useSSEParser'
 import { isJsonContentType, parseJsonBody, rawBodyText } from './artifactBody'
 import type { ArtifactPayload } from './artifactTypes'
-import { extractSearchResults } from '@/composables/conversation'
+import {
+  collectConversationImages,
+  extractSearchResults,
+  parseResponseConversation,
+} from '@/composables/conversation'
+import ImageAttachment from './ImageAttachment.vue'
 import JsonArtifactViewer from './JsonArtifactViewer.vue'
 import SearchResultsView from './SearchResultsView.vue'
 import SSEEventsVirtualList from './SSEEventsVirtualList.vue'
@@ -80,21 +85,29 @@ const thinkingHtml = computed(() => {
   return renderMarkdown(content.value.thinking)
 })
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return null
-  return value as Record<string, unknown>
-}
-
-const openAIImageGeneration = computed(() => {
-  if (!jsonBody.value.ok) return null
-  const root = asRecord(jsonBody.value.value)
-  const firstItem = Array.isArray(root?.data) ? asRecord(root.data[0]) : null
-  const b64Json = firstItem?.b64_json
-  if (typeof b64Json !== 'string' || b64Json === '') return null
-  return {
-    src: `data:image/png;base64,${b64Json}`,
+// Same source order as the conversation tab: the backend aggregate first (the
+// only place a streamed response's images live), then a parsable JSON body.
+const renderSource = computed(() => {
+  const aggregated = props.payload.aggregated
+  if (aggregated?.body !== undefined && !aggregated.error) {
+    return { json: aggregated.body, format: aggregated.format }
   }
+  if (jsonBody.value.ok) return { json: jsonBody.value.value, format: undefined }
+  return null
 })
+
+const responseImages = computed(() => {
+  const source = renderSource.value
+  if (!source) return []
+  return collectConversationImages(parseResponseConversation(source.json, source.format) ?? [])
+})
+
+function imageFilename(index: number, image: { mediaType: string }): string {
+  const subtype = image.mediaType.slice(image.mediaType.indexOf('/') + 1)
+  const ext = subtype === 'jpeg' ? 'jpg' : subtype
+  const base = `${props.requestId ?? 'response'}-image-${index + 1}`
+  return ext ? `${base}.${ext}` : base
+}
 
 function headerEntries(headers: Record<string, string[]> | undefined) {
   if (!headers) return []
@@ -265,16 +278,13 @@ watch(
       <!-- Rendered -->
       <template v-else-if="subView === 'rendered'">
         <div class="flex flex-col gap-3">
-          <figure
-            v-if="openAIImageGeneration"
-            class="m-0 overflow-hidden rounded-md border border-line-soft bg-surface-50"
-          >
-            <img
-              :src="openAIImageGeneration.src"
-              alt="OpenAI image generation result"
-              class="block max-h-[640px] w-full object-contain"
-            />
-          </figure>
+          <ImageAttachment
+            v-for="(image, index) in responseImages"
+            :key="index"
+            :image="image"
+            :alt="`响应图片 ${index + 1}`"
+            :filename="imageFilename(index, image)"
+          />
           <details
             v-if="content.thinking"
             :open="thinkingOpen"
@@ -302,10 +312,7 @@ watch(
           <SearchResultsView v-if="searchResults.length" :results="searchResults" />
           <StateText
             v-if="
-              !content.thinking &&
-              !content.reply &&
-              !openAIImageGeneration &&
-              !searchResults.length
+              !content.thinking && !content.reply && !responseImages.length && !searchResults.length
             "
             :dashed="false"
             compact
