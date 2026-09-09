@@ -146,8 +146,10 @@ function toolUsageSummary(t: ToolUsageEntryView): string {
   const parts: string[] = []
   if (t.model) parts.push(t.model)
   if (t.numRequests) parts.push(`${fmtNum(t.numRequests)}`)
-  if (t.inputTokens) parts.push(`in: ${fmtNum(t.inputTokens)}`)
-  if (t.outputTokens) parts.push(`out: ${fmtNum(t.outputTokens)}`)
+  let tokens = 0
+  if (t.inputTokens) tokens += t.inputTokens
+  if (t.outputTokens) tokens += t.outputTokens
+  if (tokens > 0) parts.push(`${tokens} toks`)
   if (t.numImages) parts.push(`${fmtNum(t.numImages)}`)
   return parts.length ? parts.join(', ') : '—'
 }
