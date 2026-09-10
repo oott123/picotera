@@ -23,15 +23,22 @@ type gatewayRouteKind int
 const (
 	gatewayRoutePath gatewayRouteKind = iota
 	gatewayRouteUnified
+	// gatewayRouteNotFound records a request that matched no endpoint. It only
+	// exists for a client that authenticated successfully; the flow stops right
+	// after the meta row is written and never resolves a model or a candidate.
+	gatewayRouteNotFound
 )
 
 type gatewayFlow struct {
-	h              *gatewayHandler
-	w              http.ResponseWriter
-	r              *http.Request
-	startedAt      time.Time
-	ctxs           gatewayContexts
-	config         gatewayFlowConfig
+	h         *gatewayHandler
+	w         http.ResponseWriter
+	r         *http.Request
+	startedAt time.Time
+	ctxs      gatewayContexts
+	config    gatewayFlowConfig
+	// preAuth is the API-key check the HTTP entry point already performed;
+	// authenticateAndBackfill consumes it instead of querying again.
+	preAuth        clientAuth
 	body           []byte
 	preRewriteBody []byte
 	meta           gatewayMetaState
@@ -111,12 +118,13 @@ type gatewayModelMode struct {
 	HasModel  bool
 }
 
-func newGatewayFlow(h *gatewayHandler, w http.ResponseWriter, r *http.Request, startedAt time.Time, cfg gatewayFlowConfig) *gatewayFlow {
+func newGatewayFlow(h *gatewayHandler, w http.ResponseWriter, r *http.Request, startedAt time.Time, auth clientAuth, cfg gatewayFlowConfig) *gatewayFlow {
 	return &gatewayFlow{
 		h:         h,
 		w:         w,
 		r:         r,
 		startedAt: startedAt,
+		preAuth:   auth,
 		config:    cfg,
 	}
 }
@@ -161,6 +169,13 @@ func (f *gatewayFlow) run() {
 	}
 	defer f.h.liveRequests.Remove(f.meta.ID)
 	if !f.authenticateAndBackfill() {
+		return
+	}
+	if f.config.Kind == gatewayRouteNotFound {
+		// No endpoint matched: the row exists purely so an authenticated client's
+		// misrouted call is visible in the dashboard. No JS session is created, so
+		// no hook — requestFinished included — runs.
+		f.failGatewayErrorWithFallback(newRouteNotFoundError(), http.StatusNotFound, "route not found")
 		return
 	}
 	defer (func() {
@@ -282,8 +297,13 @@ func (f *gatewayFlow) insertMetaRequest() bool {
 	return true
 }
 
+// authenticateAndBackfill consumes the API-key check the HTTP entry point
+// already ran (f.preAuth) and, on success, backfills everything on the meta row
+// that depends on knowing the user. Failure is still handled here, not at the
+// entry point: a request that matched an endpoint leaves a record of its 401/403
+// too, so the meta row must exist before the flow terminates.
 func (f *gatewayFlow) authenticateAndBackfill() bool {
-	apiKey, user, err := f.h.authenticateClient(f.ctxs.Request, f.r)
+	apiKey, user, err := f.preAuth.APIKey, f.preAuth.User, f.preAuth.Err
 	if err != nil {
 		var gwErr *gatewayError
 		if errors.As(err, &gwErr) {

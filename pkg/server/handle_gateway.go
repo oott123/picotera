@@ -8,7 +8,6 @@ import (
 
 	"picotera/pkg/contract"
 	"picotera/pkg/db"
-	"picotera/pkg/errorx"
 
 	"github.com/tidwall/sjson"
 )
@@ -23,8 +22,8 @@ func (h *gatewayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	startedAt := time.Now()
 	endpoint, pathVars, suffix, err := h.resolveEndpoint(r.Context(), r.URL.Path)
 	if err != nil {
-		if isRouteNotFound(err) && looksLikeBrowserNav(r) {
-			h.staticHandler.ServeHTTP(w, r)
+		if isRouteNotFound(err) {
+			h.serveRouteNotFound(w, r, startedAt)
 			return
 		}
 		handleGatewayErr(w, err)
@@ -38,11 +37,7 @@ func (h *gatewayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// rather than silently forwarding a re-encoded path.
 		escaped := r.URL.EscapedPath()
 		if !strings.HasPrefix(escaped, endpoint.Path) {
-			handleGatewayErr(w, &gatewayError{
-				status:  http.StatusNotFound,
-				message: "route not found",
-				code:    errorx.RouteNotFound.Error(),
-			})
+			handleGatewayErr(w, newRouteNotFoundError())
 			return
 		}
 		suffix = escaped[len(endpoint.Path):]
@@ -54,11 +49,50 @@ func (h *gatewayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
+	// Resolved after the preflight short-circuit: a preflight carries no
+	// credentials and must not cost a key lookup.
+	auth := h.authenticateGatewayClient(r.Context(), r)
 	if endpoint.EndpointType == contract.EndpointType_ModelList {
-		h.handleModelList(w, r, endpoint)
+		h.handleModelList(w, r, auth)
 		return
 	}
-	newGatewayFlow(h, w, r, startedAt, h.newPathGatewayFlowConfig(endpoint, pathVars, suffix)).run()
+	newGatewayFlow(h, w, r, startedAt, auth, h.newPathGatewayFlowConfig(endpoint, pathVars, suffix)).run()
+}
+
+// serveRouteNotFound answers a request that matched no configured endpoint.
+// A client holding a valid API key is an API client by definition: it gets the
+// structured JSON 404 and a recorded meta row, never dashboard HTML, however
+// browser-ish its headers look. Without one there is no user to attribute a row
+// to, so the old split stands — a safe navigation falls through to the SPA,
+// anything else gets the JSON 404 unrecorded.
+func (h *gatewayHandler) serveRouteNotFound(w http.ResponseWriter, r *http.Request, startedAt time.Time) {
+	auth := h.authenticateGatewayClient(r.Context(), r)
+	if routeNotFoundFallsBackToSPA(r, auth.ok()) {
+		h.staticHandler.ServeHTTP(w, r)
+		return
+	}
+	if !auth.ok() {
+		handleGatewayErr(w, newRouteNotFoundError())
+		return
+	}
+	writeCORSHeaders(w, r)
+	newGatewayFlow(h, w, r, startedAt, auth, newNotFoundGatewayFlowConfig(r)).run()
+}
+
+func routeNotFoundFallsBackToSPA(r *http.Request, authenticated bool) bool {
+	return !authenticated && looksLikeBrowserNav(r)
+}
+
+// newNotFoundGatewayFlowConfig configures the record-only flow for an
+// authenticated request to an unmatched path. Endpoint stays the zero value and
+// the callbacks stay nil: run() terminates right after the meta row is written,
+// before anything reads them. endpoint_path records the decoded path the router
+// failed to match.
+func newNotFoundGatewayFlowConfig(r *http.Request) gatewayFlowConfig {
+	return gatewayFlowConfig{
+		Kind:                 gatewayRouteNotFound,
+		RecordedEndpointPath: r.URL.Path,
+	}
 }
 
 func (h *gatewayHandler) newPathGatewayFlowConfig(endpoint db.Endpoint, pathVars map[string]string, suffix string) gatewayFlowConfig {

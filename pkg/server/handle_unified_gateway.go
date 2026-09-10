@@ -7,7 +7,6 @@ import (
 
 	"picotera/pkg/contract"
 	"picotera/pkg/db"
-	"picotera/pkg/errorx"
 	"picotera/pkg/llmbridge"
 
 	"github.com/go-chi/chi/v5"
@@ -16,7 +15,8 @@ import (
 func (s *Server) handleUnifiedGenerate(route unifiedRoute) http.HandlerFunc {
 	h := &gatewayHandler{s}
 	return func(w http.ResponseWriter, r *http.Request) {
-		newGatewayFlow(h, w, r, time.Now(), h.newUnifiedGatewayFlowConfig(route, r)).run()
+		auth := h.authenticateGatewayClient(r.Context(), r)
+		newGatewayFlow(h, w, r, time.Now(), auth, h.newUnifiedGatewayFlowConfig(route, r)).run()
 	}
 }
 
@@ -26,22 +26,25 @@ func (s *Server) handleUnifiedGenerate(route unifiedRoute) http.HandlerFunc {
 // anything else is a codex-only passthrough. Both compute their route value per
 // request rather than reading it out of unifiedRoutes, and both record an
 // endpoint_path under codexMountPath — the /backend-api alias never shows up in
-// a request row.
+// a served request's row. The one exception is a sub-path that fails to
+// normalize: that 404 is recorded at the path the client asked for.
 func (s *Server) handleUnifiedCodex() http.HandlerFunc {
 	h := &gatewayHandler{s}
 	return func(w http.ResponseWriter, r *http.Request) {
 		started := time.Now()
 		suffix, ok := normalizeCodexSuffix("/" + chi.URLParam(r, "*"))
 		if !ok {
-			handleGatewayErr(w, &gatewayError{
-				status:  http.StatusNotFound,
-				message: "route not found",
-				code:    errorx.RouteNotFound.Error(),
-			})
+			// A sub-path that normalizes to nothing is a routing miss like any
+			// other, so it goes through the shared 404 path — an authenticated
+			// client gets a recorded meta row. Its endpoint_path is whatever the
+			// client actually asked for, so unlike a served codex request a 404
+			// row can carry the /backend-api alias prefix.
+			h.serveRouteNotFound(w, r, started)
 			return
 		}
 		route := codexUnifiedRoute(suffix)
-		newGatewayFlow(h, w, r, started, h.newUnifiedGatewayFlowConfig(route, r)).run()
+		auth := h.authenticateGatewayClient(r.Context(), r)
+		newGatewayFlow(h, w, r, started, auth, h.newUnifiedGatewayFlowConfig(route, r)).run()
 	}
 }
 

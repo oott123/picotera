@@ -49,10 +49,24 @@ func isRouteNotFound(err error) bool {
 	return errors.As(err, &gw) && gw.code == errorx.RouteNotFound.Error()
 }
 
+// newRouteNotFoundError builds the 404 returned when no configured LLM endpoint
+// matches the requested path. isRouteNotFound recognizes it by its code.
+func newRouteNotFoundError() *gatewayError {
+	return &gatewayError{
+		status:  http.StatusNotFound,
+		message: "route not found",
+		code:    errorx.RouteNotFound.Error(),
+	}
+}
+
 // looksLikeBrowserNav reports whether the request is a safe navigation that
 // can fall through to the dashboard SPA when no LLM endpoint matches.
 // API clients (POST, Accept: application/json) are excluded so they receive
 // the structured gateway 404 they expect.
+//
+// The header heuristic is unreliable on its own — curl and plenty of SDKs send
+// Accept: */* — so it is only consulted for a request that did NOT pass API-key
+// authentication; see routeNotFoundFallsBackToSPA.
 func looksLikeBrowserNav(r *http.Request) bool {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		return false
@@ -132,11 +146,7 @@ func (s *Server) resolveEndpoint(ctx context.Context, path string) (db.Endpoint,
 	}
 	if !ok {
 		logx.WithContext(ctx).WithField("path", path).Warn("route not found")
-		return db.Endpoint{}, nil, "", &gatewayError{
-			status:  http.StatusNotFound,
-			message: "route not found",
-			code:    errorx.RouteNotFound.Error(),
-		}
+		return db.Endpoint{}, nil, "", newRouteNotFoundError()
 	}
 	return endpoint, pathVars, suffix, nil
 }
@@ -261,6 +271,24 @@ func (s *Server) authenticateClient(ctx context.Context, r *http.Request) (*db.A
 		}
 	}
 	return &row, &user, nil
+}
+
+// clientAuth is the outcome of the pre-flight API-key check. The HTTP entry
+// point resolves it before deciding how to answer the request — notably whether
+// an unmatched path may fall back to the dashboard SPA — and hands it to the
+// flow, so the key is looked up exactly once per request.
+type clientAuth struct {
+	APIKey *db.ApiKey
+	User   *db.AppUser
+	// Err is the *gatewayError authentication failed with; nil on success.
+	Err error
+}
+
+func (a clientAuth) ok() bool { return a.Err == nil }
+
+func (s *Server) authenticateGatewayClient(ctx context.Context, r *http.Request) clientAuth {
+	apiKey, user, err := s.authenticateClient(ctx, r)
+	return clientAuth{APIKey: apiKey, User: user, Err: err}
 }
 
 // apiKeySummaryFromRow converts a db.ApiKey row into the JS-visible summary.

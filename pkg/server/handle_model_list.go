@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"picotera/pkg/db"
 	"picotera/pkg/errorx"
 )
 
 // handleModelList handles requests to modelList-type endpoints.
 // It returns a list of model names that have at least one available upstream.
-func (h *gatewayHandler) handleModelList(w http.ResponseWriter, r *http.Request, endpoint db.Endpoint) {
+// auth is the API-key check the caller already ran.
+func (h *gatewayHandler) handleModelList(w http.ResponseWriter, r *http.Request, auth clientAuth) {
 	// 1. Only GET/HEAD allowed.
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		writeGatewayError(w, http.StatusNotFound, "route not found", errorx.RouteNotFound.Error())
@@ -20,10 +20,9 @@ func (h *gatewayHandler) handleModelList(w http.ResponseWriter, r *http.Request,
 	// 2. Close body.
 	r.Body.Close()
 
-	// 3. Authenticate client.
-	_, _, err := h.authenticateClient(r.Context(), r)
-	if err != nil {
-		handleGatewayErr(w, err)
+	// 3. Reject an unauthenticated client.
+	if !auth.ok() {
+		handleGatewayErr(w, auth.Err)
 		return
 	}
 
