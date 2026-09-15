@@ -52,6 +52,8 @@ type Server struct {
 	externalRequestIDHeaders  []string
 	externalResponseIDHeaders []string
 	httpServer                *http.Server
+	// oidc is nil in every auth mode but oidc.
+	oidc *auth.OIDC
 }
 
 // newGatewayTransport builds an HTTP transport for upstream gateway requests
@@ -193,7 +195,21 @@ func NewServer(ctx context.Context) (*Server, error) {
 	// (the Huma management operations below, plus the raw test/direct route in
 	// registerEndpoints). The gateway catch-all and /api/unified stay on the
 	// bare router and authenticate via API key.
-	mgmtRouter := router.With(auth.Middleware(auth.NewResolver(conn, queries, config.Auth)))
+	// In oidc mode the driver and the resolver reference each other: the
+	// resolver reads sessions through the driver's cookie stores, and the
+	// callback creates users through the resolver.
+	var oidcAuth *auth.OIDC
+	if config.Auth.OIDC.Enabled {
+		oidcAuth, err = auth.NewOIDC(config.Auth.OIDC, config.BaseURL, config.Auth.AutoCreateUser)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize oidc auth: %w", err)
+		}
+	}
+	resolver := auth.NewResolver(conn, queries, config.Auth, oidcAuth)
+	if oidcAuth != nil {
+		oidcAuth.SetResolver(resolver)
+	}
+	mgmtRouter := router.With(auth.Middleware(resolver))
 	api := humachi.New(mgmtRouter, huma.DefaultConfig("PicoTera Management API", "1.0.0"))
 
 	kvStore, err := kv.New(config.KV.Driver, kv.WithRedisURL(config.KV.RedisURL))
@@ -249,6 +265,7 @@ func NewServer(ctx context.Context) (*Server, error) {
 		liveRequests:              newLiveRequestRegistry(),
 		externalRequestIDHeaders:  reqHeaders,
 		externalResponseIDHeaders: respHeaders,
+		oidc:                      oidcAuth,
 	}
 	server.registerOperations()
 	server.registerEndpoints()
@@ -415,6 +432,16 @@ func (s *Server) registerEndpoints() {
 	// Registered on mgmtRouter so it inherits user auth like the rest of
 	// /api/picotera.
 	s.mgmtRouter.Post("/api/picotera/test/direct", s.handleTestDirect)
+
+	// The oidc login routes are bare chi routes on the unguarded router: the
+	// users who need them are by definition not authenticated yet. Like the
+	// routes above they are registered before the catch-all mount, and being
+	// outside Huma they never enter openapi.yaml.
+	if s.oidc != nil {
+		s.router.Get(auth.LoginPath, s.oidc.Login)
+		s.router.Get(auth.CallbackPath, s.oidc.Callback)
+		s.router.Post(auth.LogoutPath, s.oidc.Logout)
+	}
 
 	s.router.Mount("/", &gatewayHandler{s})
 }

@@ -21,6 +21,11 @@ export function useAppTitle() {
     return DEFAULT_TITLE
   })
 
+  // Only the oidc mode has an interactive login, so it is the only one where
+  // logging out means anything.
+  const authMode = computed(() => query.data.value?.authMode ?? '')
+  const canLogout = computed(() => authMode.value === 'oidc')
+
   // Keep document.title in sync.
   watch(
     appTitle,
@@ -32,6 +37,8 @@ export function useAppTitle() {
 
   return {
     appTitle,
+    authMode,
+    canLogout,
     query,
   }
 }

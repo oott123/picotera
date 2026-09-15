@@ -21,6 +21,10 @@ type Querier interface {
 	DeleteApiKey(ctx context.Context, arg DeleteApiKeyParams) error
 	DeleteEndpoint(ctx context.Context, path string) error
 	DeleteExchangeRate(ctx context.Context, code string) error
+	// DeleteExpiredUserSessions runs on every successful login and only touches the
+	// logging-in user's rows. Sessions of users who never come back are lazy garbage;
+	// they cost nothing but disk, so there is no background sweeper.
+	DeleteExpiredUserSessions(ctx context.Context, arg DeleteExpiredUserSessionsParams) error
 	DeleteModel(ctx context.Context, name string) error
 	DeleteProject(ctx context.Context, arg DeleteProjectParams) error
 	DeleteProvider(ctx context.Context, id int32) error
@@ -29,6 +33,8 @@ type Querier interface {
 	DeleteUser(ctx context.Context, id int64) error
 	DeleteUserIdentitiesByUser(ctx context.Context, userID int64) error
 	DeleteUserIdentity(ctx context.Context, id int64) error
+	DeleteUserSession(ctx context.Context, id string) error
+	DeleteUserSessionsByUser(ctx context.Context, userID int64) error
 	DeleteUserSetting(ctx context.Context, arg DeleteUserSettingParams) (int64, error)
 	GetAdminOverviewSpeedBoxplot(ctx context.Context, arg GetAdminOverviewSpeedBoxplotParams) ([]GetAdminOverviewSpeedBoxplotRow, error)
 	GetAdminOverviewTokenBreakdown(ctx context.Context, arg GetAdminOverviewTokenBreakdownParams) (GetAdminOverviewTokenBreakdownRow, error)
@@ -84,6 +90,7 @@ type Querier interface {
 	InsertScript(ctx context.Context, arg InsertScriptParams) (Script, error)
 	InsertUser(ctx context.Context, arg InsertUserParams) (AppUser, error)
 	InsertUserIdentity(ctx context.Context, arg InsertUserIdentityParams) (UserIdentity, error)
+	InsertUserSession(ctx context.Context, arg InsertUserSessionParams) error
 	ListAdminOverviewBreakdownCosts(ctx context.Context, arg ListAdminOverviewBreakdownCostsParams) ([]ListAdminOverviewBreakdownCostsRow, error)
 	ListAdminOverviewBreakdownTokens(ctx context.Context, arg ListAdminOverviewBreakdownTokensParams) ([]ListAdminOverviewBreakdownTokensRow, error)
 	ListAdminOverviewCacheHitRateSeries(ctx context.Context, arg ListAdminOverviewCacheHitRateSeriesParams) ([]ListAdminOverviewCacheHitRateSeriesRow, error)
@@ -122,6 +129,13 @@ type Querier interface {
 	SetApiKeyAnnotation(ctx context.Context, arg SetApiKeyAnnotationParams) (int64, error)
 	SetProviderAnnotation(ctx context.Context, arg SetProviderAnnotationParams) (int64, error)
 	SetRequestAnnotation(ctx context.Context, arg SetRequestAnnotationParams) (int64, error)
+	// TouchUserSession reads a session and slides its expiry in one statement: the
+	// UPDATE is the read, so there is no window in which a just-expired row could be
+	// observed as live, and the JOIN folds the user lookup into the same round trip
+	// (a deleted user's session therefore returns no rows and reads as "no session").
+	// new_expires_at is now + session_ttl; both timestamps are supplied by Go like
+	// every other timestamp in this schema.
+	TouchUserSession(ctx context.Context, arg TouchUserSessionParams) (AppUser, error)
 	UpdateApiKey(ctx context.Context, arg UpdateApiKeyParams) (ApiKey, error)
 	UpdateProject(ctx context.Context, arg UpdateProjectParams) (Project, error)
 	UpdateProvider(ctx context.Context, arg UpdateProviderParams) (Provider, error)

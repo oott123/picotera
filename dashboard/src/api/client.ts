@@ -531,6 +531,13 @@ export async function getConfig(): Promise<ConfigView> {
   return data
 }
 
+// The logout route is a bare server route rather than a Huma operation, so it
+// is absent from the generated contract and has to be called with plain fetch.
+export async function logout(): Promise<void> {
+  const response = await fetch('/api/picotera/auth/logout', { method: 'POST' })
+  if (!response.ok) throw new ApiRequestError(undefined, '退出登录失败')
+}
+
 export async function fetchMe(): Promise<MeView> {
   const { data, error } = await api.GET('/api/picotera/me')
   if (error) fail(error, '加载用户信息失败')

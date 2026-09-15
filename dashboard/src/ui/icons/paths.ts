@@ -26,6 +26,7 @@ import {
   IconLink,
   IconList,
   IconLoader2,
+  IconLogout,
   IconMask,
   IconPlug,
   IconPlus,
@@ -88,6 +89,7 @@ export type IconName =
   | 'filter'
   | 'filter-plus'
   | 'mask'
+  | 'logout'
 
 export const iconComponents: Record<IconName, Component> = {
   plus: IconPlus,
@@ -133,4 +135,5 @@ export const iconComponents: Record<IconName, Component> = {
   mask: IconMask,
   filter: IconFilter,
   'filter-plus': IconFilterPlus,
+  logout: IconLogout,
 }

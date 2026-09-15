@@ -6,13 +6,14 @@ import PreferencesMenu from '@/components/PreferencesMenu.vue'
 import { useAppTitle } from '@/composables/useAppTitle'
 import { useMe } from '@/composables/useMe'
 import { useImpersonationStore } from '@/stores/impersonation'
+import { logout } from '@/api/client'
 import Icon from '@/ui/icons/Icon.vue'
 import { IconButton, Tag } from '@/ui'
 import type { IconName } from '@/ui/icons/paths'
 
 const route = useRoute()
 const queryClient = useQueryClient()
-const { appTitle } = useAppTitle()
+const { appTitle, canLogout } = useAppTitle()
 
 const { me, isAdmin } = useMe()
 const impersonation = useImpersonationStore()
@@ -20,6 +21,21 @@ const impersonation = useImpersonationStore()
 async function stopImpersonating() {
   impersonation.stop()
   queryClient.clear()
+}
+
+const loggingOut = ref(false)
+
+async function signOut() {
+  if (loggingOut.value) return
+  loggingOut.value = true
+  try {
+    await logout()
+    // A full page load, not a router push: the session is gone, so the server
+    // has to decide where the browser goes next.
+    window.location.assign('/')
+  } finally {
+    loggingOut.value = false
+  }
 }
 const refreshing = ref(false)
 const activeRouteName = computed(() => {
@@ -170,6 +186,15 @@ const adminNav: NavItem[] = [
         @click="stopImpersonating"
       >
         <Icon name="arrow-left" :size="14" />
+      </IconButton>
+      <IconButton
+        v-if="canLogout"
+        title="退出登录"
+        aria-label="退出登录"
+        :disabled="loggingOut"
+        @click="signOut"
+      >
+        <Icon name="logout" :size="14" />
       </IconButton>
       <PreferencesMenu />
       <button

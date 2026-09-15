@@ -140,10 +140,17 @@ components:
           format: uri
           readOnly: true
           type: string
+        authMode:
+          enum:
+            - single-user-mode
+            - http-header
+            - oidc
+          type: string
         title:
           type: string
       required:
         - title
+        - authMode
       type: object
     CreateProviderRequestBody:
       additionalProperties: false

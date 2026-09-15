@@ -1098,6 +1098,8 @@ export interface components {
              * @example https://example.com/schemas/ConfigView.json
              */
             readonly $schema?: string;
+            /** @enum {string} */
+            authMode: "single-user-mode" | "http-header" | "oidc";
             title: string;
         };
         CreateProviderRequestBody: {

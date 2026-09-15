@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"picotera/pkg/auth"
 	"picotera/pkg/configx"
 	"picotera/pkg/errorx"
 
@@ -446,5 +447,84 @@ func TestExtractModel(t *testing.T) {
 				t.Errorf("got %+v, want model %q", mode, tc.wantModel)
 			}
 		})
+	}
+}
+
+func TestStripPicoteraCookie(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{"only ours", auth.SessionCookieName + "=abc", ""},
+		{"mixed", auth.SessionCookieName + "=abc; other=y", "other=y"},
+		{"ours last", "other=y; " + auth.SessionCookieName + "=abc", "other=y"},
+		{"none of ours", "a=1; b=2", "a=1; b=2"},
+		{"near miss name", auth.SessionCookieName + "-extra=abc", auth.SessionCookieName + "-extra=abc"},
+		{"value contains =", "a=b=c; " + auth.SessionCookieName + "=x=y", "a=b=c"},
+		{"empty", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := stripPicoteraCookie(tc.value); got != tc.want {
+				t.Errorf("stripPicoteraCookie(%q) = %q, want %q", tc.value, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRedactPicoteraCookieValue(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{"only ours", auth.SessionCookieName + "=abc", auth.SessionCookieName + "=" + redactedPlaceholder},
+		{"mixed", auth.SessionCookieName + "=abc; other=y", auth.SessionCookieName + "=" + redactedPlaceholder + "; other=y"},
+		{"none of ours", "a=1; b=2", "a=1; b=2"},
+		{"near miss name", auth.SessionCookieName + "-extra=abc", auth.SessionCookieName + "-extra=abc"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := redactPicoteraCookieValue(tc.value); got != tc.want {
+				t.Errorf("redactPicoteraCookieValue(%q) = %q, want %q", tc.value, got, tc.want)
+			}
+		})
+	}
+}
+
+// The upstream request must lose our cookie and keep the client's.
+func TestBuildUpstreamRequestStripsSessionCookie(t *testing.T) {
+	original := httptest.NewRequest(http.MethodPost, "https://picotera.example/v1/messages", nil)
+	original.Header.Set("Cookie", auth.SessionCookieName+"=abc; other=y")
+
+	req, _, err := buildUpstreamRequest(context.Background(), original, []byte(`{}`), "https://upstream.example/v1/messages", "", "", "", 0, nil, "")
+	if err != nil {
+		t.Fatalf("buildUpstreamRequest: %v", err)
+	}
+	if got := req.Header.Get("Cookie"); got != "other=y" {
+		t.Fatalf("Cookie = %q; want %q", got, "other=y")
+	}
+}
+
+func TestBuildUpstreamRequestDropsEmptyCookieHeader(t *testing.T) {
+	original := httptest.NewRequest(http.MethodPost, "https://picotera.example/v1/messages", nil)
+	original.Header.Set("Cookie", auth.SessionCookieName+"=abc")
+
+	req, _, err := buildUpstreamRequest(context.Background(), original, []byte(`{}`), "https://upstream.example/v1/messages", "", "", "", 0, nil, "")
+	if err != nil {
+		t.Fatalf("buildUpstreamRequest: %v", err)
+	}
+	if _, ok := req.Header["Cookie"]; ok {
+		t.Fatalf("Cookie header should be absent, got %q", req.Header.Get("Cookie"))
+	}
+}
+
+func TestRedactRequestCredentialsCookie(t *testing.T) {
+	header := http.Header{}
+	header.Set("Cookie", auth.SessionCookieName+"=abc; other=y")
+
+	redacted, _ := redactRequestCredentials(header, "https://upstream.example/v1/messages")
+	want := auth.SessionCookieName + "=" + redactedPlaceholder + "; other=y"
+	if got := redacted.Get("Cookie"); got != want {
+		t.Fatalf("Cookie = %q; want %q", got, want)
 	}
 }

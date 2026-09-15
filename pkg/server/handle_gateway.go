@@ -68,6 +68,12 @@ func (h *gatewayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (h *gatewayHandler) serveRouteNotFound(w http.ResponseWriter, r *http.Request, startedAt time.Time) {
 	auth := h.authenticateGatewayClient(r.Context(), r)
 	if routeNotFoundFallsBackToSPA(r, auth.ok()) {
+		// A browser navigating to the dashboard without a session is sent to
+		// the login flow instead of to an SPA that could only 401 on its first
+		// API call. Subresources keep falling through to the static handler.
+		if h.oidc != nil && h.oidc.RedirectUnauthenticatedNav(w, r) {
+			return
+		}
 		h.staticHandler.ServeHTTP(w, r)
 		return
 	}

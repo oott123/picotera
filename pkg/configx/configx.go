@@ -3,6 +3,7 @@ package configx
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"reflect"
 	"strings"
@@ -39,14 +40,62 @@ type Config struct {
 	LLMBridgePluginStartTimeout      time.Duration `mapstructure:"llmbridge_plugin_start_timeout"`
 	HeapDumpDir                      string        `mapstructure:"heap_dump_dir"`
 	AppTitle                         string        `mapstructure:"app_title"`
-	Auth                             AuthConfig    `mapstructure:"auth"`
+	// BaseURL is PicoTera's externally reachable base url. Required in oidc
+	// mode, where it is the base of the OAuth callback url; ignored otherwise.
+	BaseURL string     `mapstructure:"base_url"`
+	Auth    AuthConfig `mapstructure:"auth"`
 }
 
 type AuthConfig struct {
-	HeaderEnabled  bool   `mapstructure:"header_enabled"`
-	HeaderName     string `mapstructure:"header_name"`
-	AutoCreateUser bool   `mapstructure:"auto_create_user"`
-	SingleUserMode bool   `mapstructure:"single_user_mode"`
+	HeaderEnabled  bool       `mapstructure:"header_enabled"`
+	HeaderName     string     `mapstructure:"header_name"`
+	AutoCreateUser bool       `mapstructure:"auto_create_user"`
+	SingleUserMode bool       `mapstructure:"single_user_mode"`
+	OIDC           OIDCConfig `mapstructure:"oidc"`
+}
+
+// Client authentication methods accepted by auth.oidc.client_auth_method.
+const (
+	OIDCClientAuthBasic = "client_secret_basic"
+	OIDCClientAuthPost  = "client_secret_post"
+)
+
+// OIDCConfig configures the "oidc" identity provider. Discovery is used unless
+// all three endpoints (auth / token / userinfo) are configured explicitly, in
+// which case the issuer is never contacted.
+type OIDCConfig struct {
+	Enabled bool   `mapstructure:"enabled"`
+	Issuer  string `mapstructure:"issuer"`
+
+	ClientID     string `mapstructure:"client_id"`
+	ClientSecret string `mapstructure:"client_secret"`
+	// SessionSecret is the raw key material the session cookie's authentication
+	// and encryption keys are derived from. Its lifecycle is deliberately
+	// decoupled from the client secret.
+	SessionSecret string        `mapstructure:"session_secret"`
+	SessionTTL    time.Duration `mapstructure:"session_ttl"`
+	Scopes        string        `mapstructure:"scopes"`
+
+	AuthEndpoint     string `mapstructure:"auth_endpoint"`
+	TokenEndpoint    string `mapstructure:"token_endpoint"`
+	UserinfoEndpoint string `mapstructure:"userinfo_endpoint"`
+
+	// PKCE overrides what discovery infers. It is mandatory when all three
+	// endpoints are configured, because then there is nothing to infer from.
+	PKCE             *bool  `mapstructure:"pkce"`
+	ClientAuthMethod string `mapstructure:"client_auth_method"`
+}
+
+// endpointsFullyConfigured reports whether all three endpoints are set, i.e.
+// whether the discovery document is needed at all.
+func (c OIDCConfig) endpointsFullyConfigured() bool {
+	return c.AuthEndpoint != "" && c.TokenEndpoint != "" && c.UserinfoEndpoint != ""
+}
+
+// NeedsDiscovery reports whether the provider must be built from the issuer's
+// discovery document rather than purely from configuration.
+func (c OIDCConfig) NeedsDiscovery() bool {
+	return !c.endpointsFullyConfigured()
 }
 
 type KVConfig struct {
@@ -108,6 +157,9 @@ func Parse() (*Config, error) {
 	viper.SetDefault("llmbridge_plugin_start_timeout", 10*time.Second)
 	viper.SetDefault("heap_dump_dir", os.TempDir())
 	viper.SetDefault("app_title", "PicoTera")
+	viper.SetDefault("auth.oidc.session_ttl", 12*time.Hour)
+	viper.SetDefault("auth.oidc.scopes", "openid profile email")
+	viper.SetDefault("auth.oidc.client_auth_method", OIDCClientAuthBasic)
 
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
@@ -125,14 +177,121 @@ func Parse() (*Config, error) {
 	if config.Port <= 0 || config.Port > 65535 {
 		return nil, errors.New("port must be between 1 and 65535")
 	}
-	if !config.Auth.SingleUserMode && !config.Auth.HeaderEnabled {
-		return nil, errors.New("no auth provider enabled")
+	if err := validateAuth(&config); err != nil {
+		return nil, err
 	}
 	if config.S3.Endpoint != "" && (config.S3.AccessKey == "" || config.S3.SecretKey == "") {
 		return nil, errors.New("s3 access_key and secret_key are required when s3.endpoint is configured")
 	}
 
 	return &config, nil
+}
+
+// validateAuth enforces that exactly one identity provider is enabled and, in
+// oidc mode, that every setting the login flow will need is present and
+// well-formed. Everything here is fail-fast at startup: a half-configured oidc
+// provider must not become a runtime surprise on the first login attempt. On
+// success config.BaseURL is normalized to its trailing-slash-free form.
+func validateAuth(config *Config) error {
+	enabled := 0
+	for _, on := range []bool{config.Auth.SingleUserMode, config.Auth.HeaderEnabled, config.Auth.OIDC.Enabled} {
+		if on {
+			enabled++
+		}
+	}
+	switch {
+	case enabled == 0:
+		return errors.New("no auth provider enabled")
+	case enabled > 1:
+		return errors.New("exactly one auth provider must be enabled")
+	}
+
+	oidc := config.Auth.OIDC
+	if !oidc.Enabled {
+		return nil
+	}
+
+	if oidc.ClientID == "" {
+		return errors.New("auth.oidc.client_id is required when auth.oidc.enabled is set")
+	}
+	if oidc.ClientSecret == "" {
+		return errors.New("auth.oidc.client_secret is required when auth.oidc.enabled is set")
+	}
+	if oidc.SessionSecret == "" {
+		return errors.New("auth.oidc.session_secret is required when auth.oidc.enabled is set")
+	}
+	if oidc.SessionTTL <= 0 {
+		return errors.New("auth.oidc.session_ttl must be positive")
+	}
+	if oidc.ClientAuthMethod != OIDCClientAuthBasic && oidc.ClientAuthMethod != OIDCClientAuthPost {
+		return fmt.Errorf("auth.oidc.client_auth_method must be %q or %q", OIDCClientAuthBasic, OIDCClientAuthPost)
+	}
+
+	baseURL, err := normalizeBaseURL(config.BaseURL)
+	if err != nil {
+		return err
+	}
+	config.BaseURL = baseURL
+
+	if oidc.NeedsDiscovery() {
+		// The discovery document url is built by concatenation, so a trailing
+		// slash is rejected outright rather than silently trimmed.
+		if err := validateIssuer(oidc.Issuer); err != nil {
+			return err
+		}
+	} else if oidc.PKCE == nil {
+		return errors.New("auth.oidc.pkce must be set explicitly when auth / token / userinfo endpoints are all configured")
+	}
+
+	return nil
+}
+
+// normalizeBaseURL validates base_url as an absolute url naming only an origin
+// and returns it without a trailing slash. The scheme is required to be present
+// but is not checked against a whitelist — running behind a TLS-terminating
+// proxy is the operator's call.
+func normalizeBaseURL(raw string) (string, error) {
+	if raw == "" {
+		return "", errors.New("base_url is required when auth.oidc.enabled is set")
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("base_url is not a valid url: %w", err)
+	}
+	if u.Scheme == "" || u.Host == "" {
+		return "", errors.New("base_url must be an absolute url with a scheme and a host")
+	}
+	if u.Path != "" && u.Path != "/" {
+		return "", errors.New("base_url must not carry a path")
+	}
+	if u.RawQuery != "" || u.Fragment != "" {
+		return "", errors.New("base_url must not carry a query or fragment")
+	}
+	u.Path = ""
+	return u.String(), nil
+}
+
+// validateIssuer checks the issuer url used for discovery. go-oidc compares the
+// discovery document's own issuer against this value byte for byte, so a
+// trailing slash here is a configuration error, not something to paper over.
+func validateIssuer(raw string) error {
+	if raw == "" {
+		return errors.New("auth.oidc.issuer is required unless auth / token / userinfo endpoints are all configured")
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("auth.oidc.issuer is not a valid url: %w", err)
+	}
+	if u.Scheme == "" || u.Host == "" {
+		return errors.New("auth.oidc.issuer must be an absolute url with a scheme and a host")
+	}
+	if u.RawQuery != "" || u.Fragment != "" {
+		return errors.New("auth.oidc.issuer must not carry a query or fragment")
+	}
+	if strings.HasSuffix(raw, "/") {
+		return errors.New("auth.oidc.issuer must not end with a slash")
+	}
+	return nil
 }
 
 func bindEnvs(iface interface{}, parts ...string) {

@@ -112,6 +112,11 @@ func (s *Server) handleDeleteUser(ctx context.Context, in *contract.DeleteUserRe
 	if err := q.DeleteUserIdentitiesByUser(ctx, in.Body.ID); err != nil {
 		return nil, huma.Error500InternalServerError("failed to delete user identities", err)
 	}
+	// Sessions already stop resolving once app_user is gone (TouchUserSession
+	// joins it); this only keeps orphan rows out of the table.
+	if err := q.DeleteUserSessionsByUser(ctx, in.Body.ID); err != nil {
+		return nil, huma.Error500InternalServerError("failed to delete user sessions", err)
+	}
 	if err := q.DeleteUser(ctx, in.Body.ID); err != nil {
 		return nil, huma.Error500InternalServerError("failed to delete user", err)
 	}

@@ -1,10 +1,10 @@
 // Package auth resolves the user identity for internal management API requests.
 //
-// The first phase ships two identity providers — "single-user-mode" and
-// "http-header" — and a chi middleware that authenticates only the
-// /api/picotera prefix. Identity resolution is decoupled from the gateway data
-// plane: the gateway catch-all and /api/unified routes authenticate via API
-// key and never reach this package.
+// It ships three identity providers — "single-user-mode", "http-header" and
+// "oidc" — of which exactly one is enabled (enforced at config parse time), and
+// a chi middleware that authenticates only the /api/picotera prefix. Identity
+// resolution is decoupled from the gateway data plane: the gateway catch-all and
+// /api/unified routes authenticate via API key and never reach this package.
 package auth
 
 import (
@@ -12,11 +12,13 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"picotera/pkg/configx"
 	"picotera/pkg/db"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -29,6 +31,7 @@ const ImpersonationHeader = "X-PicoTera-Impersonation-User-Id"
 const (
 	ProviderSingleUserMode = "single-user-mode"
 	ProviderHTTPHeader     = "http-header"
+	ProviderOIDC           = "oidc"
 
 	singleUserIdentity = "root"
 )
@@ -70,33 +73,97 @@ type Resolver struct {
 	db      *pgxpool.Pool
 	queries *db.Queries
 	config  configx.AuthConfig
+	// oidc is set only in oidc mode; it owns the session cookie stores.
+	oidc *OIDC
 }
 
 // NewResolver builds a Resolver. It needs both the pool (for transactional
-// auto-create) and the pool-bound queries (for plain reads).
-func NewResolver(pool *pgxpool.Pool, queries *db.Queries, config configx.AuthConfig) *Resolver {
-	return &Resolver{db: pool, queries: queries, config: config}
+// auto-create) and the pool-bound queries (for plain reads). oidc is nil in
+// every mode but oidc.
+func NewResolver(pool *pgxpool.Pool, queries *db.Queries, config configx.AuthConfig, oidc *OIDC) *Resolver {
+	return &Resolver{db: pool, queries: queries, config: config, oidc: oidc}
 }
 
-// Resolve identifies the user for a request following the fixed precedence:
-// single-user-mode, then http-header, otherwise unauthorized.
+// Resolve identifies the user for a request. Exactly one provider is enabled
+// (configx rejects any other count at startup), so this is a single dispatch,
+// not a fallback chain.
 func (r *Resolver) Resolve(ctx context.Context, req *http.Request) (*db.AppUser, error) {
-	if r.config.SingleUserMode {
+	switch {
+	case r.config.SingleUserMode:
 		// Single-user mode ignores all headers and is bootstrapped
 		// unconditionally as an admin, independent of AutoCreateUser.
 		return r.resolveOrCreate(ctx, ProviderSingleUserMode, singleUserIdentity, singleUserIdentity, true, true)
-	}
 
-	if r.config.HeaderEnabled {
+	case r.config.HeaderEnabled:
 		value := req.Header.Get(r.config.HeaderName)
 		if value == "" {
 			return nil, ErrUnauthorized
 		}
 		return r.resolveOrCreate(ctx, ProviderHTTPHeader, value, value, false, r.config.AutoCreateUser)
-	}
 
-	// No identity provider configured: never implicitly authenticate.
-	return nil, ErrUnauthorized
+	case r.config.OIDC.Enabled:
+		return r.resolveSession(ctx, req)
+
+	default:
+		// No identity provider configured: never implicitly authenticate.
+		return nil, ErrUnauthorized
+	}
+}
+
+// resolveSession reads the session cookie and slides the session's expiry. It
+// deliberately does not create users: that happens only in the callback, which
+// is the one place a display name is available. Holding a session id that
+// resolves to nothing means the user was deleted — a 401, not a re-creation.
+func (r *Resolver) resolveSession(ctx context.Context, req *http.Request) (*db.AppUser, error) {
+	if r.oidc == nil {
+		return nil, ErrUnauthorized
+	}
+	sessionID, ok := readSessionID(r.oidc.stores.session, req)
+	if !ok {
+		return nil, ErrUnauthorized
+	}
+	now := time.Now()
+	user, err := r.queries.TouchUserSession(ctx, db.TouchUserSessionParams{
+		ID:           sessionID,
+		NewExpiresAt: pgtype.Timestamptz{Time: now.Add(r.config.OIDC.SessionTTL), Valid: true},
+		Now:          pgtype.Timestamptz{Time: now, Valid: true},
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrUnauthorized
+		}
+		return nil, err
+	}
+	// app_user is reread on every request, so disabling a user takes effect
+	// immediately instead of when their session happens to expire.
+	if user.Disabled {
+		return nil, ErrUnauthorized
+	}
+	return &user, nil
+}
+
+// RefreshSessionCookie re-issues the session cookie with the same session id so
+// that the browser-side lifetime tracks the expires_at the database was just
+// pushed to. No-op outside oidc mode. It writes a header, so it must be called
+// before anything commits the response.
+func (r *Resolver) RefreshSessionCookie(w http.ResponseWriter, req *http.Request) {
+	if r.oidc == nil {
+		return
+	}
+	sessionID, ok := readSessionID(r.oidc.stores.session, req)
+	if !ok {
+		return
+	}
+	_ = saveSessionID(r.oidc.stores.session, req, w, sessionID)
+}
+
+// LoginURL is the path an unauthenticated browser should be sent to, or "" when
+// the mode has no interactive login.
+func (r *Resolver) LoginURL() string {
+	if r.oidc == nil {
+		return ""
+	}
+	return LoginPath
 }
 
 // ResolveWithImpersonation resolves the real user via Resolve, then applies

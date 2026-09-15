@@ -9,6 +9,9 @@ import (
 // ConfigView is the runtime application configuration exposed to the dashboard.
 type ConfigView struct {
 	Title string `json:"title"`
+	// AuthMode is the single enabled identity provider. The dashboard uses it to
+	// decide whether an interactive logout exists.
+	AuthMode string `json:"authMode" enum:"single-user-mode,http-header,oidc"`
 }
 
 // GetConfigResponse is the response for reading the application configuration.

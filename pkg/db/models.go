@@ -203,6 +203,13 @@ type UserIdentity struct {
 	CreatedAt pgtype.Timestamptz `json:"createdAt"`
 }
 
+type UserSession struct {
+	ID        string             `json:"id"`
+	UserID    int64              `json:"userId"`
+	CreatedAt pgtype.Timestamptz `json:"createdAt"`
+	ExpiresAt pgtype.Timestamptz `json:"expiresAt"`
+}
+
 type UserSetting struct {
 	UserID    int64              `json:"userId"`
 	Key       string             `json:"key"`

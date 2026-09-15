@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"picotera/pkg/auth"
 	"picotera/pkg/contract"
 	"picotera/pkg/db"
 	"picotera/pkg/errorx"
@@ -694,6 +695,14 @@ func buildUpstreamRequest(ctx context.Context, original *http.Request, body []by
 			continue
 		}
 		for _, value := range values {
+			// The dashboard's session cookie is ours alone; the client's other
+			// cookies are forwarded untouched.
+			if lower == "cookie" {
+				value = stripPicoteraCookie(value)
+				if value == "" {
+					continue
+				}
+			}
 			req.Header.Add(key, value)
 		}
 	}
@@ -718,6 +727,8 @@ const redactedPlaceholder = "[REDACTED]"
 //   - X-Api-Key / X-Goog-Api-Key: replaced wholesale.
 //   - Cf-Access-Client-Id / Cf-Access-Client-Secret: replaced wholesale
 //     (Cloudflare Access service tokens).
+//   - Cookie: only PicoTera's own session cookie has its value replaced; every
+//     other cookie is kept as-is.
 //   - URL "key" query param: value replaced, leaving other params intact.
 func redactRequestCredentials(header http.Header, rawURL string) (http.Header, string) {
 	if auth := header.Get("Authorization"); auth != "" {
@@ -741,6 +752,16 @@ func redactRequestCredentials(header http.Header, rawURL string) (http.Header, s
 	}
 	if header.Get("Chatgpt-Account-Id") != "" {
 		header.Set("Chatgpt-Account-Id", redactedPlaceholder)
+	}
+	if values := header.Values("Cookie"); len(values) > 0 {
+		redacted := make([]string, len(values))
+		for i, v := range values {
+			redacted[i] = redactPicoteraCookieValue(v)
+		}
+		header.Del("Cookie")
+		for _, v := range redacted {
+			header.Add("Cookie", v)
+		}
 	}
 
 	if u, err := url.Parse(rawURL); err == nil {
@@ -812,6 +833,46 @@ func redactSetCookieValue(v string) string {
 		}
 	}
 	return name + "=" + redactedPlaceholder + attrs
+}
+
+// stripPicoteraCookie removes PicoTera's own session cookie from a Cookie
+// header value, keeping every other cookie in its original order. Returns an
+// empty string when nothing is left, so the caller can drop the header
+// entirely. The name is matched exactly — no prefix guessing.
+func stripPicoteraCookie(value string) string {
+	return rewritePicoteraCookie(value, func(string) (string, bool) { return "", false })
+}
+
+// redactPicoteraCookieValue replaces the value of PicoTera's own session cookie
+// with [REDACTED] for the artifact copy, keeping the cookie name and every
+// other cookie — the same treatment redactSetCookieValue gives responses.
+func redactPicoteraCookieValue(value string) string {
+	return rewritePicoteraCookie(value, func(name string) (string, bool) {
+		return name + "=" + redactedPlaceholder, true
+	})
+}
+
+// rewritePicoteraCookie walks the cookie pairs of a Cookie header value and
+// hands PicoTera's own cookie to replace, which returns the replacement pair
+// and whether to keep it at all.
+func rewritePicoteraCookie(value string, replace func(name string) (string, bool)) string {
+	parts := strings.Split(value, ";")
+	kept := make([]string, 0, len(parts))
+	for _, part := range parts {
+		pair := strings.TrimSpace(part)
+		if pair == "" {
+			continue
+		}
+		name, _, _ := strings.Cut(pair, "=")
+		if strings.TrimSpace(name) == auth.SessionCookieName {
+			if replacement, keep := replace(auth.SessionCookieName); keep {
+				kept = append(kept, replacement)
+			}
+			continue
+		}
+		kept = append(kept, pair)
+	}
+	return strings.Join(kept, "; ")
 }
 
 // isAwaitHeadersTimeout matches HTTP/2's "http2: timeout awaiting response

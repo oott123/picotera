@@ -17,12 +17,23 @@ func Middleware(resolver *Resolver) func(http.Handler) http.Handler {
 			user, err := resolver.ResolveWithImpersonation(r.Context(), r)
 			if err != nil || user == nil {
 				status, body := impersonationErrorResponse(err)
+				// Point the dashboard at the login flow instead of making it
+				// guess. Only oidc mode has one, so no other mode can be pushed
+				// into a redirect loop by this header.
+				if status == http.StatusUnauthorized {
+					if loginURL := resolver.LoginURL(); loginURL != "" {
+						w.Header().Set(LoginURLHeader, loginURL)
+					}
+				}
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(status)
 				_, _ = w.Write([]byte(body))
 				return
 			}
 
+			// Resolve just slid the session's database expiry; re-issue the
+			// cookie so both sides expire at the same moment.
+			resolver.RefreshSessionCookie(w, r)
 			next.ServeHTTP(w, r.WithContext(WithUser(r.Context(), user)))
 		})
 	}

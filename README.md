@@ -117,7 +117,7 @@ docker compose exec -it postgres timescaledb-tune --yes -cpus 1 -memory 512MB
 
 ## 认证
 
-本项目的管理 API 没有内置认证，而是依赖反向代理进行认证。请根据需求，通过环境变量设置你需要的认证方式：
+你可以选择三种方法之一，为 PicoTera 的管理 API 配置认证。请注意，网关 API 始终仅被密钥保护，不受认证方式影响。
 
 ### 单用户
 
@@ -129,11 +129,11 @@ PICOTERA_AUTH_SINGLE_USER_MODE=true
 
 单用户模式下，所有管理接口、控制台不做鉴权，默认归属于自动创建的、名为 root 的用户下。
 
-### 多用户
+### 前向认证
 
-如需多用户功能，需要在 PicoTera 之外，部署一层反向代理进行认证，常见的有 oauth2-proxy 或 traefik 的 forward auth。
+为 PicoTera 提供多用户访问方法之一是部署一层反向代理进行前向认证，常见的有 oauth2-proxy 或 traefik 的 forward auth。
 
-提供如下变量以开启多用户模式：
+提供如下变量以开启前向认证模式：
 
 ```env
 PICOTERA_AUTH_HEADER_ENABLED=true
@@ -141,7 +141,29 @@ PICOTERA_AUTH_HEADER_NAME=X-User-Identity # 用户唯一识别符的 Header
 PICOTERA_AUTH_AUTO_CREATE_USER=true # 自动创建没有见过的用户
 ```
 
-#### 通过命令行绑定用户
+### OIDC (OpenID Connect)
+
+你可以使用 OIDC IdP 为 PicoTera 提供认证。提供以下环境变量以开启 oidc 模式：
+
+```env
+PICOTERA_AUTH_OIDC_ENABLED=true
+PICOTERA_BASE_URL=http://picotera.local
+PICOTERA_AUTH_OIDC_ISSUER=https://github.com/login/oauth # 必填，必须和 idp 的 issuer 保持一致
+PICOTERA_AUTH_OIDC_CLIENT_ID= # idp 提供的 client id
+PICOTERA_AUTH_OIDC_CLIENT_SECRET= # idp 提供的 client secret，请将 PicoTera 注册为机密 RP / 机密客户端
+PICOTERA_AUTH_OIDC_SESSION_SECRET= # 随机生成一段字符串
+PICOTERA_AUTH_OIDC_SESSION_TTL=12h
+PICOTERA_AUTH_OIDC_SCOPES="openid profile email"
+
+# 如果 oidc 自动发现工作异常，提供以下变量以覆盖自动发现
+PICOTERA_AUTH_OIDC_AUTH_ENDPOINT=
+PICOTERA_AUTH_OIDC_TOKEN_ENDPOINT=
+PICOTERA_AUTH_OIDC_USERINFO_ENDPOINT=
+PICOTERA_AUTH_OIDC_PKCE=true
+PICOTERA_AUTH_OIDC_CLIENT_AUTH_METHOD=client_secret_basic
+```
+
+### 通过命令行绑定用户
 
 如果没有使用自动创建用户，你应运行如下命令以绑定提供商到现存用户：
 
@@ -153,7 +175,9 @@ mise bind-identity -- http-header root 1
 docker exec picotera -- /app/picotera bind-identity http-header root 1
 ```
 
-#### 通过命令行将用户设为管理员
+其中 `identity_provider` 为 `http-header` 或 `oidc`。
+
+### 通过命令行将用户设为管理员
 
 PicoTera 提供二元的管理员/用户角色之区分。默认所有用户均不是管理员，你可以通过命令行将特定用户提升为管理员。
 此外，管理员也可以在用户界面上将用户提升为管理员或将管理员降级为普通用户。
