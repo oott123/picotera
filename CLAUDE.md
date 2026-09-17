@@ -41,7 +41,7 @@ pnpm --dir dashboard generate-openapi   # regenerate TS types from openapi.yaml
 
 ### Nix packages
 
-Root `flake.nix` packages the release artifacts. `.nix/flake.nix` stays the devshell, so `nix develop` still has to point at `.nix/` (as `.envrc` does). The root flake needs Nix ≥ 2.27: `inputs.self.submodules = true` is what brings the three `third_party/` submodules into the build.
+Root `flake.nix` packages the release artifacts. `.nix/flake.nix` stays the devshell, so `nix develop` still has to point at `.nix/` (as `.envrc` does). The three `third_party/` trees go.mod `replace`s come in as inputs (`flake = false`, no flake needed) from the same repositories `.gitmodules` lists, so a checkout without submodules builds and Nix ≥ 2.27 is no longer required. Their revisions live in `flake.lock` (`nix flake update` bumps them); a bumped revision that changes the vendored content invalidates `vendorHash`, which the failed build prints.
 
 ```bash
 nix build                               # packages.default = picotera
@@ -53,7 +53,7 @@ nix build .#picotera-dashboard          # dashboard/dist on its own
 
 `packages.default` sets `PICOTERA_LLMBRIDGE_PLUGIN_PATH` to the plugin's store path with `--set-default`, so a deployment can still override it. The dashboard is built by `vite build` alone (no `vue-tsc`) and neither Go package runs tests (`doCheck = false`).
 
-Two fixed-output hashes are maintained by hand: `pnpmDeps.hash` follows `pnpm-lock.yaml`, `vendorHash` follows `go.mod` / `go.sum` and the submodule revisions. A stale hash fails the build and prints the value to use.
+Two fixed-output hashes are maintained by hand: `pnpmDeps.hash` follows `pnpm-lock.yaml`, `vendorHash` follows `go.mod` / `go.sum` and the three `third_party/` trees (i.e. those input revisions in `flake.lock`). A stale hash fails the build and prints the value to use.
 
 ### OpenAPI → TypeScript SDK workflow
 

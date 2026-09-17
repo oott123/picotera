@@ -1,5 +1,38 @@
 {
   "nodes": {
+    "axonhub": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1784881694,
+        "narHash": "sha256-vE/DhxYLX8xc1d63R3eMw45Hz+4zfCz9ZMZPj7GiSmE=",
+        "owner": "33forks",
+        "repo": "picotera-axonhub",
+        "rev": "10299a1731ecf15a8669af45613c7dbb8cb28fcb",
+        "type": "github"
+      },
+      "original": {
+        "owner": "33forks",
+        "ref": "unstable",
+        "repo": "picotera-axonhub",
+        "type": "github"
+      }
+    },
+    "go-sse": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1780299753,
+        "narHash": "sha256-9sGb5N8BlH+JpO7vPrGdr5KxVqpcCddrPKYUjwyEiZQ=",
+        "owner": "33forks",
+        "repo": "picotera-go-sse",
+        "rev": "8225fd9f3a9daaf10a73c895a32531aba17ef858",
+        "type": "github"
+      },
+      "original": {
+        "owner": "33forks",
+        "repo": "picotera-go-sse",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1782847189,
@@ -16,9 +49,28 @@
         "type": "github"
       }
     },
+    "quickjs": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1780748666,
+        "narHash": "sha256-+NZzjmcpNVoXxgjo6SIn+LBXteTdCPi4cYeP68OWohc=",
+        "owner": "33forks",
+        "repo": "picotera-quickjs-go",
+        "rev": "bcbdac617014471c87b26f5d63efdd29715d24c1",
+        "type": "github"
+      },
+      "original": {
+        "owner": "33forks",
+        "repo": "picotera-quickjs-go",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
-        "nixpkgs": "nixpkgs"
+        "axonhub": "axonhub",
+        "go-sse": "go-sse",
+        "nixpkgs": "nixpkgs",
+        "quickjs": "quickjs"
       }
     }
   },

@@ -2,15 +2,38 @@
   description = "PicoTera — LLM API gateway (packages only)";
 
   inputs = {
-    # Nix >= 2.27 only. The build needs `third_party/go-sse`,
-    # `third_party/axonhub/llm` and `third_party/quickjs` (three `replace`
-    # directives in go.mod); older Nix snapshots the tree without them.
-    self.submodules = true;
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
+
+    # The three trees go.mod `replace`s — `third_party/go-sse`,
+    # `third_party/axonhub/llm`, `third_party/quickjs` — are inputs rather than
+    # git submodules, so a checkout that never ran `git submodule update` (a
+    # GitHub tarball, say) still builds and `self.submodules = true` is no
+    # longer needed. `flake = false` because none of the three is a flake; the
+    # revisions live in `flake.lock`, bumped by `nix flake update`, and a
+    # content change there invalidates `vendorHash`. `.gitmodules` keeps its
+    # copies for the Dockerfile, which builds from a real checkout.
+    axonhub = {
+      url = "github:33forks/picotera-axonhub/unstable";
+      flake = false;
+    };
+    go-sse = {
+      url = "github:33forks/picotera-go-sse";
+      flake = false;
+    };
+    quickjs = {
+      url = "github:33forks/picotera-quickjs-go";
+      flake = false;
+    };
   };
 
   outputs =
-    { self, nixpkgs }:
+    {
+      self,
+      nixpkgs,
+      axonhub,
+      go-sse,
+      quickjs,
+    }:
     let
       lib = nixpkgs.lib;
 
@@ -23,12 +46,13 @@
 
       version = "0-unstable-" + (self.shortRev or self.dirtyShortRev or "unknown");
 
-      # Two source slices, so a dashboard edit does not rebuild Go and a Go edit
-      # does not rebuild the dashboard. `tools/` holds no Go files; the rest of
-      # `third_party/axonhub` (upstream's own go.mod, docs, frontend) is not
-      # reachable through the `replace` in go.mod. A new `replace` must be added
-      # here or the build fails on a missing directory.
-      goSrc = lib.fileset.toSource {
+      # The repo's own Go sources. The three `third_party/` trees the three
+      # `replace` directives name are not part of the checkout any more; they
+      # are laid out into this slice in `mkPackages`, from the inputs above.
+      # `tools/` holds no Go files. A new `replace` must be added either here
+      # (a directory in this repo) or to that assembly (an input), or the build
+      # fails on a missing directory.
+      goRepoSrc = lib.fileset.toSource {
         root = ./.;
         fileset = lib.fileset.unions [
           ./cmd
@@ -38,12 +62,11 @@
           ./go.sum
           ./LICENSE
           ./THIRD_PARTY_NOTICES.md
-          ./third_party/go-sse
-          ./third_party/axonhub/llm
-          ./third_party/quickjs
         ];
       };
 
+      # The other source slice: a dashboard edit must not rebuild Go, and a Go
+      # edit must not rebuild the dashboard.
       webSrc = lib.fileset.toSource {
         root = ./.;
         fileset = lib.fileset.unions [
@@ -65,6 +88,18 @@
         system:
         let
           pkgs = import nixpkgs { inherit system; };
+
+          # go.mod points the three `replace` directives into `third_party/`,
+          # which the checkout no longer carries, so they are pasted in from
+          # the inputs. Only `llm/` of the axonhub input is reachable (its own
+          # go.mod, docs and frontend are not) — the copy is what slices it.
+          goSrc = pkgs.runCommand "picotera-go-src" { } ''
+            mkdir -p $out/third_party/axonhub
+            cp -r ${goRepoSrc}/. $out/
+            cp -r --no-preserve=mode ${go-sse} $out/third_party/go-sse
+            cp -r --no-preserve=mode ${axonhub}/llm $out/third_party/axonhub/llm
+            cp -r --no-preserve=mode ${quickjs} $out/third_party/quickjs
+          '';
 
           picotera-dashboard = pkgs.stdenv.mkDerivation (finalAttrs: {
             pname = "picotera-dashboard";
