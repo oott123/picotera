@@ -109,10 +109,10 @@
             nativeBuildInputs = [
               pkgs.nodejs_24
               pkgs.pnpm
-              pkgs.pnpm.configHook
+              pkgs.pnpmConfigHook
             ];
 
-            pnpmDeps = pkgs.pnpm.fetchDeps {
+            pnpmDeps = pkgs.fetchPnpmDeps {
               inherit (finalAttrs) pname version src;
               postPatch = webPostPatch;
               fetcherVersion = 4;
