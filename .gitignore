@@ -3,6 +3,7 @@
 /.env.*
 /.direnv/
 /picotera
+/result
 .pnpm-store
 node_modules
 /.claude/worktrees

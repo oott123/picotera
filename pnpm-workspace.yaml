@@ -1,7 +1,6 @@
 packages:
   - dashboard
-allowBuilds:
-  vue-demi: true
+allowBuilds: {}
 
 overrides:
   '@vue/compat': '3.6.0-beta.13'

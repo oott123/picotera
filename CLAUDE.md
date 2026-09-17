@@ -39,6 +39,22 @@ pnpm --dir dashboard format             # oxfmt src/
 pnpm --dir dashboard generate-openapi   # regenerate TS types from openapi.yaml
 ```
 
+### Nix packages
+
+Root `flake.nix` packages the release artifacts. `.nix/flake.nix` stays the devshell, so `nix develop` still has to point at `.nix/` (as `.envrc` does). The root flake needs Nix ≥ 2.27: `inputs.self.submodules = true` is what brings the three `third_party/` submodules into the build.
+
+```bash
+nix build                               # packages.default = picotera
+nix build .#picotera                    # symlinkJoin of the two binaries below
+nix build .#picotera-core               # go binary with dashboard/dist embedded
+nix build .#picotera-llmbridge-plugin   # cross-format converter plugin
+nix build .#picotera-dashboard          # dashboard/dist on its own
+```
+
+`packages.default` sets `PICOTERA_LLMBRIDGE_PLUGIN_PATH` to the plugin's store path with `--set-default`, so a deployment can still override it. The dashboard is built by `vite build` alone (no `vue-tsc`) and neither Go package runs tests (`doCheck = false`).
+
+Two fixed-output hashes are maintained by hand: `pnpmDeps.hash` follows `pnpm-lock.yaml`, `vendorHash` follows `go.mod` / `go.sum` and the submodule revisions. A stale hash fails the build and prints the value to use.
+
 ### OpenAPI → TypeScript SDK workflow
 
 The dashboard does not call the API by hand-written client code; types and the fetch client are generated from the spec.
