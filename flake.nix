@@ -2,7 +2,7 @@
   description = "PicoTera — LLM API gateway (packages only)";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
     # The three trees go.mod `replace`s — `third_party/go-sse`,
     # `third_party/axonhub/llm`, `third_party/quickjs` — are inputs rather than
@@ -115,8 +115,8 @@
             pnpmDeps = pkgs.pnpm.fetchDeps {
               inherit (finalAttrs) pname version src;
               postPatch = webPostPatch;
-              fetcherVersion = 3;
-              hash = "sha256-e4QCm2GWbC9VAZmofUC6N+wD+7yxgbVjkC5oKcus4o8=";
+              fetcherVersion = 4;
+              hash = "sha256-7LBJ1l4roSH2+g9KtiiMwRI3GB7f6N1axORvkllsTjw=";
             };
 
             postPatch = webPostPatch;
