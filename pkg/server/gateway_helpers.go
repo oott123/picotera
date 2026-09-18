@@ -689,8 +689,9 @@ func buildUpstreamRequest(ctx context.Context, original *http.Request, body []by
 	for key, values := range original.Header {
 		lower := strings.ToLower(key)
 		if lower == "authorization" || lower == "x-api-key" || lower == "x-goog-api-key" ||
-			lower == "host" || lower == "content-length" ||
+			lower == "host" || lower == "content-length" || lower == "cdn-loop" ||
 			strings.HasPrefix(lower, "x-picotera") ||
+			strings.HasPrefix(lower, "cf-") ||
 			(authHeaderName != "" && lower == authHeaderName) {
 			continue
 		}
