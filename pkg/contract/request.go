@@ -471,6 +471,11 @@ type ListRequestsRequest struct {
 	EndAt         string `query:"endAt,omitempty"`
 	EmptyResponse bool   `query:"emptyResponse,omitempty"`
 	FinishReason  int32  `query:"finishReason,omitempty"`
+	// Routing filters by whether the upstream reported a model other than the
+	// requested one or the one the attempt was forwarded as, compared
+	// case-insensitively. "detected" = 检测到路由, "undetected" = 未检测到路由
+	// (which includes rows with no inferred model at all). Absent = no filter.
+	Routing string `query:"routing,omitempty" enum:"detected,undetected"`
 	// Annotations is a URL-encoded JSON object of string values; requests are
 	// filtered by JSONB containment (@>, AND across pairs). Exact match only.
 	Annotations string `query:"annotations,omitempty"`

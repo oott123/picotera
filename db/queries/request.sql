@@ -26,6 +26,20 @@ WHERE
        OR starts_with(r.endpoint_path, sqlc.narg('endpoint_path')::text || '/'))
   AND (sqlc.narg('model')::text IS NULL OR r.model = sqlc.narg('model'))
   AND (sqlc.narg('upstream_model')::text IS NULL OR r.upstream_model = sqlc.narg('upstream_model'))
+  -- routed filter: a request counts as routed when the upstream reported a model
+  -- name that matches neither the requested model nor the upstream model it was
+  -- forwarded as (both compared case-insensitively, because upstreams disagree
+  -- about casing). A NULL/empty inferred model is never routed, and a row that
+  -- named no model at all has nothing to compare against, hence the coalesce.
+  AND (
+    sqlc.narg('routed')::bool IS NULL
+    OR sqlc.narg('routed')::bool = (
+      r.inferred_model IS NOT NULL
+      AND r.inferred_model <> ''
+      AND lower(r.inferred_model) <> lower(COALESCE(r.model, ''))
+      AND lower(r.inferred_model) <> lower(COALESCE(r.upstream_model, ''))
+    )
+  )
   AND (sqlc.narg('project_id')::int IS NULL OR r.project_id = sqlc.narg('project_id'))
   AND (sqlc.narg('start_at')::timestamp IS NULL OR r.created_at >= sqlc.narg('start_at')::timestamp)
   AND (sqlc.narg('end_at')::timestamp IS NULL OR r.created_at <= sqlc.narg('end_at')::timestamp)

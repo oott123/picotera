@@ -43,6 +43,9 @@ export type RequestsFilters = Readonly<{
   endAt?: string
   emptyResponse?: boolean
   finishReason?: number
+  // Whether the inferred model differs from both the requested and the upstream
+  // model (case-insensitive): "detected" = 检测到路由, "undetected" = 未检测到路由.
+  routing?: 'detected' | 'undetected'
   annotations?: string
 }>
 

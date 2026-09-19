@@ -3823,6 +3823,7 @@ export interface operations {
                 endAt?: string;
                 emptyResponse?: boolean;
                 finishReason?: number;
+                routing?: "detected" | "undetected";
                 annotations?: string;
             };
             header?: never;

@@ -160,6 +160,13 @@ func (s *Server) handleListRequests(ctx context.Context, input *contract.ListReq
 	if input.FinishReason != 0 {
 		filterFinishReason = pgtype.Int4{Int32: input.FinishReason, Valid: true}
 	}
+	var filterRouted pgtype.Bool
+	switch input.Routing {
+	case "detected":
+		filterRouted = pgtype.Bool{Bool: true, Valid: true}
+	case "undetected":
+		filterRouted = pgtype.Bool{Bool: false, Valid: true}
+	}
 	var filterTraceID pgtype.Text
 	if input.TraceID != "" {
 		if err := validateTraceID(input.TraceID); err != nil {
@@ -199,6 +206,7 @@ func (s *Server) handleListRequests(ctx context.Context, input *contract.ListReq
 		EndpointPath:    filterEndpointPath,
 		Model:           filterModel,
 		UpstreamModel:   filterUpstreamModel,
+		Routed:          filterRouted,
 		StartAt:         startAt,
 		EndAt:           endAt,
 		EmptyResponse:   pgtype.Bool{Bool: input.EmptyResponse, Valid: true},

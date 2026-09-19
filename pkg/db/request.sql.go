@@ -389,9 +389,23 @@ WHERE
        OR starts_with(r.endpoint_path, $5::text || '/'))
   AND ($6::text IS NULL OR r.model = $6)
   AND ($7::text IS NULL OR r.upstream_model = $7)
-  AND ($8::int IS NULL OR r.project_id = $8)
-  AND ($9::timestamp IS NULL OR r.created_at >= $9::timestamp)
-  AND ($10::timestamp IS NULL OR r.created_at <= $10::timestamp)
+  -- routed filter: a request counts as routed when the upstream reported a model
+  -- name that matches neither the requested model nor the upstream model it was
+  -- forwarded as (both compared case-insensitively, because upstreams disagree
+  -- about casing). A NULL/empty inferred model is never routed, and a row that
+  -- named no model at all has nothing to compare against, hence the coalesce.
+  AND (
+    $8::bool IS NULL
+    OR $8::bool = (
+      r.inferred_model IS NOT NULL
+      AND r.inferred_model <> ''
+      AND lower(r.inferred_model) <> lower(COALESCE(r.model, ''))
+      AND lower(r.inferred_model) <> lower(COALESCE(r.upstream_model, ''))
+    )
+  )
+  AND ($9::int IS NULL OR r.project_id = $9)
+  AND ($10::timestamp IS NULL OR r.created_at >= $10::timestamp)
+  AND ($11::timestamp IS NULL OR r.created_at <= $11::timestamp)
   AND (
     $1::text IS NULL
     OR (
@@ -404,8 +418,8 @@ WHERE
   -- Completion endpoint scope comes from the completion_endpoint_path view
   -- (db/migrations/045_request_outcome_cagg.sql).
   AND (
-    $11::bool IS NULL
-    OR NOT $11::bool
+    $12::bool IS NULL
+    OR NOT $12::bool
     OR (
       (r.output_tokens IS NULL OR r.output_tokens = 0)
       AND r.endpoint_path IN (SELECT path FROM completion_endpoint_path)
@@ -415,27 +429,27 @@ WHERE
   -- for "失败" (all failures = finish_reason IS NOT NULL AND <> 3 正常结束).
   -- NULL narg = no filter; "pending" (NULL finish_reason) is never a filter value.
   AND (
-    $12::int IS NULL
-    OR ($12::int = -1 AND r.finish_reason IS NOT NULL AND r.finish_reason <> 3)
-    OR r.finish_reason = $12::int
+    $13::int IS NULL
+    OR ($13::int = -1 AND r.finish_reason IS NOT NULL AND r.finish_reason <> 3)
+    OR r.finish_reason = $13::int
   )
   AND (
-    $13::text IS NULL
-    OR r.id = $13::text
-    OR r.parent_span_id = $13::text
-    OR r.external_request_id = $13::text
-    OR r.external_response_id = $13::text
+    $14::text IS NULL
+    OR r.id = $14::text
+    OR r.parent_span_id = $14::text
+    OR r.external_request_id = $14::text
+    OR r.external_response_id = $14::text
   )
   AND (
-    $14::jsonb IS NULL
-    OR r.annotations @> $14::jsonb
+    $15::jsonb IS NULL
+    OR r.annotations @> $15::jsonb
   )
   AND (
-    $15::timestamp IS NULL
-    OR (r.created_at, r.id) < ($15::timestamp, $16::text)
+    $16::timestamp IS NULL
+    OR (r.created_at, r.id) < ($16::timestamp, $17::text)
   )
 ORDER BY r.created_at DESC, r.id DESC
-LIMIT $17::int
+LIMIT $18::int
 `
 
 type ListRequestsParams struct {
@@ -446,6 +460,7 @@ type ListRequestsParams struct {
 	EndpointPath    pgtype.Text      `json:"endpointPath"`
 	Model           pgtype.Text      `json:"model"`
 	UpstreamModel   pgtype.Text      `json:"upstreamModel"`
+	Routed          pgtype.Bool      `json:"routed"`
 	ProjectID       pgtype.Int4      `json:"projectId"`
 	StartAt         pgtype.Timestamp `json:"startAt"`
 	EndAt           pgtype.Timestamp `json:"endAt"`
@@ -506,6 +521,7 @@ func (q *Queries) ListRequests(ctx context.Context, arg ListRequestsParams) ([]L
 		arg.EndpointPath,
 		arg.Model,
 		arg.UpstreamModel,
+		arg.Routed,
 		arg.ProjectID,
 		arg.StartAt,
 		arg.EndAt,

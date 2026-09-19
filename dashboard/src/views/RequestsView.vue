@@ -64,6 +64,7 @@ const filters = reactive({
   endAt: typeof route.query.endAt === 'string' ? route.query.endAt : '',
   emptyResponse: 0,
   finishReason: 0,
+  routing: '' as '' | 'detected' | 'undetected',
   annotationKey: '',
   annotationValue: '',
 })
@@ -134,6 +135,7 @@ const requestFilters = computed<RequestsFilters>(() => {
     endAt?: string
     emptyResponse?: boolean
     finishReason?: number
+    routing?: 'detected' | 'undetected'
     annotations?: string
   } = {}
   if (filters.type === 'meta') out.type = 0
@@ -149,6 +151,7 @@ const requestFilters = computed<RequestsFilters>(() => {
   if (filters.endAt) out.endAt = filters.endAt
   if (filters.emptyResponse) out.emptyResponse = true
   if (filters.finishReason) out.finishReason = filters.finishReason
+  if (filters.routing) out.routing = filters.routing
   if (filters.annotationKey) {
     out.annotations = JSON.stringify({ [filters.annotationKey]: filters.annotationValue })
   }
@@ -224,6 +227,7 @@ watch(
     filters.endAt,
     filters.emptyResponse,
     filters.finishReason,
+    filters.routing,
     filters.annotationKey,
     filters.annotationValue,
   ],
@@ -277,6 +281,7 @@ watch(
       filters.endAt = ''
       filters.emptyResponse = 0
       filters.finishReason = 0
+      filters.routing = ''
       filters.annotationKey = ''
       filters.annotationValue = ''
     }
@@ -412,7 +417,9 @@ const columns = computed<AutoDataTableColumn<RequestView>[]>(() => {
     {
       key: 'model',
       headerClass:
-        filters.model || filters.upstreamModel ? 'shadow-[inset_0_-2px_0_var(--color-accent)]' : '',
+        filters.model || filters.upstreamModel || filters.routing
+          ? 'shadow-[inset_0_-2px_0_var(--color-accent)]'
+          : '',
       cellTitle: modelCellTitle,
     },
     {
@@ -495,6 +502,14 @@ const finishReasonOptions: ColumnFilterOption<number>[] = [
   { value: 7, label: '控制台打断' },
 ]
 
+// Routing filter options: a request counts as routed when the upstream reported
+// a model that matches neither the requested model nor the one the attempt was
+// forwarded as (case-insensitive). An empty inferred model is never routed.
+const routingOptions: ColumnFilterOption<'detected' | 'undetected'>[] = [
+  { value: 'detected', label: '检测到路由' },
+  { value: 'undetected', label: '未检测到路由' },
+]
+
 function activeFilterCount(): number {
   let n = 0
   if (filters.providerId) n++
@@ -507,6 +522,7 @@ function activeFilterCount(): number {
   if (filters.startAt || filters.endAt) n++
   if (filters.emptyResponse) n++
   if (filters.finishReason) n++
+  if (filters.routing) n++
   if (filters.annotationKey) n++
   return n
 }
@@ -523,6 +539,7 @@ function clearAllFilters() {
   filters.endAt = ''
   filters.emptyResponse = 0
   filters.finishReason = 0
+  filters.routing = ''
   filters.annotationKey = ''
   filters.annotationValue = ''
 }
@@ -826,6 +843,13 @@ function resetCursorAndReload() {
             label="上游"
             :options="upstreamModelOptions"
             placeholder="按实际发到上游的模型过滤"
+          />
+          <ColumnFilter
+            v-model="filters.routing"
+            label="路由"
+            :options="routingOptions"
+            :searchable="false"
+            placeholder="按是否检测到路由过滤"
           />
         </template>
         <template #header-tokens>
