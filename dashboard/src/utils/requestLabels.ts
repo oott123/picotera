@@ -51,6 +51,20 @@ export function longestPrefixName(
   return best
 }
 
+// Where a request's inferred model came from — mirrors the
+// InferredModelSource* constants in pkg/db/request_constants.go. Source 0
+// ("nothing inferred") has no label.
+export function inferredModelSourceLabel(source: number | undefined | null): string {
+  switch (source) {
+    case 1:
+      return '思维链'
+    case 2:
+      return '响应'
+    default:
+      return ''
+  }
+}
+
 export function finishReasonLabel(reason: number | undefined | null): string {
   switch (reason) {
     case 1:

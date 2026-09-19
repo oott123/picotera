@@ -161,18 +161,6 @@ function providerLabel(id: number | undefined | null) {
   return p ? p.name : `#${id}`
 }
 
-// inferredModelSource: 1 = 思维链签名, 2 = 响应结构, 其余/缺省 = 无来源。
-function inferredModelSourceLabel(source: number | undefined | null): string {
-  switch (source) {
-    case 1:
-      return '思维链'
-    case 2:
-      return '响应'
-    default:
-      return ''
-  }
-}
-
 function statusCodeClass(code: number | undefined | null) {
   const c = code ?? 0
   if (c >= 200 && c < 300) return 'bg-ok-faint text-ok-ink'
@@ -194,7 +182,7 @@ function typeLabel(t: number) {
   return t === 0 ? 'META' : 'UPSTREAM'
 }
 
-import { finishReasonLabel } from '@/utils/requestLabels'
+import { finishReasonLabel, inferredModelSourceLabel } from '@/utils/requestLabels'
 
 function finishReasonVariant(
   reason: number | undefined | null,

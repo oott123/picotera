@@ -32,6 +32,7 @@ import {
 } from '@/ui'
 import {
   finishReasonLabel,
+  inferredModelSourceLabel,
   isUnifiedEndpoint,
   longestPrefixName,
   unifiedEndpointName,
@@ -412,6 +413,7 @@ const columns = computed<AutoDataTableColumn<RequestView>[]>(() => {
       key: 'model',
       headerClass:
         filters.model || filters.upstreamModel ? 'shadow-[inset_0_-2px_0_var(--color-accent)]' : '',
+      cellTitle: modelCellTitle,
     },
     {
       key: 'status',
@@ -660,6 +662,27 @@ function cacheHitRate(r: RequestView): number | null {
   return r.cacheReadTokens / denominator
 }
 
+// The inferred model gets its own line only when it tells us something the row
+// doesn't already say — it must differ from the model the request was served by
+// (the upstream model when the attempt recorded one, the requested model
+// otherwise), compared case-insensitively because upstreams disagree about
+// casing. A request that named no model at all has nothing to compare against,
+// so there the inference is always news.
+function showInferredModel(r: RequestView): boolean {
+  if (!r.inferredModel) return false
+  const served = r.upstreamModel || r.model
+  return !served || served.toLowerCase() !== r.inferredModel.toLowerCase()
+}
+
+function modelCellTitle(r: RequestView): string {
+  return [
+    `请求模型：${r.model || '—'}`,
+    `上游模型：${r.upstreamModel || '—'}`,
+    `推测模型：${r.inferredModel || '—'}`,
+    `推测来源：${inferredModelSourceLabel(r.inferredModelSource) || '—'}`,
+  ].join('\n')
+}
+
 function resetCursorAndReload() {
   previousRequestIds.value = new Set(requests.value.map((r) => rowKey(r)))
   isRefreshing.value = true
@@ -852,8 +875,15 @@ function resetCursorAndReload() {
           <span v-else class="text-ink-faint">—</span>
         </template>
         <template #cell-providerId="{ row }">
-          <span v-if="row.providerId" class="font-medium">{{ providerLabel(row.providerId) }}</span>
-          <span v-else class="text-ink-faint">—</span>
+          <div class="flex flex-col leading-tight">
+            <span v-if="row.providerId" class="font-medium">{{
+              providerLabel(row.providerId)
+            }}</span>
+            <span v-else class="text-ink-faint">—</span>
+            <span v-if="row.inferredProvider" class="text-2xs text-ink-muted">{{
+              row.inferredProvider
+            }}</span>
+          </div>
         </template>
         <template #cell-endpointPath="{ row }">
           <div class="flex items-center gap-1.5 min-w-0 max-w-2xs">
@@ -869,8 +899,11 @@ function resetCursorAndReload() {
           <div class="flex flex-col leading-tight">
             <span v-if="row.model" class="font-mono text-ink">{{ row.model }}</span>
             <span v-else class="text-ink-faint">—</span>
+            <span v-if="showInferredModel(row)" class="font-mono text-2xs text-warn-ink">{{
+              row.inferredModel
+            }}</span>
             <span
-              v-if="row.model && row.upstreamModel && row.model !== row.upstreamModel"
+              v-else-if="row.model && row.upstreamModel && row.model !== row.upstreamModel"
               class="font-mono text-2xs text-ink-faint"
               >{{ row.upstreamModel }}</span
             >

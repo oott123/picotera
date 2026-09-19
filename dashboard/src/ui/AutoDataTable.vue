@@ -12,6 +12,11 @@ export interface AutoDataTableColumn<R> {
   align?: 'left' | 'right'
   headerClass?: string
   cellClass?: string
+  /**
+   * Tooltip for the whole cell. When the table rows are links the title lands
+   * on the overlay link — the only element a pointer can reach inside the cell.
+   */
+  cellTitle?: (row: R) => string
 }
 
 const props = defineProps<{
@@ -99,9 +104,13 @@ function rowLabel(rowKeyValue: string | number): string {
             class="absolute inset-0 z-10"
             :href="rowHref(row)"
             :aria-label="rowLabel(rowKey(row, i))"
+            :title="col.cellTitle?.(row)"
             tabindex="-1"
           />
-          <div :class="rowHref ? 'relative z-20 pointer-events-none' : ''">
+          <div
+            :class="rowHref ? 'relative z-20 pointer-events-none' : ''"
+            :title="col.cellTitle?.(row)"
+          >
             <slot :name="`cell-${col.key}`" :row="row" :value="get(row, col.field)" :index="i">{{
               defaultFormat(get(row, col.field))
             }}</slot>
