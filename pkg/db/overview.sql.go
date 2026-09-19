@@ -1186,3 +1186,17 @@ func (q *Queries) ListOverviewTraceCountsByDimension(ctx context.Context, arg Li
 	}
 	return items, nil
 }
+
+const refreshRequestOverviewBucketed = `-- name: RefreshRequestOverviewBucketed :exec
+CALL refresh_continuous_aggregate('request_overview_bucketed', $1::timestamp, NULL)
+`
+
+// Rematerializes the cost-bearing continuous aggregate after a cost
+// recalculation. `start_at` NULL rebuilds it from the beginning ("whole
+// history"). The argument must be `timestamp` (request.created_at's type) and
+// the CALL must not run inside a transaction block — a single Exec of this
+// statement is auto-committed, which satisfies that.
+func (q *Queries) RefreshRequestOverviewBucketed(ctx context.Context, startAt pgtype.Timestamp) error {
+	_, err := q.db.Exec(ctx, refreshRequestOverviewBucketed, startAt)
+	return err
+}

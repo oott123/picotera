@@ -31,6 +31,8 @@ import type {
   ProjectView,
   ProviderEndpointView,
   ProviderView,
+  RecalculateModelCostsRequestBody,
+  RecalculateModelCostsResponseBody,
   RequestLiveView,
   RequestView,
   ScriptView,
@@ -141,6 +143,14 @@ export async function upsertModel(body: ModelView): Promise<ModelView> {
 export async function deleteModel(name: string): Promise<void> {
   const { error } = await api.POST('/api/picotera/models/delete', { body: { name } })
   if (error) fail(error, '删除模型失败')
+}
+
+export async function recalculateModelCosts(
+  body: RecalculateModelCostsRequestBody,
+): Promise<RecalculateModelCostsResponseBody> {
+  const { data, error } = await api.POST('/api/picotera/models/recalculate-cost', { body })
+  if (error) fail(error, '重算历史费用失败')
+  return data
 }
 
 export async function listProviderEndpoints(providerId?: number): Promise<ProviderEndpointView[]> {
@@ -458,6 +468,15 @@ export function invalidateEndpoints(client: QueryClient) {
 export function invalidateModels(client: QueryClient) {
   client.invalidateQueries({ queryKey: queryKeys.models.all })
   client.invalidateQueries({ queryKey: queryKeys.requests.all })
+}
+
+// A cost recalculation rewrites model_cost on historical request rows: request
+// rows, traces and both overviews all render it.
+export function invalidateRequestCosts(client: QueryClient) {
+  client.invalidateQueries({ queryKey: queryKeys.requests.all })
+  client.invalidateQueries({ queryKey: queryKeys.requestTraces.all })
+  client.invalidateQueries({ queryKey: queryKeys.overview.all })
+  client.invalidateQueries({ queryKey: queryKeys.adminOverview.all })
 }
 
 export function invalidateProviderEndpoints(client: QueryClient) {

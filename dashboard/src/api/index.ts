@@ -4,6 +4,10 @@ export type ProviderView = components['schemas']['ProviderView']
 export type ProviderModelEntry = components['schemas']['ProviderModelEntry']
 export type CreateProviderRequestBody = components['schemas']['CreateProviderRequestBody']
 export type ModelView = components['schemas']['ModelView']
+export type RecalculateModelCostsRequestBody =
+  components['schemas']['RecalculateModelCostsRequestBody']
+export type RecalculateModelCostsResponseBody =
+  components['schemas']['RecalculateModelCostsResponseBody']
 export type EndpointView = components['schemas']['EndpointView']
 export type ProviderEndpointView = components['schemas']['ProviderEndpointView']
 export type RequestView = components['schemas']['RequestView']

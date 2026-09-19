@@ -20,6 +20,7 @@ import {
 } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
 import ModelForm from '@/components/ModelForm.vue'
+import ModelCostRecalcPanel from '@/components/ModelCostRecalcPanel.vue'
 import ModelPricingMatchPanel from '@/components/ModelPricingMatchPanel.vue'
 import PricingExportPanel from '@/components/PricingExportPanel.vue'
 import ModelUpstreamsPanel, { type Upstream } from '@/components/ModelUpstreamsPanel.vue'
@@ -165,6 +166,10 @@ function openPricingExport(m: ModelView) {
   panel.open(PricingExportPanel, { model: m }, { key: `model-pricing-export:${m.name}` })
 }
 
+function openCostRecalc(m: ModelView) {
+  panel.open(ModelCostRecalcPanel, { model: m }, { key: `model-cost-recalc:${m.name}` })
+}
+
 async function toggleDisabled(m: ModelView) {
   await upsertModelMutation.mutateAsync({ ...m, disabled: !m.disabled })
 }
@@ -289,6 +294,15 @@ function confirmDelete(_event: Event, m: ModelView) {
                     @click="openPricingExport(m)"
                   >
                     <Icon name="braces" :size="13" />
+                  </IconButton>
+                  <IconButton
+                    v-if="m.pricing?.tiers?.length"
+                    :active="panel.isActive(`model-cost-recalc:${m.name}`)"
+                    title="重算历史费用"
+                    aria-label="重算历史费用"
+                    @click="openCostRecalc(m)"
+                  >
+                    <Icon name="refresh" :size="13" />
                   </IconButton>
                   <IconButton
                     :active="panel.isActive(`model:${m.name}`)"

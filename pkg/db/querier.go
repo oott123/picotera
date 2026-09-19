@@ -115,6 +115,14 @@ type Querier interface {
 	ListOverviewTraceCountsByDimension(ctx context.Context, arg ListOverviewTraceCountsByDimensionParams) ([]ListOverviewTraceCountsByDimensionRow, error)
 	ListProjects(ctx context.Context, userID int64) ([]Project, error)
 	ListProviderEndpoints(ctx context.Context, providerID pgtype.Int4) ([]ProviderEndpoint, error)
+	// One keyset page of the rows a model cost recalculation rewrites, ordered by
+	// the hypertable's primary key. `start_at` NULL means "the whole history";
+	// `end_at` is fixed when the recalculation starts. Only rows with a finish
+	// reason have final token counts — an in-flight request (finish_reason IS NULL)
+	// is billed by the gateway when it ends and is deliberately out of scope.
+	// Rewritten rows keep matching this predicate (cost is not part of it), so the
+	// cursor is what makes the scan move forward.
+	ListRequestCostRecalcBatch(ctx context.Context, arg ListRequestCostRecalcBatchParams) ([]ListRequestCostRecalcBatchRow, error)
 	ListRequestTraces(ctx context.Context, arg ListRequestTracesParams) ([]ListRequestTracesRow, error)
 	ListRequests(ctx context.Context, arg ListRequestsParams) ([]ListRequestsRow, error)
 	ListRequestsBySpan(ctx context.Context, arg ListRequestsBySpanParams) ([]ListRequestsBySpanRow, error)
@@ -126,6 +134,12 @@ type Querier interface {
 	MatchProjectByPaths(ctx context.Context, arg MatchProjectByPathsParams) (int32, error)
 	MergeProjectReassignRequests(ctx context.Context, arg MergeProjectReassignRequestsParams) (int64, error)
 	MergeProjectUpdateTarget(ctx context.Context, arg MergeProjectUpdateTargetParams) (Project, error)
+	// Rematerializes the cost-bearing continuous aggregate after a cost
+	// recalculation. `start_at` NULL rebuilds it from the beginning ("whole
+	// history"). The argument must be `timestamp` (request.created_at's type) and
+	// the CALL must not run inside a transaction block — a single Exec of this
+	// statement is auto-committed, which satisfies that.
+	RefreshRequestOverviewBucketed(ctx context.Context, startAt pgtype.Timestamp) error
 	SetApiKeyAnnotation(ctx context.Context, arg SetApiKeyAnnotationParams) (int64, error)
 	SetProviderAnnotation(ctx context.Context, arg SetProviderAnnotationParams) (int64, error)
 	SetRequestAnnotation(ctx context.Context, arg SetRequestAnnotationParams) (int64, error)
@@ -140,6 +154,11 @@ type Querier interface {
 	UpdateProject(ctx context.Context, arg UpdateProjectParams) (Project, error)
 	UpdateProvider(ctx context.Context, arg UpdateProviderParams) (Provider, error)
 	UpdateRequest(ctx context.Context, arg UpdateRequestParams) error
+	// Batch-writes recomputed costs, matching the request hypertable's composite
+	// primary key. A NULL element in `costs` means "not billable" and clears both
+	// columns, same as the gateway's own write path; the currency is a single
+	// argument because one recalculation bills against one pricing's currency.
+	UpdateRequestCosts(ctx context.Context, arg UpdateRequestCostsParams) error
 	UpdateScript(ctx context.Context, arg UpdateScriptParams) (Script, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (AppUser, error)
 	UpdateUserAdmin(ctx context.Context, arg UpdateUserAdminParams) (AppUser, error)

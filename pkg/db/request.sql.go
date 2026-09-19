@@ -111,6 +111,89 @@ func (q *Queries) GetRequest(ctx context.Context, arg GetRequestParams) (GetRequ
 	return i, err
 }
 
+const listRequestCostRecalcBatch = `-- name: ListRequestCostRecalcBatch :many
+SELECT
+  r.id,
+  r.created_at,
+  r.input_tokens,
+  r.output_tokens,
+  r.cache_read_tokens,
+  r.cache_write_tokens,
+  r.cache_write_1h_tokens
+FROM request r
+WHERE r.model = $1::text
+  AND ($2::timestamp IS NULL OR r.created_at >= $2::timestamp)
+  AND r.created_at < $3::timestamp
+  AND r.finish_reason IS NOT NULL
+  AND (
+    $4::timestamp IS NULL
+    OR (r.created_at, r.id) > ($4::timestamp, $5::text)
+  )
+ORDER BY r.created_at ASC, r.id ASC
+LIMIT $6::int
+`
+
+type ListRequestCostRecalcBatchParams struct {
+	Model           string           `json:"model"`
+	StartAt         pgtype.Timestamp `json:"startAt"`
+	EndAt           pgtype.Timestamp `json:"endAt"`
+	CursorCreatedAt pgtype.Timestamp `json:"cursorCreatedAt"`
+	CursorID        pgtype.Text      `json:"cursorId"`
+	Limit           int32            `json:"limit"`
+}
+
+type ListRequestCostRecalcBatchRow struct {
+	ID                 string           `json:"id"`
+	CreatedAt          pgtype.Timestamp `json:"createdAt"`
+	InputTokens        pgtype.Int4      `json:"inputTokens"`
+	OutputTokens       pgtype.Int4      `json:"outputTokens"`
+	CacheReadTokens    pgtype.Int4      `json:"cacheReadTokens"`
+	CacheWriteTokens   pgtype.Int4      `json:"cacheWriteTokens"`
+	CacheWrite1hTokens pgtype.Int4      `json:"cacheWrite1hTokens"`
+}
+
+// One keyset page of the rows a model cost recalculation rewrites, ordered by
+// the hypertable's primary key. `start_at` NULL means "the whole history";
+// `end_at` is fixed when the recalculation starts. Only rows with a finish
+// reason have final token counts — an in-flight request (finish_reason IS NULL)
+// is billed by the gateway when it ends and is deliberately out of scope.
+// Rewritten rows keep matching this predicate (cost is not part of it), so the
+// cursor is what makes the scan move forward.
+func (q *Queries) ListRequestCostRecalcBatch(ctx context.Context, arg ListRequestCostRecalcBatchParams) ([]ListRequestCostRecalcBatchRow, error) {
+	rows, err := q.db.Query(ctx, listRequestCostRecalcBatch,
+		arg.Model,
+		arg.StartAt,
+		arg.EndAt,
+		arg.CursorCreatedAt,
+		arg.CursorID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRequestCostRecalcBatchRow
+	for rows.Next() {
+		var i ListRequestCostRecalcBatchRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.InputTokens,
+			&i.OutputTokens,
+			&i.CacheReadTokens,
+			&i.CacheWriteTokens,
+			&i.CacheWrite1hTokens,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRequestTraces = `-- name: ListRequestTraces :many
 SELECT
   traces.id,
@@ -803,6 +886,39 @@ func (q *Queries) UpdateRequest(ctx context.Context, arg UpdateRequestParams) er
 		arg.ExternalResponseID,
 		arg.ID,
 		arg.CreatedAt,
+	)
+	return err
+}
+
+const updateRequestCosts = `-- name: UpdateRequestCosts :exec
+UPDATE request AS r
+SET model_cost = v.model_cost,
+    model_cost_currency = CASE WHEN v.model_cost IS NULL THEN NULL ELSE $1::text END
+FROM ROWS FROM (
+  unnest($2::text[]),
+  unnest($3::timestamp[]),
+  unnest($4::numeric[])
+) AS v(id, created_at, model_cost)
+WHERE r.id = v.id AND r.created_at = v.created_at
+`
+
+type UpdateRequestCostsParams struct {
+	Currency   string             `json:"currency"`
+	Ids        []string           `json:"ids"`
+	CreatedAts []pgtype.Timestamp `json:"createdAts"`
+	Costs      []pgtype.Numeric   `json:"costs"`
+}
+
+// Batch-writes recomputed costs, matching the request hypertable's composite
+// primary key. A NULL element in `costs` means "not billable" and clears both
+// columns, same as the gateway's own write path; the currency is a single
+// argument because one recalculation bills against one pricing's currency.
+func (q *Queries) UpdateRequestCosts(ctx context.Context, arg UpdateRequestCostsParams) error {
+	_, err := q.db.Exec(ctx, updateRequestCosts,
+		arg.Currency,
+		arg.Ids,
+		arg.CreatedAts,
+		arg.Costs,
 	)
 	return err
 }

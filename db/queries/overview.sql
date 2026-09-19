@@ -412,3 +412,11 @@ SELECT
 FROM speeds
 GROUP BY group_key
 ORDER BY median_speed DESC, max_speed DESC, group_key ASC;
+
+-- name: RefreshRequestOverviewBucketed :exec
+-- Rematerializes the cost-bearing continuous aggregate after a cost
+-- recalculation. `start_at` NULL rebuilds it from the beginning ("whole
+-- history"). The argument must be `timestamp` (request.created_at's type) and
+-- the CALL must not run inside a transaction block — a single Exec of this
+-- statement is auto-committed, which satisfies that.
+CALL refresh_continuous_aggregate('request_overview_bucketed', sqlc.narg('start_at')::timestamp, NULL);

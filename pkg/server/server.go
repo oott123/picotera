@@ -368,6 +368,7 @@ func (s *Server) register(mgmt, admin *huma.Group) {
 	huma.Register(admin, contract.OperationGetModel, s.handleGetModel)
 	huma.Register(admin, contract.OperationPutModel, s.handlePutModel)
 	huma.Register(admin, contract.OperationDeleteModel, s.handleDeleteModel)
+	huma.Register(admin, contract.OperationRecalculateModelCosts, s.handleRecalculateModelCosts)
 	huma.Register(admin, contract.OperationListEndpoints, s.handleListEndpoints)
 	huma.Register(admin, contract.OperationUpsertEndpoint, s.handleUpsertEndpoint)
 	huma.Register(admin, contract.OperationDeleteEndpoint, s.handleDeleteEndpoint)

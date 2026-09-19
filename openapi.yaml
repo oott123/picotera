@@ -1411,6 +1411,59 @@ components:
         - supportsNativeWebSearch
         - insecureTls
       type: object
+    RecalculateModelCostsRequestBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/RecalculateModelCostsRequestBody.json
+          format: uri
+          readOnly: true
+          type: string
+        name:
+          example: gpt-5.6-luna
+          type: string
+        range:
+          description: Go duration parsed by time.ParseDuration; empty means the whole history
+          example: 168h
+          type: string
+      required:
+        - name
+      type: object
+    RecalculateModelCostsResponseBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/RecalculateModelCostsResponseBody.json
+          format: uri
+          readOnly: true
+          type: string
+        endAt:
+          example: "2026-09-19T07:57:27Z"
+          type: string
+        model:
+          type: string
+        range:
+          type: string
+        startAt:
+          example: "2026-09-12T07:57:27Z"
+          type: string
+        tookMs:
+          example: 812
+          format: int64
+          type: integer
+        updated:
+          example: 1234
+          format: int64
+          type: integer
+      required:
+        - model
+        - range
+        - endAt
+        - updated
+        - tookMs
+      type: object
     RequestLiveView:
       additionalProperties: false
       properties:
@@ -2822,6 +2875,29 @@ paths:
                 $ref: "#/components/schemas/PicoTeraError"
           description: Error
       summary: Delete a model
+  /api/picotera/models/recalculate-cost:
+    post:
+      operationId: recalculateModelCosts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecalculateModelCostsRequestBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecalculateModelCostsResponseBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PicoTeraError"
+          description: Error
+      summary: Recalculate the recorded cost of a model's historical requests
   /api/picotera/models/{name}:
     get:
       operationId: getModel

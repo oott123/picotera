@@ -245,3 +245,46 @@ UPDATE request SET annotations = CASE
     ELSE COALESCE(annotations, '{}'::jsonb) || jsonb_build_object(sqlc.arg('key')::text, sqlc.narg('value')::text)
   END
 WHERE id = sqlc.arg('id')::text;
+
+-- name: ListRequestCostRecalcBatch :many
+-- One keyset page of the rows a model cost recalculation rewrites, ordered by
+-- the hypertable's primary key. `start_at` NULL means "the whole history";
+-- `end_at` is fixed when the recalculation starts. Only rows with a finish
+-- reason have final token counts — an in-flight request (finish_reason IS NULL)
+-- is billed by the gateway when it ends and is deliberately out of scope.
+-- Rewritten rows keep matching this predicate (cost is not part of it), so the
+-- cursor is what makes the scan move forward.
+SELECT
+  r.id,
+  r.created_at,
+  r.input_tokens,
+  r.output_tokens,
+  r.cache_read_tokens,
+  r.cache_write_tokens,
+  r.cache_write_1h_tokens
+FROM request r
+WHERE r.model = sqlc.arg('model')::text
+  AND (sqlc.narg('start_at')::timestamp IS NULL OR r.created_at >= sqlc.narg('start_at')::timestamp)
+  AND r.created_at < sqlc.arg('end_at')::timestamp
+  AND r.finish_reason IS NOT NULL
+  AND (
+    sqlc.narg('cursor_created_at')::timestamp IS NULL
+    OR (r.created_at, r.id) > (sqlc.narg('cursor_created_at')::timestamp, sqlc.narg('cursor_id')::text)
+  )
+ORDER BY r.created_at ASC, r.id ASC
+LIMIT sqlc.arg('limit')::int;
+
+-- name: UpdateRequestCosts :exec
+-- Batch-writes recomputed costs, matching the request hypertable's composite
+-- primary key. A NULL element in `costs` means "not billable" and clears both
+-- columns, same as the gateway's own write path; the currency is a single
+-- argument because one recalculation bills against one pricing's currency.
+UPDATE request AS r
+SET model_cost = v.model_cost,
+    model_cost_currency = CASE WHEN v.model_cost IS NULL THEN NULL ELSE sqlc.arg('currency')::text END
+FROM ROWS FROM (
+  unnest(sqlc.arg('ids')::text[]),
+  unnest(sqlc.arg('created_ats')::timestamp[]),
+  unnest(sqlc.arg('costs')::numeric[])
+) AS v(id, created_at, model_cost)
+WHERE r.id = v.id AND r.created_at = v.created_at;

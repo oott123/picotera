@@ -418,6 +418,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/picotera/models/recalculate-cost": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Recalculate the recorded cost of a model's historical requests */
+        post: operations["recalculateModelCosts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/picotera/models/{name}": {
         parameters: {
             query?: never;
@@ -1702,6 +1719,45 @@ export interface components {
             proxyUrl?: string;
             supportsNativeWebSearch: boolean;
         };
+        RecalculateModelCostsRequestBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/RecalculateModelCostsRequestBody.json
+             */
+            readonly $schema?: string;
+            /** @example gpt-5.6-luna */
+            name: string;
+            /**
+             * @description Go duration parsed by time.ParseDuration; empty means the whole history
+             * @example 168h
+             */
+            range?: string;
+        };
+        RecalculateModelCostsResponseBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/RecalculateModelCostsResponseBody.json
+             */
+            readonly $schema?: string;
+            /** @example 2026-09-19T07:57:27Z */
+            endAt: string;
+            model: string;
+            range: string;
+            /** @example 2026-09-12T07:57:27Z */
+            startAt?: string;
+            /**
+             * Format: int64
+             * @example 812
+             */
+            tookMs: number;
+            /**
+             * Format: int64
+             * @example 1234
+             */
+            updated: number;
+        };
         RequestLiveView: {
             /**
              * Format: uri
@@ -2934,6 +2990,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    recalculateModelCosts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecalculateModelCostsRequestBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecalculateModelCostsResponseBody"];
+                };
             };
             /** @description Error */
             default: {
