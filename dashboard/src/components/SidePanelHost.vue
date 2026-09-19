@@ -29,15 +29,21 @@ const mode = computed<'right' | 'modal'>(() => {
 </script>
 
 <template>
+  <!-- The panel is pinned to the viewport, so the reserved column is a spacer of its own. -->
+  <div
+    v-if="state && mode === 'right'"
+    class="flex-none"
+    :style="{ flexBasis: cssWidth, width: cssWidth }"
+  />
   <aside
     v-if="state"
     class="flex min-h-0"
     :class="
       mode === 'modal'
         ? 'fixed inset-0 z-[900] w-auto items-center justify-center p-4'
-        : 'sticky top-3 self-start flex-none pr-8 pb-8 h-[calc(100dvh-0.75rem)] max-h-[calc(100dvh-0.75rem)]'
+        : 'fixed top-3 right-0 pr-8 pb-8 h-[calc(100dvh-0.75rem)] max-h-[calc(100dvh-0.75rem)]'
     "
-    :style="mode === 'modal' ? undefined : { flexBasis: cssWidth, width: cssWidth }"
+    :style="mode === 'modal' ? undefined : { width: cssWidth }"
   >
     <div
       v-if="mode === 'modal'"

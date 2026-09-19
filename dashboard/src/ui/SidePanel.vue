@@ -12,7 +12,7 @@ const emit = defineEmits<{ close: [] }>()
 
 <template>
   <section
-    class="bg-surface-0 border border-line rounded-xl shadow-sm flex flex-col overflow-hidden min-h-0 h-full"
+    class="bg-surface-0 border border-line rounded-xl shadow-sm flex flex-col overflow-hidden min-h-0"
   >
     <header
       class="flex items-start justify-between gap-2 px-4 py-3.5 border-b border-line bg-surface-50 flex-none"
