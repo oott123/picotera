@@ -32,6 +32,9 @@ const thinkingOpen = defineModel<boolean>('thinkingOpen', { required: true })
 const { responseRawShowTimings: showTimings } = useRequestDetailUiState()
 const ctState = computed(() => sseContentTypeState(props.payload.headers))
 const isBinary = computed(() => props.payload.bodyEncoding === 'base64')
+// The OTR body modes strip bodies before upload, which lands as an empty
+// string — indistinguishable from a payload that never carried one.
+const hasBody = computed(() => !!props.payload.body)
 const jsonBody = computed(() => {
   if (isBinary.value || !isJsonContentType(props.payload.headers)) {
     return { ok: false, value: null, error: '' }
@@ -197,9 +200,8 @@ watch(
     <section class="flex flex-col gap-2">
       <div class="flex items-center justify-between gap-3">
         <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.04em]">Body</span>
-        <div v-if="!isBinary" class="flex items-center gap-1">
+        <div v-if="!isBinary && hasBody" class="flex items-center gap-1">
           <IconButton
-            v-if="!isBinary && payload.body"
             title="下载原始响应"
             aria-label="下载原始响应"
             @click="downloadRawResponse"
@@ -216,6 +218,8 @@ watch(
           >下载原始数据</a
         >
       </div>
+
+      <StateText v-else-if="!hasBody" :dashed="false" compact>响应体不存在或未记录</StateText>
 
       <!-- Raw -->
       <template v-else-if="subView === 'raw'">

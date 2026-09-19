@@ -27,6 +27,10 @@ const requestJsonBody = computed(() => {
   return parseJsonBody(payload.value.body, payload.value.bodyEncoding)
 })
 
+// The OTR body modes strip bodies before upload, which lands as an empty
+// string — indistinguishable from a payload that never carried one.
+const hasBody = computed(() => !!payload.value?.body)
+
 const requestBodyOptions = computed(() => {
   if (!requestJsonBody.value.ok) return [{ value: 'raw', label: 'Raw' }]
   return [
@@ -159,6 +163,7 @@ async function copyAsCurl() {
               >下载原始数据</a
             >
           </div>
+          <StateText v-else-if="!hasBody" :dashed="false" compact>请求体不存在或未记录</StateText>
           <template v-else-if="bodyView === 'json' && requestJsonBody.ok">
             <JsonArtifactViewer :value="requestJsonBody.value" />
           </template>
@@ -169,7 +174,7 @@ async function copyAsCurl() {
           >
             {{ requestJsonBody.error }}
           </StateText>
-          <template v-if="bodyView === 'raw'">
+          <template v-if="bodyView === 'raw' && hasBody">
             <pre
               class="font-mono text-xs whitespace-pre-wrap break-all bg-surface-50 border border-line-soft rounded-md p-3 m-0 text-ink overflow-auto max-h-[480px]"
               >{{ bodyDisplay(payload.body, payload.bodyEncoding) }}</pre
