@@ -13,7 +13,8 @@
 //
 // The unified routes — five generation routes (/api/unified/v1/messages,
 // /v1/responses, /v1/chat/completions, and the two /v1beta/models/{model}:…
-// Gemini variants), /api/unified/v1/embeddings, and the /api/unified/codex/*
+// Gemini variants), /api/unified/v1/embeddings,
+// /api/unified/v1/messages/count_tokens, and the /api/unified/codex/*
 // wildcard mount — are registered as chi handlers in server.go BEFORE the
 // catch-all gateway mount, so they never hit Match. They are not rows in the
 // endpoint table — they are runtime constants, see handle_unified_gateway.go.

@@ -16,6 +16,7 @@ const UNIFIED_ENDPOINT_NAMES: Record<string, string> = {
   '/api/unified/codex/responses/compact': 'Codex 压缩',
   '/api/unified/codex/alpha/search': 'Codex 搜索 v1alpha',
   '/api/unified/v1/embeddings': 'OpenAI 特征提取',
+  '/api/unified/v1/messages/count_tokens': 'Anthropic Tokens 计数',
 }
 
 export function isUnifiedEndpoint(path: string | undefined | null): boolean {

@@ -67,6 +67,7 @@ func TestUnifiedRoutesTable(t *testing.T) {
 		{"/api/unified/v1beta/models/{model}:generateContent", llmbridge.FormatGeminiGenerateContent, contract.EndpointType_GeminiGenerateContent, false},
 		{"/api/unified/v1beta/models/{model}:streamGenerateContent", llmbridge.FormatGeminiStreamGenerateContent, contract.EndpointType_GeminiStreamGenerateContent, false},
 		{"/api/unified/v1/embeddings", llmbridge.FormatUnknown, contract.EndpointType_OpenAIEmbedding, true},
+		{"/api/unified/v1/messages/count_tokens", llmbridge.FormatUnknown, contract.EndpointType_AnthropicCountTokens, true},
 	}
 	if len(cases) != len(unifiedRoutes) {
 		t.Fatalf("route table has %d entries, test covers %d", len(unifiedRoutes), len(cases))
@@ -356,6 +357,7 @@ func TestCodexUnifiedRoute(t *testing.T) {
 func TestCandidateEndpointTypesPassthrough(t *testing.T) {
 	cases := map[string]int32{
 		"/api/unified/v1/embeddings": contract.EndpointType_OpenAIEmbedding,
+		"/api/unified/v1/messages/count_tokens": contract.EndpointType_AnthropicCountTokens,
 	}
 	for path, wantType := range cases {
 		route := unifiedRouteByPath(t, path)
@@ -398,6 +400,7 @@ func TestExtractUnifiedModel_Passthrough(t *testing.T) {
 		wantModel string
 	}{
 		{"embeddings", unifiedRouteByPath(t, "/api/unified/v1/embeddings"), `{"model":"text-embedding-3-small","input":"hi"}`, "text-embedding-3-small"},
+		{"count tokens", unifiedRouteByPath(t, "/api/unified/v1/messages/count_tokens"), `{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hi"}]}`, "claude-sonnet-4-5"},
 		{"codex compact", codexUnifiedRoute("/responses/compact"), `{"model":"gpt-5-codex","input":[]}`, "gpt-5-codex"},
 		{"codex search", codexUnifiedRoute("/alpha/search"), `{"model":"gpt-5-codex","query":"hi"}`, "gpt-5-codex"},
 	}

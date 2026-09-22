@@ -34,6 +34,13 @@ var unifiedRoutes = []unifiedRoute{
 	// the body carries no `stream` field so detectStreaming is always false,
 	// and a passthrough route's candidate set ignores the flag anyway.
 	{Path: "/api/unified/v1/embeddings", Name: "Unified OpenAI Embeddings", Format: llmbridge.FormatUnknown, SourceType: contract.EndpointType_OpenAIEmbedding},
+	// Anthropic token counting: the request carries the Messages shape but
+	// produces no completion — the response is {"input_tokens": N}. llmbridge
+	// has no converter for it, so this is a passthrough route served only by
+	// endpoints of type anthropicCountTokens (5); an anthropicMessages endpoint
+	// does not serve it (its upstream URL is the messages URL, not the
+	// count_tokens one).
+	{Path: "/api/unified/v1/messages/count_tokens", Name: "Unified Anthropic Count Tokens", Format: llmbridge.FormatUnknown, SourceType: contract.EndpointType_AnthropicCountTokens},
 }
 
 type unifiedRoute struct {
