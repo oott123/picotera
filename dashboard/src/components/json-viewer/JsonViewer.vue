@@ -549,7 +549,7 @@ onBeforeUnmount(() => {
           <!-- centred on the line box, the chevron reads high against
                the lowercase text, whose visual middle is below the box's. -->
           <span
-            class="inline-flex h-5 w-3.5 flex-none translate-y-[2px] -translate-x-px items-center justify-center text-ink-faint"
+            class="inline-flex h-5 w-3.5 flex-none translate-y-px -translate-x-px items-center justify-center text-ink-faint"
           >
             <Icon
               v-if="row.expandable"
