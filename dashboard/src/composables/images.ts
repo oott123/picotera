@@ -77,7 +77,7 @@ export function imageFromBase64(data: unknown, declaredMediaType?: unknown): Ima
 /**
  * Scheme whitelist: `data:image/…` and http(s) only. These URLs come from
  * untrusted upstream / client payloads and go straight into `<img :src>`
- * without passing through DOMPurify, so anything else (`gs://`, `file:`,
+ * with no filtering layer in between, so anything else (`gs://`, `file:`,
  * `javascript:`) is rejected here and falls back to a text chip.
  */
 export function imageFromUrl(url: unknown): ImageSource | null {

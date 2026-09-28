@@ -1,5 +1,4 @@
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
+import { renderHtml } from '@tanstack/markdown/html'
 import type { AggregatedFormat, AggregatedResponse } from '@/components/artifactTypes'
 
 export interface ContentResult {
@@ -240,7 +239,8 @@ export function sseContentTypeState(
   return 'absent'
 }
 
+// Raw HTML is escaped as text (`allowHtml` stays off); frontmatter would swallow a reply that
+// opens with `---`, and heading ids would collide across the messages rendered on one page.
 export function renderMarkdown(text: string): string {
-  const html = marked.parse(text, { async: false }) as string
-  return DOMPurify.sanitize(html)
+  return renderHtml(text, { frontmatter: false, headingIds: false })
 }

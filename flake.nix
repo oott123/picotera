@@ -116,7 +116,7 @@
               inherit (finalAttrs) pname version src;
               postPatch = webPostPatch;
               fetcherVersion = 4;
-              hash = "sha256-7LBJ1l4roSH2+g9KtiiMwRI3GB7f6N1axORvkllsTjw=";
+              hash = "sha256-eK2XkgxyjGb3sJ5govww1rgxNBtZXyji8lcun0dLYLM=";
             };
 
             postPatch = webPostPatch;
