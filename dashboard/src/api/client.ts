@@ -446,9 +446,12 @@ export async function interruptRequest(id: string): Promise<boolean> {
   return data?.interrupted ?? false
 }
 
-export async function listRequestTraces(
-  filters: { limit: number; cursor?: string; startAt?: string; endAt?: string },
-) {
+export async function listRequestTraces(filters: {
+  limit: number
+  cursor?: string
+  startAt?: string
+  endAt?: string
+}) {
   const { data, error } = await api.GET('/api/picotera/request-traces', {
     params: { query: filters },
   })
@@ -751,7 +754,10 @@ export interface TestDirectPayload {
 
 // postTestDirect calls the short-circuit test route. The backend injects the
 // provider's credentials and forwards `body` verbatim to the upstream.
-export function postTestDirect(payload: TestDirectPayload, signal?: AbortSignal): Promise<Response> {
+export function postTestDirect(
+  payload: TestDirectPayload,
+  signal?: AbortSignal,
+): Promise<Response> {
   return fetch('/api/picotera/test/direct', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

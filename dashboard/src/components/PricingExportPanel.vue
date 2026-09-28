@@ -62,16 +62,13 @@ async function copy() {
     <pre
       v-if="result.expression"
       class="font-mono text-xs whitespace-pre-wrap break-all bg-surface-50 border border-line-soft rounded-md p-3 m-0 text-ink overflow-auto max-h-[480px]"
-    >{{ result.expression }}</pre>
+      >{{ result.expression }}</pre
+    >
 
     <template v-if="result.error" #error>{{ result.error }}</template>
 
     <template #footer>
-      <Button
-        variant="ghost"
-        :disabled="!!result.error || !result.expression"
-        @click="copy"
-      >
+      <Button variant="ghost" :disabled="!!result.error || !result.expression" @click="copy">
         <Icon :name="copied ? 'check' : 'copy'" :size="13" />
         <span>{{ copied ? '已复制' : '复制表达式' }}</span>
       </Button>

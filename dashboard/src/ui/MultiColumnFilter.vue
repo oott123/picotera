@@ -39,7 +39,10 @@ const placement = computed(() => (props.align === 'right' ? 'bottom-end' : 'bott
 const isActive = computed(() => props.modelValue.length > 0)
 const selectedSet = computed(() => new Set<V>(props.modelValue))
 const showMatchMode = computed(
-  () => props.modelValue.length > 1 && props.matchMode !== undefined && !!props.matchModeOptions?.length,
+  () =>
+    props.modelValue.length > 1 &&
+    props.matchMode !== undefined &&
+    !!props.matchModeOptions?.length,
 )
 
 const filteredOptions = computed(() => {

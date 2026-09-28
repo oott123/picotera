@@ -32,7 +32,9 @@ const selectedOption = computed(() => props.options.find((o) => o.value === prop
 
 const selectedLabel = computed(() => selectedOption.value?.label ?? String(props.modelValue ?? ''))
 
-const hasSelection = computed(() => selectedOption.value !== undefined && !selectedOption.value.disabled)
+const hasSelection = computed(
+  () => selectedOption.value !== undefined && !selectedOption.value.disabled,
+)
 </script>
 
 <template>

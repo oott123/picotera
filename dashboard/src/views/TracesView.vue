@@ -7,7 +7,15 @@ import { useProjectsMap } from '@/composables/useProjectsMap'
 import { listRequestTraces } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
 import type { RequestTraceView, TraceCostView } from '@/api'
-import { AutoDataTable, Button, DataCard, Icon, IconButton, TimeRangeFilter, type AutoDataTableColumn } from '@/ui'
+import {
+  AutoDataTable,
+  Button,
+  DataCard,
+  Icon,
+  IconButton,
+  TimeRangeFilter,
+  type AutoDataTableColumn,
+} from '@/ui'
 import { formatDuration } from '@/utils/duration'
 
 const router = useRouter()

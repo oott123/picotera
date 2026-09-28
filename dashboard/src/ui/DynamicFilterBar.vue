@@ -27,9 +27,7 @@ const emit = defineEmits<{
 
 const visibleSet = computed(() => new Set(props.modelValue))
 
-const hiddenFilters = computed(() =>
-  props.available.filter((f) => !visibleSet.value.has(f.key)),
-)
+const hiddenFilters = computed(() => props.available.filter((f) => !visibleSet.value.has(f.key)))
 
 function add(key: string) {
   if (!visibleSet.value.has(key)) {
@@ -38,7 +36,10 @@ function add(key: string) {
 }
 
 function remove(key: string) {
-  emit('update:modelValue', props.modelValue.filter((k) => k !== key))
+  emit(
+    'update:modelValue',
+    props.modelValue.filter((k) => k !== key),
+  )
   emit('remove', key)
 }
 
@@ -49,15 +50,9 @@ function labelFor(key: string): string {
 
 <template>
   <div class="flex flex-wrap items-end gap-3">
-    <div
-      v-for="key in modelValue"
-      :key="key"
-      class="flex flex-col gap-1 min-w-0"
-    >
+    <div v-for="key in modelValue" :key="key" class="flex flex-col gap-1 min-w-0">
       <div class="flex items-center gap-1">
-        <span
-          class="text-2xs font-medium text-ink-muted uppercase tracking-[0.03em]"
-        >
+        <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.03em]">
           {{ labelFor(key) }}
         </span>
         <IconButton

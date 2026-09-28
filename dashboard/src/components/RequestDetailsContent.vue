@@ -2,12 +2,7 @@
 import { ref, watch, computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
-import type {
-  RequestView,
-  ProviderLabel,
-  RequestLiveView,
-  ToolUsageEntryView,
-} from '@/api'
+import type { RequestView, ProviderLabel, RequestLiveView, ToolUsageEntryView } from '@/api'
 import { listRequestSpans, getRequestLive, interruptRequest } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
 import { StateText, Field, Tag, IconButton, Icon, Tabs, MoneyDisplay, Button } from '@/ui'
@@ -418,17 +413,23 @@ watch(detailTabs, (tabs) => {
                 </span>
               </Field>
               <Field label="渠道" as="div">
-                <span class="font-mono text-sm break-all">{{ providerLabel(selected.providerId) }}</span>
+                <span class="font-mono text-sm break-all">{{
+                  providerLabel(selected.providerId)
+                }}</span>
               </Field>
               <Field label="推测渠道" as="div">
-                <span class="font-mono text-sm break-all">{{ selected.inferredProvider || '—' }}</span>
+                <span class="font-mono text-sm break-all">{{
+                  selected.inferredProvider || '—'
+                }}</span>
               </Field>
               <Field label="模型" as="div">
                 <span class="font-mono text-sm break-all">{{ selected.model || '—' }}</span>
               </Field>
               <Field label="推测模型" as="div">
                 <span class="inline-flex items-center gap-1.5 min-w-0">
-                  <span class="font-mono text-sm break-all">{{ selected.inferredModel || '—' }}</span>
+                  <span class="font-mono text-sm break-all">{{
+                    selected.inferredModel || '—'
+                  }}</span>
                   <Tag
                     v-if="inferredModelSourceLabel(selected.inferredModelSource)"
                     variant="muted"

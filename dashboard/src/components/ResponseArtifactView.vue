@@ -201,11 +201,7 @@ watch(
       <div class="flex items-center justify-between gap-3">
         <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.04em]">Body</span>
         <div v-if="!isBinary && hasBody" class="flex items-center gap-1">
-          <IconButton
-            title="下载原始响应"
-            aria-label="下载原始响应"
-            @click="downloadRawResponse"
-          >
+          <IconButton title="下载原始响应" aria-label="下载原始响应" @click="downloadRawResponse">
             <Icon name="cloud-download" :size="13" />
           </IconButton>
           <SegmentedControl v-model="subView" :options="subViewOptions" />

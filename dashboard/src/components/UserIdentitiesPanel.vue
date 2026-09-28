@@ -146,7 +146,10 @@ function onEditKeydown(e: KeyboardEvent, i: UserIdentityView) {
           class="px-2.5 py-2 border border-line rounded-md bg-surface-0"
         >
           <div class="flex items-center gap-2 min-w-0">
-            <span class="flex-1 min-w-0 text-sm font-semibold text-ink truncate" :title="i.provider">
+            <span
+              class="flex-1 min-w-0 text-sm font-semibold text-ink truncate"
+              :title="i.provider"
+            >
               {{ i.provider }}
             </span>
             <div class="flex items-center gap-1 shrink-0">

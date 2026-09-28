@@ -630,7 +630,11 @@ watch(
       </template>
 
       <!-- raw body -->
-      <Field :label="hasSupportedFormat ? '原始请求体（高级）' : '原始请求体'" as="div" :error="bodyError">
+      <Field
+        :label="hasSupportedFormat ? '原始请求体（高级）' : '原始请求体'"
+        as="div"
+        :error="bodyError"
+      >
         <div class="flex flex-col gap-1.5">
           <CodeEditor
             :model-value="rawBody"
@@ -638,7 +642,14 @@ watch(
             @update:model-value="onRawBodyInput"
           />
           <div class="flex items-center gap-2">
-            <Button v-if="hasSupportedFormat" type="button" variant="ghost" size="sm" @click="rebuildBody">由字段重建</Button>
+            <Button
+              v-if="hasSupportedFormat"
+              type="button"
+              variant="ghost"
+              size="sm"
+              @click="rebuildBody"
+              >由字段重建</Button
+            >
             <span v-if="manualOverride" class="text-2xs text-warn">已手动覆盖</span>
           </div>
         </div>
@@ -647,12 +658,11 @@ watch(
       <!-- custom request headers (advanced) -->
       <Field label="自定义请求头（高级）" as="div">
         <div class="flex flex-col gap-1.5">
-          <AnnotationsEditor
-            :model-value="customHeaders"
-            @update:model-value="onHeadersInput"
-          />
+          <AnnotationsEditor :model-value="customHeaders" @update:model-value="onHeadersInput" />
           <div class="flex items-center gap-2">
-            <Button type="button" variant="ghost" size="sm" @click="rebuildHeaders">由字段重建</Button>
+            <Button type="button" variant="ghost" size="sm" @click="rebuildHeaders"
+              >由字段重建</Button
+            >
             <span v-if="headersManualOverride" class="text-2xs text-warn">已手动覆盖</span>
           </div>
         </div>

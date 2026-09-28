@@ -332,9 +332,7 @@ const modelOptions = computed(() => {
   return Array.from(set).sort()
 })
 
-const upstreamModelOptions = computed(() =>
-  [...(upstreamModelsQuery.data.value ?? [])].sort(),
-)
+const upstreamModelOptions = computed(() => [...(upstreamModelsQuery.data.value ?? [])].sort())
 
 const summaryQuery = useQuery({
   queryKey: computed(() => queryKeys.overview.summary(overviewFilters.value)),
@@ -1072,7 +1070,9 @@ function formatCurrencyCompact(v: number, code: string) {
     <!-- Controls bar -->
     <div class="flex flex-wrap items-end gap-3">
       <div class="flex flex-col gap-1">
-        <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.03em]">时间范围</span>
+        <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.03em]"
+          >时间范围</span
+        >
         <SegmentedControl v-model="filters.range" :options="rangeOptions" />
       </div>
       <div v-if="filters.range === 'custom'" class="flex flex-col gap-1">
@@ -1087,7 +1087,9 @@ function formatCurrencyCompact(v: number, code: string) {
         />
       </div>
       <div class="flex flex-col gap-1">
-        <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.03em]">统计粒度</span>
+        <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.03em]"
+          >统计粒度</span
+        >
         <SegmentedControl v-model="granularity" :options="granularityOptions" />
       </div>
       <div class="flex flex-col gap-1">
@@ -1106,11 +1108,7 @@ function formatCurrencyCompact(v: number, code: string) {
           <Select v-model="filters.model" size="sm" :options="modelSelectOptions" />
         </template>
         <template #upstreamModel>
-          <Select
-            v-model="filters.upstreamModel"
-            size="sm"
-            :options="upstreamModelSelectOptions"
-          />
+          <Select v-model="filters.upstreamModel" size="sm" :options="upstreamModelSelectOptions" />
         </template>
         <template #provider>
           <Select v-model="filters.providerId" size="sm" :options="providerOptions" />

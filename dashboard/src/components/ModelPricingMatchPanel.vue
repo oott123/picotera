@@ -5,17 +5,7 @@ import type { ModelView, PricingMatchCandidate, PricingTier } from '@/api'
 import { invalidateModels, matchPricing, upsertModel } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
 import { useCurrencyContext } from '@/composables/useCurrencyContext'
-import {
-  Button,
-  DataTable,
-  MoneyDisplay,
-  SidePanel,
-  StateText,
-  Td,
-  Th,
-  Tr,
-  Icon,
-} from '@/ui'
+import { Button, DataTable, MoneyDisplay, SidePanel, StateText, Td, Th, Tr, Icon } from '@/ui'
 
 const props = defineProps<{
   model: ModelView
@@ -102,10 +92,7 @@ function comparePrice(
     currentPricing.value.currency,
     selected.value.pricing.currency,
   )
-  if (
-    currentPricing.value.currency !== selected.value.pricing.currency &&
-    !converted.converted
-  ) {
+  if (currentPricing.value.currency !== selected.value.pricing.currency && !converted.converted) {
     return 'none'
   }
   if (targetValue > converted.amount) return 'higher'

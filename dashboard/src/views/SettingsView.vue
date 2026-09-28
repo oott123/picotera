@@ -18,8 +18,7 @@ const otrOptions: { value: OtrMode; label: string; description: string }[] = [
   {
     value: 'body',
     label: '不记录内容',
-    description:
-      '记录各类元数据与用户消息梗概，但不记录请求体与响应体。',
+    description: '记录各类元数据与用户消息梗概，但不记录请求体与响应体。',
   },
   {
     value: 'body-and-message',
@@ -91,7 +90,9 @@ const saveMutation = useMutation({
 
 <template>
   <div class="flex flex-col gap-6 max-w-md">
-    <StateText v-if="autoCreateQuery.isLoading.value || otrQuery.isLoading.value">加载中…</StateText>
+    <StateText v-if="autoCreateQuery.isLoading.value || otrQuery.isLoading.value"
+      >加载中…</StateText
+    >
     <template v-else>
       <Field label="项目自动创建">
         <label class="flex items-center gap-2 text-sm">
@@ -109,7 +110,8 @@ const saveMutation = useMutation({
       <Field label="数据记录" as="div">
         <SegmentedControl v-model="otr" :options="otrOptions" />
         <p class="text-xs text-ink-faint mt-1">
-          {{ otrDescription }}在请求头中传入 <code>X-PicoTera-OTR: {{ otr }}</code> 可使单个请求覆盖该设置。
+          {{ otrDescription }}在请求头中传入
+          <code>X-PicoTera-OTR: {{ otr }}</code> 可使单个请求覆盖该设置。
         </p>
       </Field>
       <div class="flex items-center gap-3">

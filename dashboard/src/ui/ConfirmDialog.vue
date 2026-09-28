@@ -110,7 +110,12 @@ onBeforeUnmount(removeKeydown)
         </p>
         <div class="flex justify-end gap-2">
           <Button ref="cancelRef" variant="ghost" @click="reject">取消</Button>
-          <Button ref="acceptRef" variant="danger" :disabled="confirmState.accepting" @click="accept">
+          <Button
+            ref="acceptRef"
+            variant="danger"
+            :disabled="confirmState.accepting"
+            @click="accept"
+          >
             删除
           </Button>
         </div>

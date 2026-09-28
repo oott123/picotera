@@ -160,13 +160,22 @@ export const queryKeys = {
     summary: (f: AdminOverviewFilters) => ['adminOverview', 'summary', { ...f }] as const,
     distribution: (f: AdminOverviewFilters, dim: AdminOverviewDimension) =>
       ['adminOverview', 'distribution', dim, { ...f }] as const,
-    series: (f: AdminOverviewFilters, dim: AdminOverviewSeriesDimension, bucket: OverviewGranularity) =>
-      ['adminOverview', 'series', dim, bucket, { ...f }] as const,
-    speed: (f: AdminOverviewFilters, dim: AdminOverviewSeriesDimension, bucket: OverviewGranularity) =>
-      ['adminOverview', 'speed', dim, bucket, { ...f }] as const,
+    series: (
+      f: AdminOverviewFilters,
+      dim: AdminOverviewSeriesDimension,
+      bucket: OverviewGranularity,
+    ) => ['adminOverview', 'series', dim, bucket, { ...f }] as const,
+    speed: (
+      f: AdminOverviewFilters,
+      dim: AdminOverviewSeriesDimension,
+      bucket: OverviewGranularity,
+    ) => ['adminOverview', 'speed', dim, bucket, { ...f }] as const,
     speedBoxplot: (f: AdminOverviewFilters, dim: AdminOverviewSeriesDimension) =>
       ['adminOverview', 'speedBoxplot', dim, { ...f }] as const,
-    cacheHitRate: (f: AdminOverviewFilters, dim: AdminOverviewSeriesDimension, bucket: OverviewGranularity) =>
-      ['adminOverview', 'cacheHitRate', dim, bucket, { ...f }] as const,
+    cacheHitRate: (
+      f: AdminOverviewFilters,
+      dim: AdminOverviewSeriesDimension,
+      bucket: OverviewGranularity,
+    ) => ['adminOverview', 'cacheHitRate', dim, bucket, { ...f }] as const,
   },
 }

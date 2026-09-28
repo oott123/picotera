@@ -44,14 +44,12 @@ const end = computed(() => rfcToLocal(props.modelValue.endAt))
 
 const startLocal = computed({
   get: () => start.value.local,
-  set: (v: string) =>
-    emit('update:modelValue', { ...props.modelValue, startAt: localToRfc(v) }),
+  set: (v: string) => emit('update:modelValue', { ...props.modelValue, startAt: localToRfc(v) }),
 })
 
 const endLocal = computed({
   get: () => end.value.local,
-  set: (v: string) =>
-    emit('update:modelValue', { ...props.modelValue, endAt: localToRfc(v) }),
+  set: (v: string) => emit('update:modelValue', { ...props.modelValue, endAt: localToRfc(v) }),
 })
 
 const rangeError = computed(() => {
@@ -65,19 +63,21 @@ const rangeError = computed(() => {
 
 <template>
   <div class="flex items-start gap-2">
-      <input
-        v-model="startLocal"
-        type="datetime-local"
-        step="1"
-        class="rounded-md border border-line bg-surface-0 px-2 py-1.5 text-sm text-ink outline-none focus:border-accent focus-visible:ring-1 focus-visible:ring-accent"
-        :class="start.invalid || rangeError ? 'border-err focus:border-err focus-visible:ring-err' : ''"
-      />
-      <input
-        v-model="endLocal"
-        type="datetime-local"
-        step="1"
-        class="rounded-md border border-line bg-surface-0 px-2 py-1.5 text-sm text-ink outline-none focus:border-accent focus-visible:ring-1 focus-visible:ring-accent"
-        :class="end.invalid || rangeError ? 'border-err focus:border-err focus-visible:ring-err' : ''"
-      />
+    <input
+      v-model="startLocal"
+      type="datetime-local"
+      step="1"
+      class="rounded-md border border-line bg-surface-0 px-2 py-1.5 text-sm text-ink outline-none focus:border-accent focus-visible:ring-1 focus-visible:ring-accent"
+      :class="
+        start.invalid || rangeError ? 'border-err focus:border-err focus-visible:ring-err' : ''
+      "
+    />
+    <input
+      v-model="endLocal"
+      type="datetime-local"
+      step="1"
+      class="rounded-md border border-line bg-surface-0 px-2 py-1.5 text-sm text-ink outline-none focus:border-accent focus-visible:ring-1 focus-visible:ring-accent"
+      :class="end.invalid || rangeError ? 'border-err focus:border-err focus-visible:ring-err' : ''"
+    />
   </div>
 </template>

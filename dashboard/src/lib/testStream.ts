@@ -74,10 +74,7 @@ function aggregateStream(format: TestFormat, raw: string): AggregatedContent {
       case 'openaiResponses': {
         if (root.type === 'response.output_text.delta' && typeof root.delta === 'string')
           reply += root.delta
-        if (
-          root.type === 'response.reasoning_summary_text.delta' &&
-          typeof root.delta === 'string'
-        )
+        if (root.type === 'response.reasoning_summary_text.delta' && typeof root.delta === 'string')
           thinking += root.delta
         break
       }

@@ -27,7 +27,11 @@ const RESOLVER_LABEL = Object.fromEntries(
   RESOLVER_OPTIONS.map((o) => [o.value, o.label]),
 ) as Record<Resolver, string>
 
-const props = defineProps<{ providerId: number; providerName: string; modelsEndpointUrl?: string }>()
+const props = defineProps<{
+  providerId: number
+  providerName: string
+  modelsEndpointUrl?: string
+}>()
 const emit = defineEmits<{ close: [] }>()
 const queryClient = useQueryClient()
 

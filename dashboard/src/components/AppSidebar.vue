@@ -204,11 +204,13 @@ const adminNav: NavItem[] = [
         :disabled="refreshing"
         class="shrink-0 inline-flex items-center justify-center w-7 h-7 p-0 bg-transparent text-ink-muted border border-transparent rounded-md cursor-pointer transition-colors hover:bg-sidebar-hover hover:text-ink disabled:opacity-50 disabled:cursor-not-allowed"
         :class="refreshing ? 'animate-spin' : ''"
-        @click="async () => {
-          refreshing = true
-          await queryClient.invalidateQueries()
-          refreshing = false
-        }"
+        @click="
+          async () => {
+            refreshing = true
+            await queryClient.invalidateQueries()
+            refreshing = false
+          }
+        "
       >
         <Icon name="refresh" :size="14" />
       </button>
