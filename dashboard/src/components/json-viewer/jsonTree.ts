@@ -9,6 +9,8 @@
  * value, so a multi-megabyte string never gets stringified to fill one row.
  */
 
+import { objectSummary, type ObjectSummary } from './jsonSummary'
+
 export type JsonKind = 'object' | 'array' | 'string' | 'number' | 'boolean' | 'null'
 
 /** A row in the flattened list. `path` doubles as the identity key. */
@@ -29,6 +31,9 @@ export interface JsonRow {
   preview: string
   /** True when `preview` was cut short by the preview limit. */
   truncated: boolean
+  /** Key fields pulled out of a collapsed, non-empty object; `null` on every
+   *  other row, since an open object lists those fields itself. */
+  summary: ObjectSummary | null
   expandable: boolean
   expanded: boolean
 }
@@ -203,6 +208,10 @@ export function flatten(value: unknown, options: FlattenOptions): FlattenResult 
         // says nothing. An array keeps its `[N 项]`, since the length still helps.
         preview: expandedHere && kind === 'object' ? '' : preview.preview,
         truncated: preview.truncated,
+        summary:
+          kind === 'object' && expandable && !expandedHere
+            ? objectSummary(frame.value as Record<string, unknown>)
+            : null,
         expandable,
         expanded: expandedHere,
       })

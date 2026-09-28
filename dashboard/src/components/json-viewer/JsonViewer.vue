@@ -3,6 +3,8 @@ import { computed, nextTick, onBeforeUnmount, ref, shallowRef, triggerRef, watch
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import { Icon, IconButton, Input } from '@/ui'
 import { usePreferencesStore } from '@/stores/preferences'
+import type { ToolToken } from '@/lib/toolFormat'
+import type { TagKey } from './jsonSummary'
 import JsonContextMenu, { type ContextMenuItem } from './JsonContextMenu.vue'
 import JsonValuePanel from './JsonValuePanel.vue'
 import { copyFailureText, writeClipboard } from './clipboard'
@@ -367,6 +369,33 @@ const VALUE_CLASS: Record<JsonRow['kind'], string> = {
   array: 'text-ink-muted',
 }
 
+/** Same palette as the tool calls on the conversation page. */
+const ARG_TOKEN_CLASS: Record<ToolToken['kind'], string> = {
+  name: 'font-semibold text-ink',
+  key: 'text-ink-muted',
+  punct: 'text-ink-faint',
+  value: 'text-ink',
+}
+
+/** A role reads as the speaker, so it stands out from the kind labels. */
+function tagClass(key: TagKey): string {
+  return key === 'role' ? 'text-ink' : 'text-ink-muted'
+}
+
+/** Color of a container row's last segment. The soft-wrap ellipsis inherits the
+ *  row's color rather than that of the text it cuts, and the cut almost always
+ *  lands in the last segment, so the row takes that segment's color. */
+function containerTailClass(row: JsonRow): string {
+  const summary = row.summary
+  if (summary?.text) return 'text-ink-faint'
+  // The cut in a call nearly always falls inside an argument value.
+  if (summary?.args) return ARG_TOKEN_CLASS.value
+  if (summary?.name) return 'text-ink'
+  const lastTag = summary?.tags.at(-1)
+  if (lastTag) return tagClass(lastTag.key)
+  return VALUE_CLASS[row.kind]
+}
+
 /** Split text on the search needle for highlighting. Runs only for the handful
  *  of rows on screen, so it never touches the whole document. */
 function highlight(text: string): Array<{ text: string; hit: boolean }> {
@@ -532,8 +561,18 @@ onBeforeUnmount(() => {
           </span>
 
           <!-- One inline run, so in soft-wrap mode the key, value and badge wrap
-               as a single paragraph instead of as separate flex columns. -->
-          <span :class="wrap ? 'min-w-0 flex-1 break-all whitespace-pre-wrap' : ''">
+               as a single paragraph instead of as separate flex columns. A
+               container row stays on one line even then: its summary is a hint,
+               so whatever overflows the width is cut off with an ellipsis. -->
+          <span
+            :class="
+              wrap
+                ? isContainer(row.kind)
+                  ? ['min-w-0 flex-1 truncate', containerTailClass(row)]
+                  : 'min-w-0 flex-1 break-all whitespace-pre-wrap'
+                : ''
+            "
+          >
             <template v-if="row.key !== null">
               <span class="text-accent-ink">
                 <span
@@ -550,7 +589,32 @@ onBeforeUnmount(() => {
             >
 
             <span :class="VALUE_CLASS[row.kind]">
-              <template v-if="isContainer(row.kind)">{{ row.preview }}</template>
+              <template v-if="isContainer(row.kind)">
+                <!-- Elements rather than bare text: whitespace between tags is
+                     dropped, so no stray space lands around the preview. -->
+                <span>{{ row.preview }}</span>
+                <template v-if="row.summary">
+                  <span
+                    v-for="(tag, i) in row.summary.tags"
+                    :key="i"
+                    class="ml-1.5"
+                    :class="tagClass(tag.key)"
+                    >{{ tag.text }}</span
+                  >
+                  <span v-if="row.summary.name" class="ml-1.5 font-medium text-ink">{{
+                    row.summary.name
+                  }}</span>
+                  <span
+                    v-for="(token, i) in row.summary.args ?? []"
+                    :key="`a${i}`"
+                    :class="ARG_TOKEN_CLASS[token.kind]"
+                    >{{ token.text }}</span
+                  >
+                  <span v-if="row.summary.text" class="ml-1.5 text-ink-faint"
+                    >"{{ row.summary.text }}"</span
+                  >
+                </template>
+              </template>
               <template v-else>
                 <span
                   v-for="(part, i) in highlight(row.preview)"
