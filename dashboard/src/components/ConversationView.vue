@@ -16,7 +16,7 @@ import type {
 import { renderMarkdown } from '@/composables/useSSEParser'
 import { Button, Icon, Tag } from '@/ui'
 import ImageAttachment from './ImageAttachment.vue'
-import JsonArtifactViewer from './JsonArtifactViewer.vue'
+import JsonViewer from './json-viewer/JsonViewer.vue'
 import SearchResultsView from './SearchResultsView.vue'
 
 const props = defineProps<{ messages: ConversationMessage[] }>()
@@ -218,7 +218,7 @@ onBeforeUnmount(() => {
                 <span class="min-w-0 truncate">{{ toolTitle(part) }}</span>
               </summary>
               <div class="border-t border-line-soft p-2.5">
-                <JsonArtifactViewer :value="part.kind === 'toolCall' ? part.input : part.output" />
+                <JsonViewer :value="part.kind === 'toolCall' ? part.input : part.output" />
               </div>
             </details>
 

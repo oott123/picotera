@@ -16,7 +16,7 @@ import {
   parseResponseConversation,
 } from '@/composables/conversation'
 import ImageAttachment from './ImageAttachment.vue'
-import JsonArtifactViewer from './JsonArtifactViewer.vue'
+import JsonViewer from './json-viewer/JsonViewer.vue'
 import SearchResultsView from './SearchResultsView.vue'
 import SSEEventsVirtualList from './SSEEventsVirtualList.vue'
 import TimedRawView from './TimedRawView.vue'
@@ -252,7 +252,7 @@ watch(
 
       <!-- JSON -->
       <template v-else-if="subView === 'json'">
-        <JsonArtifactViewer v-if="jsonBody.ok" :value="jsonBody.value" />
+        <JsonViewer v-if="jsonBody.ok" :value="jsonBody.value" />
         <StateText v-else :dashed="false" compact>{{ jsonBody.error }}</StateText>
       </template>
 
@@ -265,7 +265,7 @@ watch(
           >
             后端格式: {{ formatAggregatedLabel(payload.aggregated.format) }}
           </span>
-          <JsonArtifactViewer :value="payload.aggregated.body" />
+          <JsonViewer :value="payload.aggregated.body" />
         </div>
         <StateText v-else-if="payload.aggregated?.error" :dashed="false" compact>
           {{ payload.aggregated.error }}

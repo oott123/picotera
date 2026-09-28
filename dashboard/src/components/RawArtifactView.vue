@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { StateText, DataTable, Th, Td, Tr, Field, SegmentedControl, Button, Icon } from '@/ui'
 import { isJsonContentType, parseJsonBody, rawBodyText, buildCurlCommand } from './artifactBody'
-import JsonArtifactViewer from './JsonArtifactViewer.vue'
+import JsonViewer from './json-viewer/JsonViewer.vue'
 import ResponseArtifactView, { type SubView } from './ResponseArtifactView.vue'
 import { useArtifact } from '@/composables/useArtifact'
 
@@ -165,7 +165,7 @@ async function copyAsCurl() {
           </div>
           <StateText v-else-if="!hasBody" :dashed="false" compact>请求体不存在或未记录</StateText>
           <template v-else-if="bodyView === 'json' && requestJsonBody.ok">
-            <JsonArtifactViewer :value="requestJsonBody.value" />
+            <JsonViewer :value="requestJsonBody.value" />
           </template>
           <StateText
             v-else-if="isJsonContentType(payload.headers) && !requestJsonBody.ok"

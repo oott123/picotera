@@ -8,6 +8,9 @@ import {
   IconChartPie,
   IconCheck,
   IconChevronDown,
+  IconChevronRight,
+  IconChevronsDown,
+  IconChevronsUp,
   IconCloudDollar,
   IconCloudDownload,
   IconFilter,
@@ -16,7 +19,9 @@ import {
   IconCpu,
   IconCurrencyDollar,
   IconDatabase,
+  IconDownload,
   IconEdit,
+  IconExternalLink,
   IconFolder,
   IconGitBranch,
   IconGitMerge,
@@ -28,6 +33,7 @@ import {
   IconLoader2,
   IconLogout,
   IconMask,
+  IconMaximize,
   IconPlug,
   IconPlus,
   IconPuzzle,
@@ -36,6 +42,7 @@ import {
   IconRoute,
   IconSearch,
   IconSettings,
+  IconTextWrap,
   IconTrash,
   IconX,
   IconCloudFog,
@@ -67,6 +74,9 @@ export type IconName =
   | 'refresh'
   | 'route'
   | 'chevron-down'
+  | 'chevron-right'
+  | 'chevrons-down'
+  | 'chevrons-up'
   | 'search'
   | 'cloud-dollar'
   | 'cloud-download'
@@ -90,6 +100,10 @@ export type IconName =
   | 'filter-plus'
   | 'mask'
   | 'logout'
+  | 'maximize'
+  | 'download'
+  | 'external-link'
+  | 'text-wrap'
 
 export const iconComponents: Record<IconName, Component> = {
   plus: IconPlus,
@@ -113,6 +127,9 @@ export const iconComponents: Record<IconName, Component> = {
   refresh: IconRefresh,
   route: IconRoute,
   'chevron-down': IconChevronDown,
+  'chevron-right': IconChevronRight,
+  'chevrons-down': IconChevronsDown,
+  'chevrons-up': IconChevronsUp,
   search: IconSearch,
   'cloud-dollar': IconCloudDollar,
   'cloud-download': IconCloudDownload,
@@ -136,4 +153,8 @@ export const iconComponents: Record<IconName, Component> = {
   filter: IconFilter,
   'filter-plus': IconFilterPlus,
   logout: IconLogout,
+  maximize: IconMaximize,
+  download: IconDownload,
+  'external-link': IconExternalLink,
+  'text-wrap': IconTextWrap,
 }

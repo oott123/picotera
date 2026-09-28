@@ -16,6 +16,8 @@ const DEFAULTS = {
   fontSize: 'tall' as FontSize,
   displayCurrency: null as string | null,
   overviewCurrencyOverride: null as OverviewCurrencyOverride,
+  /** Soft wrap in the JSON viewer's tree. */
+  jsonWrap: false,
 }
 
 const PANEL_MODE_VALUES: PanelMode[] = ['auto', 'right', 'modal']
@@ -52,6 +54,7 @@ function load() {
         parsed.overviewCurrencyOverride.length > 0
           ? parsed.overviewCurrencyOverride
           : DEFAULTS.overviewCurrencyOverride,
+      jsonWrap: typeof parsed.jsonWrap === 'boolean' ? parsed.jsonWrap : DEFAULTS.jsonWrap,
     }
   } catch {
     return { ...DEFAULTS }
@@ -65,6 +68,7 @@ export const usePreferencesStore = defineStore('preferences', () => {
   const fontSize = ref<FontSize>(initial.fontSize)
   const displayCurrency = ref<string | null>(initial.displayCurrency)
   const overviewCurrencyOverride = ref<OverviewCurrencyOverride>(initial.overviewCurrencyOverride)
+  const jsonWrap = ref<boolean>(initial.jsonWrap)
 
   function apply() {
     const root = document.documentElement
@@ -84,6 +88,7 @@ export const usePreferencesStore = defineStore('preferences', () => {
           fontSize: fontSize.value,
           displayCurrency: displayCurrency.value,
           overviewCurrencyOverride: overviewCurrencyOverride.value,
+          jsonWrap: jsonWrap.value,
         }),
       )
     } catch {
@@ -91,7 +96,7 @@ export const usePreferencesStore = defineStore('preferences', () => {
     }
   }
 
-  watch([theme, panelMode, fontSize, displayCurrency, overviewCurrencyOverride], () => {
+  watch([theme, panelMode, fontSize, displayCurrency, overviewCurrencyOverride, jsonWrap], () => {
     apply()
     persist()
   })
@@ -100,5 +105,13 @@ export const usePreferencesStore = defineStore('preferences', () => {
     apply()
   }
 
-  return { theme, panelMode, fontSize, displayCurrency, overviewCurrencyOverride, init }
+  return {
+    theme,
+    panelMode,
+    fontSize,
+    displayCurrency,
+    overviewCurrencyOverride,
+    jsonWrap,
+    init,
+  }
 })

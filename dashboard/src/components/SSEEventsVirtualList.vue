@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, onUpdated, ref, watch } from 'vue'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import type { ParsedSSEEvent } from '@/composables/useSSEParser'
-import JsonArtifactViewer from './JsonArtifactViewer.vue'
+import JsonViewer from './json-viewer/JsonViewer.vue'
 
 const props = defineProps<{ events: ParsedSSEEvent[] }>()
 
@@ -100,7 +100,7 @@ watch(
             </span>
           </header>
           <div class="p-3">
-            <JsonArtifactViewer v-if="event.json !== null" :value="event.json" />
+            <JsonViewer v-if="event.json !== null" :value="event.json" />
             <pre
               v-else
               class="font-mono text-xs whitespace-pre-wrap break-all bg-surface-50 border border-line-soft rounded-md p-3 m-0 text-ink overflow-auto max-h-[360px]"
