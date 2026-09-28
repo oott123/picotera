@@ -50,6 +50,8 @@ import {
   IconFlask,
   IconUsers,
   IconShieldCheck,
+  IconTool,
+  IconCornerDownRight,
 } from '@tabler/icons-vue'
 
 export type IconName =
@@ -104,6 +106,8 @@ export type IconName =
   | 'download'
   | 'external-link'
   | 'text-wrap'
+  | 'tool'
+  | 'corner-down-right'
 
 export const iconComponents: Record<IconName, Component> = {
   plus: IconPlus,
@@ -157,4 +161,6 @@ export const iconComponents: Record<IconName, Component> = {
   download: IconDownload,
   'external-link': IconExternalLink,
   'text-wrap': IconTextWrap,
+  tool: IconTool,
+  'corner-down-right': IconCornerDownRight,
 }

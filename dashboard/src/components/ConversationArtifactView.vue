@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useArtifact } from '@/composables/useArtifact'
 import {
   hasConversationMessages,
+  linkToolResultNames,
   parseRequestConversation,
   parseResponseConversation,
 } from '@/composables/conversation'
@@ -41,10 +42,12 @@ function responseMessages(payload: ArtifactPayload | undefined) {
 const requestConversation = computed(() => requestMessages(reqQuery.data.value))
 const responseConversation = computed(() => responseMessages(resQuery.data.value))
 const loading = computed(() => reqQuery.isLoading.value || resQuery.isLoading.value)
-const merged = computed(() => [
-  ...(requestConversation.value ?? []),
-  ...(responseConversation.value ?? []),
-])
+const merged = computed(() =>
+  linkToolResultNames([
+    ...(requestConversation.value ?? []),
+    ...(responseConversation.value ?? []),
+  ]),
+)
 const unparsable = computed(
   () => !loading.value && requestConversation.value === null && responseConversation.value === null,
 )

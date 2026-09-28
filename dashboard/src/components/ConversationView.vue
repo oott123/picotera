@@ -8,15 +8,11 @@ import {
   watch,
   type ComponentPublicInstance,
 } from 'vue'
-import type {
-  ConversationMessage,
-  ConversationPart,
-  ConversationRole,
-} from '@/composables/conversation'
+import type { ConversationMessage, ConversationRole } from '@/composables/conversation'
 import { renderMarkdown } from '@/composables/useSSEParser'
 import { Button, Icon, Tag } from '@/ui'
+import ConversationToolPart from './ConversationToolPart.vue'
 import ImageAttachment from './ImageAttachment.vue'
-import JsonViewer from './json-viewer/JsonViewer.vue'
 import SearchResultsView from './SearchResultsView.vue'
 
 const props = defineProps<{ messages: ConversationMessage[] }>()
@@ -117,11 +113,6 @@ function roleBlockStyle(role: ConversationRole): Record<string, string> {
   }
 }
 
-function toolTitle(part: Extract<ConversationPart, { kind: 'toolCall' | 'toolResult' }>): string {
-  if (part.kind === 'toolCall') return part.name
-  return part.name ?? '工具结果'
-}
-
 watch(
   visibleMessages,
   () => {
@@ -173,12 +164,12 @@ onBeforeUnmount(() => {
             />
 
             <details
-              v-else-if="part.kind === 'thinking'"
+              v-else-if="part.kind === 'thinking' && part.text !== null"
               class="group rounded-md border border-line-soft bg-surface-0"
+              @toggle="scheduleMeasure"
             >
               <summary
                 class="flex cursor-pointer select-none items-center gap-1.5 px-2.5 py-2 text-xs font-medium text-ink-muted hover:text-ink"
-                @click="scheduleMeasure"
               >
                 <Icon
                   name="chevron-down"
@@ -193,34 +184,18 @@ onBeforeUnmount(() => {
               />
             </details>
 
-            <details
-              v-else-if="part.kind === 'toolCall' || part.kind === 'toolResult'"
-              class="group rounded-md border bg-surface-0"
-              :class="
-                part.kind === 'toolResult' && part.isError ? 'border-err' : 'border-line-soft'
-              "
+            <div
+              v-else-if="part.kind === 'thinking'"
+              class="rounded-md border border-line-soft bg-surface-0 px-2.5 py-2 text-xs font-medium text-ink-faint"
             >
-              <summary
-                class="flex cursor-pointer select-none items-center gap-1.5 px-2.5 py-2 text-xs font-medium"
-                :class="
-                  part.kind === 'toolResult' && part.isError
-                    ? 'text-err-ink hover:text-err-ink'
-                    : 'text-ink-muted hover:text-ink'
-                "
-                @click="scheduleMeasure"
-              >
-                <Icon
-                  name="chevron-down"
-                  :size="12"
-                  class="-rotate-90 transition-transform group-open:rotate-0"
-                />
-                <Icon name="braces" :size="13" />
-                <span class="min-w-0 truncate">{{ toolTitle(part) }}</span>
-              </summary>
-              <div class="border-t border-line-soft p-2.5">
-                <JsonViewer :value="part.kind === 'toolCall' ? part.input : part.output" />
-              </div>
-            </details>
+              思考过程（未返回明文）
+            </div>
+
+            <ConversationToolPart
+              v-else-if="part.kind === 'toolCall' || part.kind === 'toolResult'"
+              :part="part"
+              @toggle="scheduleMeasure"
+            />
 
             <SearchResultsView v-else-if="part.kind === 'searchResults'" :results="part.results" />
 

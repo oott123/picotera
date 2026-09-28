@@ -16,6 +16,7 @@ Vue 3 (beta, pinned in `pnpm-workspace.yaml` overrides) + Tailwind CSS v4 + Pini
 - `src/views/` — route-level pages. One view per management resource, plus overview and request history.
 - `src/components/` — feature-level components: forms, editors, side panels, chart wrappers, artifact viewers, chrome.
 - `src/composables/` — reusable composition functions.
+- `src/lib/` — plain TypeScript modules with no Vue dependency. `toolFormat.ts` renders tool calls / tool results as one-line Python-style literals (`Bash(command="ls")`, `Bash → "…"`, each value capped at 128 chars) and is meant to be reused wherever a tool call needs a summary; `testBody.ts` / `testStream.ts` back the gateway test view.
 - `src/api/` — `openapi-fetch` client (`plugin.ts`), shared `QueryClient` (`queryClient.ts`), typed `queryKeys` registry (`queryKeys.ts`), async fetcher wrappers + invalidation helpers (`client.ts`), and re-exported schema types (`index.ts`). Generated types live at `src/openapi-types.d.ts` (output of `pnpm --dir dashboard generate-openapi`).
 - `src/ui/` — **local UI primitive library. No third-party UI kit. No variant-authoring libs (cva/tv).** Style with Tailwind classes directly inside each component.
 
