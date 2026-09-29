@@ -2,7 +2,7 @@
 import { computed, watch, ref } from 'vue'
 import VChart from 'vue-echarts'
 import { usePreferencesStore } from '@/stores/preferences'
-import { groupColor, getThemeAxisStyle } from './colors'
+import { groupColor, groupBorderColor, getThemeAxisStyle } from './colors'
 import type { CallbackDataParams } from 'echarts/types/dist/shared'
 import type { EChartsOption } from './echarts'
 import './echarts'
@@ -143,7 +143,7 @@ const option = computed<EChartsOption>(() => {
           _stat: s,
           itemStyle: {
             color: groupColor(s.colorIndex),
-            borderColor: groupColor(s.colorIndex),
+            borderColor: groupBorderColor(s.colorIndex),
           },
         })),
       },

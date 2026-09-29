@@ -69,7 +69,7 @@ Chart components live in `src/components/charts/` and use `vue-echarts` (Apache 
 - `OverviewDonut` — donut chart for distribution breakdowns.
 - `OverviewLineChart` — multi-series line chart with per-series toggle/isolate, used for speed metrics (prefill/decode tokens/sec).
 - `OverviewSankey` — Sankey diagram for model → provider routing flow.
-- `OverviewSpeedTimeline` — horizontal boxplot chart for min-max speed ranges.
+- `OverviewSpeedTimeline` — horizontal boxplot chart for min-max speed ranges; the border is a darker (light themes) / lighter (dark themes) shade of the fill, which is what makes the median line stand out.
 
 Shared color palette in `charts/colors.ts` (reads `--color-chart-0` through `--color-chart-9` CSS variables). ECharts module registration in `charts/echarts.ts`.
 

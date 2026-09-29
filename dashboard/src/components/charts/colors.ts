@@ -38,6 +38,15 @@ export function groupColor(index: number): string {
   return toHex(`oklch(${l} ${c} ${hue})`)
 }
 
+// Border shade for filled marks (e.g. boxplot): darker than the fill on light themes,
+// lighter on dark themes, so lines drawn with the border color (boxplot median) stand out.
+export function groupBorderColor(index: number): string {
+  const dark = document.documentElement.dataset.dark === 'true'
+  const c = new Color(groupColor(index)).to('oklch')
+  c.coords[0] = Math.min(1, Math.max(0, c.coords[0]! + (dark ? 0.15 : -0.15)))
+  return toHex(c.toString())
+}
+
 export function getChartColors(): string[] {
   const colors: string[] = []
   for (let i = 0; i < CHART_COLOR_COUNT; i++) {
