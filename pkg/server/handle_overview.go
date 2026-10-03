@@ -466,20 +466,6 @@ func (s *Server) handleGetOverviewSeries(ctx context.Context, in *contract.GetOv
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to query series metrics", err)
 	}
-	speedRows, err := s.queries.ListOverviewSpeedSeries(ctx, db.ListOverviewSpeedSeriesParams{
-		Dimension:     in.Dimension,
-		StartAt:       startTS,
-		EndAt:         endTS,
-		UserID:        u.ID,
-		ApiKeyID:      toPgInt4(in.ApiKeyID),
-		Model:         toPgText(in.Model),
-		UpstreamModel: toPgText(in.UpstreamModel),
-		ProviderID:    toPgInt4(in.ProviderID),
-		ProjectID:     toPgInt4(in.ProjectID),
-	})
-	if err != nil {
-		return nil, huma.Error500InternalServerError("failed to query speed series", err)
-	}
 	traceRows, err := s.queries.ListOverviewSeriesTraces(ctx, db.ListOverviewSeriesTracesParams{
 		BucketWidth:   overviewBucketWidthPG(bucketInterval),
 		BucketOrigin:  startTS,
@@ -574,30 +560,6 @@ func (s *Server) handleGetOverviewSeries(ctx context.Context, in *contract.GetOv
 		tracesByBG[tokensReqsKey{bucket: bucket, group: group}] += t.TraceCount
 	}
 
-	// Speed metrics are non-additive ratios: accumulate the raw numerators and
-	// denominators per (bucket, group), then divide once below. This keeps the
-	// result correct when several finer source buckets fold into one display
-	// bucket.
-	prefillTokenSumByBG := make(map[tokensReqsKey]float64)
-	prefillTimeSumByBG := make(map[tokensReqsKey]float64)
-	prefillReqCountByBG := make(map[tokensReqsKey]int64)
-	decodeTokenSumByBG := make(map[tokensReqsKey]float64)
-	decodeTimeSumByBG := make(map[tokensReqsKey]float64)
-	for _, s := range speedRows {
-		if !s.BucketAt.Valid {
-			continue
-		}
-		bucket := overviewBucketAt(start, s.BucketAt.Time, bucketInterval).Format(time.RFC3339Nano)
-		group := s.GroupKey
-		addGroup(group)
-		bg := tokensReqsKey{bucket: bucket, group: group}
-		prefillTokenSumByBG[bg] += s.PrefillTokenSum
-		prefillTimeSumByBG[bg] += s.PrefillTimeSum
-		prefillReqCountByBG[bg] += s.PrefillRequestCount
-		decodeTokenSumByBG[bg] += s.DecodeTokenSum
-		decodeTimeSumByBG[bg] += s.DecodeTimeSum
-	}
-
 	// Cache hit rate is likewise non-additive: accumulate read/input sums and
 	// divide once below.
 	cacheReadByBG := make(map[tokensReqsKey]float64)
@@ -658,33 +620,6 @@ func (s *Server) handleGetOverviewSeries(ctx context.Context, in *contract.GetOv
 				Value:    float64(tracesByBG[bg]),
 				Currency: "",
 			})
-			if t := prefillTimeSumByBG[bg]; t > 0 {
-				points = append(points, contract.OverviewSeriesPointView{
-					Metric:   "prefillSpeed",
-					BucketAt: bucket,
-					GroupKey: group,
-					Value:    prefillTokenSumByBG[bg] / (t / 1000.0),
-					Currency: "",
-				})
-			}
-			if t := decodeTimeSumByBG[bg]; t > 0 {
-				points = append(points, contract.OverviewSeriesPointView{
-					Metric:   "decodeSpeed",
-					BucketAt: bucket,
-					GroupKey: group,
-					Value:    decodeTokenSumByBG[bg] / (t / 1000.0),
-					Currency: "",
-				})
-			}
-			if c := prefillReqCountByBG[bg]; c > 0 {
-				points = append(points, contract.OverviewSeriesPointView{
-					Metric:   "avgTtft",
-					BucketAt: bucket,
-					GroupKey: group,
-					Value:    prefillTimeSumByBG[bg] / float64(c),
-					Currency: "",
-				})
-			}
 			if in := cacheInputByBG[bg]; in > 0 {
 				points = append(points, contract.OverviewSeriesPointView{
 					Metric:   "cacheHitRate",

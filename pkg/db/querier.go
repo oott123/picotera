@@ -98,7 +98,10 @@ type Querier interface {
 	ListAdminOverviewDistributionCosts(ctx context.Context, arg ListAdminOverviewDistributionCostsParams) ([]ListAdminOverviewDistributionCostsRow, error)
 	ListAdminOverviewSeriesMetrics(ctx context.Context, arg ListAdminOverviewSeriesMetricsParams) ([]ListAdminOverviewSeriesMetricsRow, error)
 	ListAdminOverviewSeriesTraces(ctx context.Context, arg ListAdminOverviewSeriesTracesParams) ([]ListAdminOverviewSeriesTracesRow, error)
-	ListAdminOverviewSpeedSeries(ctx context.Context, arg ListAdminOverviewSpeedSeriesParams) ([]ListAdminOverviewSpeedSeriesRow, error)
+	// One raw-row scan yields per-(bucket, group) five-number summaries for all
+	// three speed metrics: the LATERAL union fans each row out into (metric, value)
+	// pairs, NULL where the row doesn't qualify for that metric.
+	ListAdminOverviewSpeedDistributionSeries(ctx context.Context, arg ListAdminOverviewSpeedDistributionSeriesParams) ([]ListAdminOverviewSpeedDistributionSeriesRow, error)
 	ListAdminOverviewTraceCountsByDimension(ctx context.Context, arg ListAdminOverviewTraceCountsByDimensionParams) ([]ListAdminOverviewTraceCountsByDimensionRow, error)
 	ListApiKeys(ctx context.Context, userID int64) ([]ApiKey, error)
 	ListAvailableModelNames(ctx context.Context) ([]string, error)
@@ -111,7 +114,10 @@ type Querier interface {
 	ListOverviewOutcomeSeries(ctx context.Context, arg ListOverviewOutcomeSeriesParams) ([]ListOverviewOutcomeSeriesRow, error)
 	ListOverviewSeriesMetrics(ctx context.Context, arg ListOverviewSeriesMetricsParams) ([]ListOverviewSeriesMetricsRow, error)
 	ListOverviewSeriesTraces(ctx context.Context, arg ListOverviewSeriesTracesParams) ([]ListOverviewSeriesTracesRow, error)
-	ListOverviewSpeedSeries(ctx context.Context, arg ListOverviewSpeedSeriesParams) ([]ListOverviewSpeedSeriesRow, error)
+	// One raw-row scan yields per-(bucket, group) five-number summaries for all
+	// three speed metrics: the LATERAL union fans each row out into (metric, value)
+	// pairs, NULL where the row doesn't qualify for that metric.
+	ListOverviewSpeedDistributionSeries(ctx context.Context, arg ListOverviewSpeedDistributionSeriesParams) ([]ListOverviewSpeedDistributionSeriesRow, error)
 	ListOverviewTraceCountsByDimension(ctx context.Context, arg ListOverviewTraceCountsByDimensionParams) ([]ListOverviewTraceCountsByDimensionRow, error)
 	ListProjects(ctx context.Context, userID int64) ([]Project, error)
 	ListProviderEndpoints(ctx context.Context, providerID pgtype.Int4) ([]ProviderEndpoint, error)

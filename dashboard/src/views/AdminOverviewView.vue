@@ -5,6 +5,7 @@ import {
   getAdminOverviewDistribution,
   getAdminOverviewSeries,
   getAdminOverviewSpeedBoxplot,
+  getAdminOverviewSpeedSeries,
   getAdminOverviewSummary,
   listModelLabels,
   listProviderLabels,
@@ -19,6 +20,7 @@ import type {
   AdminOverviewSeriesDimension,
   OverviewRange,
   OverviewSpeedBoxplotItemView,
+  OverviewSpeedSeriesPointView,
   OverviewSeriesPointView,
 } from '@/api'
 import {
@@ -38,6 +40,7 @@ import OverviewDonut from '@/components/charts/OverviewDonut.vue'
 import OverviewAreaStack from '@/components/charts/OverviewAreaStack.vue'
 import OverviewLineChart from '@/components/charts/OverviewLineChart.vue'
 import OverviewSpeedTimeline from '@/components/charts/OverviewSpeedTimeline.vue'
+import OverviewBoxplotSeries from '@/components/charts/OverviewBoxplotSeries.vue'
 import OverviewSankey, {
   type SankeyLink,
   type SankeyNode,
@@ -330,7 +333,7 @@ const speedSeriesQuery = useQuery({
     queryKeys.adminOverview.speed(overviewFilters.value, speedDimension.value, granularity.value),
   ),
   queryFn: () =>
-    getAdminOverviewSeries(overviewFilters.value, speedDimension.value, granularity.value),
+    getAdminOverviewSpeedSeries(overviewFilters.value, speedDimension.value, granularity.value),
   staleTime: OPERATIONAL_STALE_TIME,
 })
 
@@ -527,24 +530,24 @@ const speedGroups = computed(() => {
   return groups.map((g) => ({ key: g.key, label: dimensionLabel(speedDimension.value, g.key) }))
 })
 const speedBuckets = computed(() => speedSeriesData.value?.buckets ?? [])
-const seriesPrefillSpeed = computed(() => {
-  const points: OverviewSeriesPointView[] = speedSeriesData.value?.points ?? []
+function speedPoints(metric: string) {
+  const points: OverviewSpeedSeriesPointView[] = speedSeriesData.value?.points ?? []
   return points
-    .filter((p) => p.metric === 'prefillSpeed')
-    .map((p) => ({ groupKey: p.groupKey, bucketAt: p.bucketAt, value: p.value }))
-})
-const seriesDecodeSpeed = computed(() => {
-  const points: OverviewSeriesPointView[] = speedSeriesData.value?.points ?? []
-  return points
-    .filter((p) => p.metric === 'decodeSpeed')
-    .map((p) => ({ groupKey: p.groupKey, bucketAt: p.bucketAt, value: p.value }))
-})
-const seriesAvgTtft = computed(() => {
-  const points: OverviewSeriesPointView[] = speedSeriesData.value?.points ?? []
-  return points
-    .filter((p) => p.metric === 'avgTtft')
-    .map((p) => ({ groupKey: p.groupKey, bucketAt: p.bucketAt, value: p.value }))
-})
+    .filter((p) => p.metric === metric)
+    .map((p) => ({
+      groupKey: p.groupKey,
+      bucketAt: p.bucketAt,
+      min: p.min,
+      p25: p.p25,
+      median: p.median,
+      p95: p.p95,
+      max: p.max,
+      count: p.count,
+    }))
+}
+const speedPrefillPoints = computed(() => speedPoints('prefillSpeed'))
+const speedDecodePoints = computed(() => speedPoints('decodeSpeed'))
+const speedTtftPoints = computed(() => speedPoints('ttft'))
 const speedBoxplotItems = computed(() => {
   const items: OverviewSpeedBoxplotItemView[] = speedBoxplotQuery.data.value?.items ?? []
   return items.map((item) => ({
@@ -1484,12 +1487,12 @@ function formatCurrencyCompact(v: number, code: string) {
           <StateText v-else-if="speedSeriesQuery.isError.value" compact :dashed="false">{{
             (speedSeriesQuery.error.value as Error)?.message ?? '加载失败'
           }}</StateText>
-          <OverviewLineChart
+          <OverviewBoxplotSeries
             v-else
             :groups="speedGroups"
             :buckets="speedBuckets"
-            :points="seriesPrefillSpeed"
-            :value-format="(v, s = false) => formatSpeed(v, s)"
+            :points="speedPrefillPoints"
+            :value-format="formatSpeed"
             :bucket-format="formatBucket"
           />
         </div>
@@ -1505,33 +1508,31 @@ function formatCurrencyCompact(v: number, code: string) {
           <StateText v-else-if="speedSeriesQuery.isError.value" compact :dashed="false">{{
             (speedSeriesQuery.error.value as Error)?.message ?? '加载失败'
           }}</StateText>
-          <OverviewLineChart
+          <OverviewBoxplotSeries
             v-else
             :groups="speedGroups"
             :buckets="speedBuckets"
-            :points="seriesDecodeSpeed"
-            :value-format="(v) => formatSpeed(v)"
+            :points="speedDecodePoints"
+            :value-format="formatSpeed"
             :bucket-format="formatBucket"
           />
         </div>
       </DataCard>
       <DataCard class="min-h-[17rem]">
         <div class="p-4 min-h-[17rem] flex flex-col gap-3">
-          <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.03em]"
-            >TTFT 平均时间</span
-          >
+          <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.03em]">TTFT</span>
           <StateText v-if="speedSeriesQuery.isLoading.value" compact :dashed="false"
             >加载中…</StateText
           >
           <StateText v-else-if="speedSeriesQuery.isError.value" compact :dashed="false">{{
             (speedSeriesQuery.error.value as Error)?.message ?? '加载失败'
           }}</StateText>
-          <OverviewLineChart
+          <OverviewBoxplotSeries
             v-else
             :groups="speedGroups"
             :buckets="speedBuckets"
-            :points="seriesAvgTtft"
-            :value-format="(v) => formatTtft(v)"
+            :points="speedTtftPoints"
+            :value-format="formatTtft"
             :bucket-format="formatBucket"
           />
         </div>

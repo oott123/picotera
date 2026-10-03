@@ -55,6 +55,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/picotera/admin/overview/speed-series": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get global decode / prefill speed and TTFT distribution series for a dimension (admin) */
+        get: operations["getAdminOverviewSpeedSeries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/picotera/admin/overview/summary": {
         parameters: {
             query?: never;
@@ -512,6 +529,23 @@ export interface paths {
         };
         /** Get decode speed box plot statistics for a dimension */
         get: operations["getOverviewSpeedBoxplot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/overview/speed-series": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get decode / prefill speed and TTFT distribution series for a dimension */
+        get: operations["getOverviewSpeedSeries"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1516,6 +1550,36 @@ export interface components {
             items: components["schemas"]["OverviewSpeedBoxplotItemView"][] | null;
             window: components["schemas"]["OverviewWindowView"];
         };
+        OverviewSpeedSeriesPointView: {
+            bucketAt: string;
+            /** Format: int64 */
+            count: number;
+            groupKey: string;
+            /** Format: double */
+            max: number;
+            /** Format: double */
+            median: number;
+            metric: string;
+            /** Format: double */
+            min: number;
+            /** Format: double */
+            p25: number;
+            /** Format: double */
+            p95: number;
+        };
+        OverviewSpeedSeriesView: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/OverviewSpeedSeriesView.json
+             */
+            readonly $schema?: string;
+            buckets: string[] | null;
+            dimension: string;
+            groups: components["schemas"]["OverviewSeriesGroupView"][] | null;
+            points: components["schemas"]["OverviewSpeedSeriesPointView"][] | null;
+            window: components["schemas"]["OverviewWindowView"];
+        };
         OverviewSuccessRateView: {
             /** Format: double */
             rate: number;
@@ -2151,6 +2215,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OverviewSpeedBoxplotView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    getAdminOverviewSpeedSeries: {
+        parameters: {
+            query: {
+                range: "1d" | "7d" | "1m" | "custom";
+                startAt?: string;
+                endAt?: string;
+                userId?: number;
+                model?: string;
+                upstreamModel?: string;
+                providerId?: number;
+                dimension: "none" | "user" | "model" | "upstreamModel" | "provider";
+                bucket?: "auto" | "10m" | "1h" | "6h" | "12h" | "24h";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OverviewSpeedSeriesView"];
                 };
             };
             /** @description Error */
@@ -3211,6 +3314,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OverviewSpeedBoxplotView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    getOverviewSpeedSeries: {
+        parameters: {
+            query: {
+                range: "1d" | "7d" | "1m" | "custom";
+                startAt?: string;
+                endAt?: string;
+                apiKeyId?: number;
+                model?: string;
+                upstreamModel?: string;
+                providerId?: number;
+                projectId?: number;
+                dimension: "none" | "apiKey" | "model" | "upstreamModel" | "provider" | "project";
+                bucket?: "auto" | "10m" | "1h" | "6h" | "12h" | "24h";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OverviewSpeedSeriesView"];
                 };
             };
             /** @description Error */

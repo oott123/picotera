@@ -71,6 +71,16 @@ type GetAdminOverviewSpeedBoxplotResponse struct {
 	Body OverviewSpeedBoxplotView
 }
 
+type GetAdminOverviewSpeedSeriesRequest struct {
+	AdminOverviewCommonRequest
+	Dimension string `query:"dimension" enum:"none,user,model,upstreamModel,provider" required:"true"`
+	Bucket    string `query:"bucket,omitempty" enum:"auto,10m,1h,6h,12h,24h" default:"auto"`
+}
+
+type GetAdminOverviewSpeedSeriesResponse struct {
+	Body OverviewSpeedSeriesView
+}
+
 var OperationGetAdminOverviewSummary = huma.Operation{
 	OperationID: "getAdminOverviewSummary",
 	Method:      http.MethodGet,
@@ -97,4 +107,11 @@ var OperationGetAdminOverviewSpeedBoxplot = huma.Operation{
 	Method:      http.MethodGet,
 	Path:        "/admin/overview/speed-boxplot",
 	Summary:     "Get global decode speed box plot statistics for a dimension (admin)",
+}
+
+var OperationGetAdminOverviewSpeedSeries = huma.Operation{
+	OperationID: "getAdminOverviewSpeedSeries",
+	Method:      http.MethodGet,
+	Path:        "/admin/overview/speed-series",
+	Summary:     "Get global decode / prefill speed and TTFT distribution series for a dimension (admin)",
 }

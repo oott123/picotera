@@ -1024,37 +1024,86 @@ func (q *Queries) ListOverviewSeriesTraces(ctx context.Context, arg ListOverview
 	return items, nil
 }
 
-const listOverviewSpeedSeries = `-- name: ListOverviewSpeedSeries :many
+const listOverviewSpeedDistributionSeries = `-- name: ListOverviewSpeedDistributionSeries :many
+WITH samples AS (
+  SELECT
+    time_bucket($1::text::interval, r.created_at, $2::timestamp)::timestamp AS bucket_at,
+    CASE $3::text
+      WHEN 'apiKey' THEN COALESCE(r.api_key_id::text, '')
+      WHEN 'model' THEN COALESCE(r.model, '')
+      WHEN 'upstreamModel' THEN COALESCE(r.upstream_model, '')
+      WHEN 'provider' THEN COALESCE(r.provider_id::text, '')
+      WHEN 'project' THEN COALESCE(r.project_id::text, '')
+      ELSE ''
+    END AS group_key,
+    s.metric,
+    s.value
+  FROM request r
+  CROSS JOIN LATERAL (
+    SELECT
+      'prefillSpeed'::text AS metric,
+      CASE WHEN r.input_tokens >= 50 AND r.ttft_ms >= 500
+        THEN r.input_tokens::float8 / (r.ttft_ms::float8 / 1000.0)
+      END::float8 AS value
+    UNION ALL
+    SELECT
+      'ttft'::text,
+      CASE WHEN r.input_tokens >= 50 AND r.ttft_ms >= 500
+        THEN r.ttft_ms::float8
+      END::float8
+    UNION ALL
+    SELECT
+      'decodeSpeed'::text,
+      CASE WHEN r.status_code = 200 AND r.finish_reason IN (2, 3, 5)
+          AND r.output_tokens >= 50
+          AND r.ttft_ms IS NOT NULL
+          AND r.time_spent_ms IS NOT NULL
+          AND (r.time_spent_ms - r.ttft_ms) >= 500
+        THEN r.output_tokens::float8 / ((r.time_spent_ms - r.ttft_ms)::float8 / 1000.0)
+      END::float8
+  ) AS s
+  WHERE r.type = 1
+    AND r.created_at >= $4::timestamp
+    AND r.created_at < $5::timestamp
+    AND r.user_id = $6::bigint
+    AND ($7::int IS NULL OR r.api_key_id = $7::int)
+    AND ($8::text IS NULL OR r.model = $8::text)
+    AND ($9::text IS NULL OR r.upstream_model = $9::text)
+    AND ($10::int IS NULL OR r.provider_id = $10::int)
+    AND ($11::int IS NULL OR r.project_id = $11::int)
+    AND (
+      (r.input_tokens >= 50 AND r.ttft_ms >= 500)
+      OR (
+        r.status_code = 200 AND r.finish_reason IN (2, 3, 5)
+        AND r.output_tokens >= 50
+        AND r.ttft_ms IS NOT NULL
+        AND r.time_spent_ms IS NOT NULL
+        AND (r.time_spent_ms - r.ttft_ms) >= 500
+      )
+    )
+)
 SELECT
-  bucket_at::timestamp AS bucket_at,
-  CASE $1::text
-    WHEN 'model' THEN COALESCE(model, '')
-    WHEN 'upstreamModel' THEN COALESCE(upstream_model, '')
-    WHEN 'provider' THEN COALESCE(provider_id::text, '')
-    WHEN 'apiKey' THEN COALESCE(api_key_id::text, '')
-    WHEN 'project' THEN COALESCE(project_id::text, '')
-    ELSE ''
-  END AS group_key,
-  COALESCE(SUM(prefill_token_sum), 0)::float8 AS prefill_token_sum,
-  COALESCE(SUM(prefill_time_sum), 0)::float8 AS prefill_time_sum,
-  COALESCE(SUM(prefill_request_count), 0)::bigint AS prefill_request_count,
-  COALESCE(SUM(decode_token_sum), 0)::float8 AS decode_token_sum,
-  COALESCE(SUM(decode_time_sum), 0)::float8 AS decode_time_sum
-FROM request_speed_bucketed
-WHERE bucket_at >= $2::timestamp
-  AND bucket_at < $3::timestamp
-  AND user_id = $4::bigint
-  AND ($5::int IS NULL OR api_key_id = $5::int)
-  AND ($6::text IS NULL OR model = $6::text)
-  AND ($7::text IS NULL OR upstream_model = $7::text)
-  AND ($8::int IS NULL OR provider_id = $8::int)
-  AND ($9::int IS NULL OR project_id = $9::int)
-GROUP BY bucket_at, group_key
-HAVING SUM(prefill_time_sum) > 0 OR SUM(decode_time_sum) > 0
-ORDER BY bucket_at ASC, group_key ASC
+  bucket_at,
+  group_key,
+  metric::text AS metric,
+  MIN(value)::float8 AS min_value,
+  percentile_cont(0.25) WITHIN GROUP (ORDER BY value)::float8 AS p25_value,
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY value)::float8 AS median_value,
+  percentile_cont(0.95) WITHIN GROUP (ORDER BY value)::float8 AS p95_value,
+  GREATEST(
+    percentile_cont(0.99) WITHIN GROUP (ORDER BY value),
+    percentile_cont(0.5) WITHIN GROUP (ORDER BY value) * 3
+  )::float8 AS max_value,
+  COUNT(*)::bigint AS sample_count
+FROM samples
+WHERE value IS NOT NULL
+GROUP BY bucket_at, group_key, metric
+ORDER BY bucket_at ASC, group_key ASC, metric ASC
 `
 
-type ListOverviewSpeedSeriesParams struct {
+type ListOverviewSpeedDistributionSeriesParams struct {
+	BucketWidth   string           `json:"bucketWidth"`
+	BucketOrigin  pgtype.Timestamp `json:"bucketOrigin"`
 	Dimension     string           `json:"dimension"`
 	StartAt       pgtype.Timestamp `json:"startAt"`
 	EndAt         pgtype.Timestamp `json:"endAt"`
@@ -1066,18 +1115,25 @@ type ListOverviewSpeedSeriesParams struct {
 	ProjectID     pgtype.Int4      `json:"projectId"`
 }
 
-type ListOverviewSpeedSeriesRow struct {
-	BucketAt            pgtype.Timestamp `json:"bucketAt"`
-	GroupKey            string           `json:"groupKey"`
-	PrefillTokenSum     float64          `json:"prefillTokenSum"`
-	PrefillTimeSum      float64          `json:"prefillTimeSum"`
-	PrefillRequestCount int64            `json:"prefillRequestCount"`
-	DecodeTokenSum      float64          `json:"decodeTokenSum"`
-	DecodeTimeSum       float64          `json:"decodeTimeSum"`
+type ListOverviewSpeedDistributionSeriesRow struct {
+	BucketAt    pgtype.Timestamp `json:"bucketAt"`
+	GroupKey    string           `json:"groupKey"`
+	Metric      string           `json:"metric"`
+	MinValue    float64          `json:"minValue"`
+	P25Value    float64          `json:"p25Value"`
+	MedianValue float64          `json:"medianValue"`
+	P95Value    float64          `json:"p95Value"`
+	MaxValue    float64          `json:"maxValue"`
+	SampleCount int64            `json:"sampleCount"`
 }
 
-func (q *Queries) ListOverviewSpeedSeries(ctx context.Context, arg ListOverviewSpeedSeriesParams) ([]ListOverviewSpeedSeriesRow, error) {
-	rows, err := q.db.Query(ctx, listOverviewSpeedSeries,
+// One raw-row scan yields per-(bucket, group) five-number summaries for all
+// three speed metrics: the LATERAL union fans each row out into (metric, value)
+// pairs, NULL where the row doesn't qualify for that metric.
+func (q *Queries) ListOverviewSpeedDistributionSeries(ctx context.Context, arg ListOverviewSpeedDistributionSeriesParams) ([]ListOverviewSpeedDistributionSeriesRow, error) {
+	rows, err := q.db.Query(ctx, listOverviewSpeedDistributionSeries,
+		arg.BucketWidth,
+		arg.BucketOrigin,
 		arg.Dimension,
 		arg.StartAt,
 		arg.EndAt,
@@ -1092,17 +1148,19 @@ func (q *Queries) ListOverviewSpeedSeries(ctx context.Context, arg ListOverviewS
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListOverviewSpeedSeriesRow
+	var items []ListOverviewSpeedDistributionSeriesRow
 	for rows.Next() {
-		var i ListOverviewSpeedSeriesRow
+		var i ListOverviewSpeedDistributionSeriesRow
 		if err := rows.Scan(
 			&i.BucketAt,
 			&i.GroupKey,
-			&i.PrefillTokenSum,
-			&i.PrefillTimeSum,
-			&i.PrefillRequestCount,
-			&i.DecodeTokenSum,
-			&i.DecodeTimeSum,
+			&i.Metric,
+			&i.MinValue,
+			&i.P25Value,
+			&i.MedianValue,
+			&i.P95Value,
+			&i.MaxValue,
+			&i.SampleCount,
 		); err != nil {
 			return nil, err
 		}

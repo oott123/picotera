@@ -294,34 +294,84 @@ WHERE bucket_at >= sqlc.arg('start_at')::timestamp
   AND cost_currency <> ''
 GROUP BY 1, 2, 3, 4, 5, 6;
 
--- name: ListOverviewSpeedSeries :many
+-- name: ListOverviewSpeedDistributionSeries :many
+-- One raw-row scan yields per-(bucket, group) five-number summaries for all
+-- three speed metrics: the LATERAL union fans each row out into (metric, value)
+-- pairs, NULL where the row doesn't qualify for that metric.
+WITH samples AS (
+  SELECT
+    time_bucket(sqlc.arg('bucket_width')::text::interval, r.created_at, sqlc.arg('bucket_origin')::timestamp)::timestamp AS bucket_at,
+    CASE sqlc.arg('dimension')::text
+      WHEN 'apiKey' THEN COALESCE(r.api_key_id::text, '')
+      WHEN 'model' THEN COALESCE(r.model, '')
+      WHEN 'upstreamModel' THEN COALESCE(r.upstream_model, '')
+      WHEN 'provider' THEN COALESCE(r.provider_id::text, '')
+      WHEN 'project' THEN COALESCE(r.project_id::text, '')
+      ELSE ''
+    END AS group_key,
+    s.metric,
+    s.value
+  FROM request r
+  CROSS JOIN LATERAL (
+    SELECT
+      'prefillSpeed'::text AS metric,
+      CASE WHEN r.input_tokens >= 50 AND r.ttft_ms >= 500
+        THEN r.input_tokens::float8 / (r.ttft_ms::float8 / 1000.0)
+      END::float8 AS value
+    UNION ALL
+    SELECT
+      'ttft'::text,
+      CASE WHEN r.input_tokens >= 50 AND r.ttft_ms >= 500
+        THEN r.ttft_ms::float8
+      END::float8
+    UNION ALL
+    SELECT
+      'decodeSpeed'::text,
+      CASE WHEN r.status_code = 200 AND r.finish_reason IN (2, 3, 5)
+          AND r.output_tokens >= 50
+          AND r.ttft_ms IS NOT NULL
+          AND r.time_spent_ms IS NOT NULL
+          AND (r.time_spent_ms - r.ttft_ms) >= 500
+        THEN r.output_tokens::float8 / ((r.time_spent_ms - r.ttft_ms)::float8 / 1000.0)
+      END::float8
+  ) AS s
+  WHERE r.type = 1
+    AND r.created_at >= sqlc.arg('start_at')::timestamp
+    AND r.created_at < sqlc.arg('end_at')::timestamp
+    AND r.user_id = sqlc.arg('user_id')::bigint
+    AND (sqlc.narg('api_key_id')::int IS NULL OR r.api_key_id = sqlc.narg('api_key_id')::int)
+    AND (sqlc.narg('model')::text IS NULL OR r.model = sqlc.narg('model')::text)
+    AND (sqlc.narg('upstream_model')::text IS NULL OR r.upstream_model = sqlc.narg('upstream_model')::text)
+    AND (sqlc.narg('provider_id')::int IS NULL OR r.provider_id = sqlc.narg('provider_id')::int)
+    AND (sqlc.narg('project_id')::int IS NULL OR r.project_id = sqlc.narg('project_id')::int)
+    AND (
+      (r.input_tokens >= 50 AND r.ttft_ms >= 500)
+      OR (
+        r.status_code = 200 AND r.finish_reason IN (2, 3, 5)
+        AND r.output_tokens >= 50
+        AND r.ttft_ms IS NOT NULL
+        AND r.time_spent_ms IS NOT NULL
+        AND (r.time_spent_ms - r.ttft_ms) >= 500
+      )
+    )
+)
 SELECT
-  bucket_at::timestamp AS bucket_at,
-  CASE sqlc.arg('dimension')::text
-    WHEN 'model' THEN COALESCE(model, '')
-    WHEN 'upstreamModel' THEN COALESCE(upstream_model, '')
-    WHEN 'provider' THEN COALESCE(provider_id::text, '')
-    WHEN 'apiKey' THEN COALESCE(api_key_id::text, '')
-    WHEN 'project' THEN COALESCE(project_id::text, '')
-    ELSE ''
-  END AS group_key,
-  COALESCE(SUM(prefill_token_sum), 0)::float8 AS prefill_token_sum,
-  COALESCE(SUM(prefill_time_sum), 0)::float8 AS prefill_time_sum,
-  COALESCE(SUM(prefill_request_count), 0)::bigint AS prefill_request_count,
-  COALESCE(SUM(decode_token_sum), 0)::float8 AS decode_token_sum,
-  COALESCE(SUM(decode_time_sum), 0)::float8 AS decode_time_sum
-FROM request_speed_bucketed
-WHERE bucket_at >= sqlc.arg('start_at')::timestamp
-  AND bucket_at < sqlc.arg('end_at')::timestamp
-  AND user_id = sqlc.arg('user_id')::bigint
-  AND (sqlc.narg('api_key_id')::int IS NULL OR api_key_id = sqlc.narg('api_key_id')::int)
-  AND (sqlc.narg('model')::text IS NULL OR model = sqlc.narg('model')::text)
-  AND (sqlc.narg('upstream_model')::text IS NULL OR upstream_model = sqlc.narg('upstream_model')::text)
-  AND (sqlc.narg('provider_id')::int IS NULL OR provider_id = sqlc.narg('provider_id')::int)
-  AND (sqlc.narg('project_id')::int IS NULL OR project_id = sqlc.narg('project_id')::int)
-GROUP BY bucket_at, group_key
-HAVING SUM(prefill_time_sum) > 0 OR SUM(decode_time_sum) > 0
-ORDER BY bucket_at ASC, group_key ASC;
+  bucket_at,
+  group_key,
+  metric::text AS metric,
+  MIN(value)::float8 AS min_value,
+  percentile_cont(0.25) WITHIN GROUP (ORDER BY value)::float8 AS p25_value,
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY value)::float8 AS median_value,
+  percentile_cont(0.95) WITHIN GROUP (ORDER BY value)::float8 AS p95_value,
+  GREATEST(
+    percentile_cont(0.99) WITHIN GROUP (ORDER BY value),
+    percentile_cont(0.5) WITHIN GROUP (ORDER BY value) * 3
+  )::float8 AS max_value,
+  COUNT(*)::bigint AS sample_count
+FROM samples
+WHERE value IS NOT NULL
+GROUP BY bucket_at, group_key, metric
+ORDER BY bucket_at ASC, group_key ASC, metric ASC;
 
 -- name: ListOverviewOutcomeSeries :many
 SELECT

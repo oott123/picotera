@@ -40,7 +40,7 @@ type outcomeBucketReason struct {
 // buildOutcomeSeries folds 10-minute source buckets into display buckets and
 // derives the four outcome ratios. Ratios are non-additive, so numerators and
 // denominators are accumulated per (display bucket, group) and divided exactly
-// once — the same treatment speed / cacheHitRate get in handleGetOverviewSeries.
+// once — the same treatment cacheHitRate gets in handleGetOverviewSeries.
 func buildOutcomeSeries(
 	rows []db.ListOverviewOutcomeSeriesRow,
 	start time.Time,

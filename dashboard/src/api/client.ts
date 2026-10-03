@@ -21,6 +21,7 @@ import type {
   OverviewDistributionView,
   OverviewOutcomeSeriesView,
   OverviewSpeedBoxplotView,
+  OverviewSpeedSeriesView,
   OverviewSeriesDimension,
   OverviewSeriesView,
   OverviewSummaryView,
@@ -671,6 +672,18 @@ export async function getOverviewSpeedBoxplot(
   return data
 }
 
+export async function getOverviewSpeedSeries(
+  filters: OverviewFilters,
+  dimension: OverviewSeriesDimension,
+  bucket: OverviewGranularity,
+): Promise<OverviewSpeedSeriesView> {
+  const { data, error } = await api.GET('/api/picotera/overview/speed-series', {
+    params: { query: { ...overviewQuery(filters), dimension, bucket } as never },
+  })
+  if (error) fail(error, '加载速度统计失败')
+  return data
+}
+
 export function invalidateOverview(client: QueryClient) {
   client.invalidateQueries({ queryKey: queryKeys.overview.all })
 }
@@ -729,6 +742,18 @@ export async function getAdminOverviewSpeedBoxplot(
     params: { query: { ...adminOverviewQuery(filters), dimension } as never },
   })
   if (error) fail(error, '加载速度分布失败')
+  return data
+}
+
+export async function getAdminOverviewSpeedSeries(
+  filters: AdminOverviewFilters,
+  dimension: AdminOverviewSeriesDimension,
+  bucket: OverviewGranularity,
+): Promise<OverviewSpeedSeriesView> {
+  const { data, error } = await api.GET('/api/picotera/admin/overview/speed-series', {
+    params: { query: { ...adminOverviewQuery(filters), dimension, bucket } as never },
+  })
+  if (error) fail(error, '加载速度统计失败')
   return data
 }
 

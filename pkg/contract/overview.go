@@ -137,6 +137,30 @@ type OverviewSpeedBoxplotView struct {
 	Items     []OverviewSpeedBoxplotItemView `json:"items"`
 }
 
+// OverviewSpeedSeriesPointView is the five-number summary of one metric's
+// samples within one (bucket, group). Combinations without samples produce no
+// point.
+type OverviewSpeedSeriesPointView struct {
+	// prefillSpeed (tok/s) | decodeSpeed (tok/s) | ttft (ms)
+	Metric   string  `json:"metric"`
+	BucketAt string  `json:"bucketAt"`
+	GroupKey string  `json:"groupKey"`
+	Min      float64 `json:"min"`
+	P25      float64 `json:"p25"`
+	Median   float64 `json:"median"`
+	P95      float64 `json:"p95"`
+	Max      float64 `json:"max"`
+	Count    int64   `json:"count"`
+}
+
+type OverviewSpeedSeriesView struct {
+	Window    OverviewWindowView             `json:"window"`
+	Dimension string                         `json:"dimension"`
+	Groups    []OverviewSeriesGroupView      `json:"groups"`
+	Buckets   []string                       `json:"buckets"`
+	Points    []OverviewSpeedSeriesPointView `json:"points"`
+}
+
 type OverviewCommonRequest struct {
 	Range         string `query:"range" enum:"1d,7d,1m,custom" required:"true"`
 	StartAt       string `query:"startAt,omitempty"`
@@ -194,6 +218,16 @@ type GetOverviewSpeedBoxplotResponse struct {
 	Body OverviewSpeedBoxplotView
 }
 
+type GetOverviewSpeedSeriesRequest struct {
+	OverviewCommonRequest
+	Dimension string `query:"dimension" enum:"none,apiKey,model,upstreamModel,provider,project" required:"true"`
+	Bucket    string `query:"bucket,omitempty" enum:"auto,10m,1h,6h,12h,24h" default:"auto"`
+}
+
+type GetOverviewSpeedSeriesResponse struct {
+	Body OverviewSpeedSeriesView
+}
+
 var OperationGetOverviewSummary = huma.Operation{
 	OperationID: "getOverviewSummary",
 	Method:      http.MethodGet,
@@ -227,4 +261,11 @@ var OperationGetOverviewSpeedBoxplot = huma.Operation{
 	Method:      http.MethodGet,
 	Path:        "/overview/speed-boxplot",
 	Summary:     "Get decode speed box plot statistics for a dimension",
+}
+
+var OperationGetOverviewSpeedSeries = huma.Operation{
+	OperationID: "getOverviewSpeedSeries",
+	Method:      http.MethodGet,
+	Path:        "/overview/speed-series",
+	Summary:     "Get decode / prefill speed and TTFT distribution series for a dimension",
 }

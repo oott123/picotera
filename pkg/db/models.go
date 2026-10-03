@@ -162,21 +162,6 @@ type RequestOverviewBucketed struct {
 	Cost               pgtype.Numeric `json:"cost"`
 }
 
-type RequestSpeedBucketed struct {
-	BucketAt            interface{} `json:"bucketAt"`
-	Model               pgtype.Text `json:"model"`
-	UpstreamModel       pgtype.Text `json:"upstreamModel"`
-	ProviderID          pgtype.Int4 `json:"providerId"`
-	ApiKeyID            pgtype.Int4 `json:"apiKeyId"`
-	ProjectID           pgtype.Int4 `json:"projectId"`
-	UserID              pgtype.Int8 `json:"userId"`
-	PrefillTokenSum     int64       `json:"prefillTokenSum"`
-	PrefillTimeSum      int64       `json:"prefillTimeSum"`
-	PrefillRequestCount int64       `json:"prefillRequestCount"`
-	DecodeTokenSum      int64       `json:"decodeTokenSum"`
-	DecodeTimeSum       int64       `json:"decodeTimeSum"`
-}
-
 type Script struct {
 	ID        string             `json:"id"`
 	Name      string             `json:"name"`

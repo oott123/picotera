@@ -966,6 +966,79 @@ components:
         - dimension
         - items
       type: object
+    OverviewSpeedSeriesPointView:
+      additionalProperties: false
+      properties:
+        bucketAt:
+          type: string
+        count:
+          format: int64
+          type: integer
+        groupKey:
+          type: string
+        max:
+          format: double
+          type: number
+        median:
+          format: double
+          type: number
+        metric:
+          type: string
+        min:
+          format: double
+          type: number
+        p25:
+          format: double
+          type: number
+        p95:
+          format: double
+          type: number
+      required:
+        - metric
+        - bucketAt
+        - groupKey
+        - min
+        - p25
+        - median
+        - p95
+        - max
+        - count
+      type: object
+    OverviewSpeedSeriesView:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/OverviewSpeedSeriesView.json
+          format: uri
+          readOnly: true
+          type: string
+        buckets:
+          items:
+            type: string
+          nullable: true
+          type: array
+        dimension:
+          type: string
+        groups:
+          items:
+            $ref: "#/components/schemas/OverviewSeriesGroupView"
+          nullable: true
+          type: array
+        points:
+          items:
+            $ref: "#/components/schemas/OverviewSpeedSeriesPointView"
+          nullable: true
+          type: array
+        window:
+          $ref: "#/components/schemas/OverviewWindowView"
+      required:
+        - window
+        - dimension
+        - groups
+        - buckets
+        - points
+      type: object
     OverviewSuccessRateView:
       additionalProperties: false
       properties:
@@ -2242,6 +2315,96 @@ paths:
                 $ref: "#/components/schemas/PicoTeraError"
           description: Error
       summary: Get global decode speed box plot statistics for a dimension (admin)
+  /api/picotera/admin/overview/speed-series:
+    get:
+      operationId: getAdminOverviewSpeedSeries
+      parameters:
+        - explode: false
+          in: query
+          name: range
+          required: true
+          schema:
+            enum:
+              - 1d
+              - 7d
+              - 1m
+              - custom
+            type: string
+        - explode: false
+          in: query
+          name: startAt
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: endAt
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: userId
+          schema:
+            format: int32
+            minimum: 1
+            type: integer
+        - explode: false
+          in: query
+          name: model
+          schema:
+            minLength: 1
+            type: string
+        - explode: false
+          in: query
+          name: upstreamModel
+          schema:
+            minLength: 1
+            type: string
+        - explode: false
+          in: query
+          name: providerId
+          schema:
+            format: int32
+            minimum: 1
+            type: integer
+        - explode: false
+          in: query
+          name: dimension
+          required: true
+          schema:
+            enum:
+              - none
+              - user
+              - model
+              - upstreamModel
+              - provider
+            type: string
+        - explode: false
+          in: query
+          name: bucket
+          schema:
+            default: auto
+            enum:
+              - auto
+              - 10m
+              - 1h
+              - 6h
+              - 12h
+              - 24h
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OverviewSpeedSeriesView"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PicoTeraError"
+          description: Error
+      summary: Get global decode / prefill speed and TTFT distribution series for a dimension (admin)
   /api/picotera/admin/overview/summary:
     get:
       operationId: getAdminOverviewSummary
@@ -3287,6 +3450,104 @@ paths:
                 $ref: "#/components/schemas/PicoTeraError"
           description: Error
       summary: Get decode speed box plot statistics for a dimension
+  /api/picotera/overview/speed-series:
+    get:
+      operationId: getOverviewSpeedSeries
+      parameters:
+        - explode: false
+          in: query
+          name: range
+          required: true
+          schema:
+            enum:
+              - 1d
+              - 7d
+              - 1m
+              - custom
+            type: string
+        - explode: false
+          in: query
+          name: startAt
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: endAt
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: apiKeyId
+          schema:
+            format: int32
+            minimum: 1
+            type: integer
+        - explode: false
+          in: query
+          name: model
+          schema:
+            minLength: 1
+            type: string
+        - explode: false
+          in: query
+          name: upstreamModel
+          schema:
+            minLength: 1
+            type: string
+        - explode: false
+          in: query
+          name: providerId
+          schema:
+            format: int32
+            minimum: 1
+            type: integer
+        - explode: false
+          in: query
+          name: projectId
+          schema:
+            format: int32
+            minimum: 1
+            type: integer
+        - explode: false
+          in: query
+          name: dimension
+          required: true
+          schema:
+            enum:
+              - none
+              - apiKey
+              - model
+              - upstreamModel
+              - provider
+              - project
+            type: string
+        - explode: false
+          in: query
+          name: bucket
+          schema:
+            default: auto
+            enum:
+              - auto
+              - 10m
+              - 1h
+              - 6h
+              - 12h
+              - 24h
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OverviewSpeedSeriesView"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PicoTeraError"
+          description: Error
+      summary: Get decode / prefill speed and TTFT distribution series for a dimension
   /api/picotera/overview/summary:
     get:
       operationId: getOverviewSummary
