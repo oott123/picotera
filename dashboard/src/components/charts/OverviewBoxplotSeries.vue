@@ -4,7 +4,7 @@ import VChart from 'vue-echarts'
 import { Tag } from '@/ui'
 import { usePreferencesStore } from '@/stores/preferences'
 import { groupColor, groupBorderColor, getThemeAxisStyle } from './colors'
-import type { CallbackDataParams, CustomSeriesRenderItemAPI } from 'echarts/types/dist/shared'
+import type { CallbackDataParams } from 'echarts/types/dist/shared'
 import type { EChartsOption } from './echarts'
 import './echarts'
 
@@ -119,35 +119,16 @@ watch(
 // boxplot typings only admit number arrays, hence the cast.
 const EMPTY_BOX = '-' as unknown as number[]
 
-interface BoxDatum {
-  value: number[]
+interface StatDatum<V> {
+  value: V
   _point: BoxplotPoint
   _colorIndex: number
 }
 
-// Hover focus is tracked here instead of via ECharts' emphasis.focus: a box and
-// its median line are separate series, and focus: 'series' would fade the
-// line of the very group being hovered.
-const focusedKey = ref<string | null>(null)
-
-function onChartMouseover(params: { seriesType?: string; seriesIndex?: number }) {
-  if (params.seriesType !== 'boxplot' || params.seriesIndex === undefined) return
-  focusedKey.value = visibleGroups.value[params.seriesIndex]?.key ?? null
-}
-
-function clearFocus() {
-  focusedKey.value = null
-}
-
-// Horizontal offset of the k-th of n boxplot series from its category center,
-// mirroring ECharts' boxplotLayout (calculateBase) so a median line runs
-// through the centers of its own boxes.
-function boxOffset(bandWidth: number, k: number, n: number) {
-  const available = bandWidth * 0.8 - 2
-  const gap = (available / n) * 0.3
-  const width = (available - gap * (n - 1)) / n
-  return width / 2 - available / 2 + k * (gap + width)
-}
+// With a single visible group the full distribution is drawn as boxes, its
+// medians joined by a line; with several, boxes side by side get too crowded,
+// so only the median lines remain.
+const boxMode = computed(() => visibleGroups.value.length === 1)
 
 const option = computed<EChartsOption>(() => {
   void themeVersion.value
@@ -159,67 +140,55 @@ const option = computed<EChartsOption>(() => {
   const fmtValue = (v: number, skipUnit = false) =>
     props.valueFormat ? props.valueFormat(v, skipUnit) : compactNumber(v)
 
-  const n = visibleGroups.value.length
-  const opacityOf = (key: string) =>
-    focusedKey.value !== null && focusedKey.value !== key ? 0.3 : 1
-
-  const boxSeries = visibleGroups.value.map((g) => {
-    const originalIdx = idxMap.get(g.key) ?? 0
-    const row = pointsByGroup.value.get(g.key) ?? []
-    return {
-      type: 'boxplot' as const,
-      name: g.label || '-',
-      boxWidth: [2, 24],
-      data: row.map((p): BoxDatum | number[] =>
-        p
-          ? {
-              value: [p.min, p.p25, p.median, p.p95, p.max],
-              _point: p,
-              _colorIndex: originalIdx,
-            }
-          : EMPTY_BOX,
-      ),
-      itemStyle: {
-        color: groupColor(originalIdx),
-        borderColor: groupBorderColor(originalIdx),
-        opacity: opacityOf(g.key),
-      },
-    }
-  })
-
-  // One custom series per group draws the whole median polyline from a single
-  // placeholder datum; buckets without samples are skipped, so the line joins
-  // the neighbouring boxes across the gap.
-  const medianLineSeries = visibleGroups.value.map((g, k) => {
-    const originalIdx = idxMap.get(g.key) ?? 0
-    const row = pointsByGroup.value.get(g.key) ?? []
-    return {
-      type: 'custom' as const,
-      name: g.label || '-',
-      silent: true,
-      tooltip: { show: false },
-      z: 3,
-      clip: true,
-      data: [[0, 0]],
-      renderItem: (_params: unknown, api: CustomSeriesRenderItemAPI) => {
-        const offset = boxOffset((api.size!([1, 0]) as number[])[0]!, k, n)
-        const points: number[][] = []
-        row.forEach((p, i) => {
-          if (!p) return
-          const [x, y] = api.coord([i, p.median])
-          points.push([x! + offset, y!])
-        })
-        if (points.length < 2) return null
+  const boxSeries = boxMode.value
+    ? visibleGroups.value.map((g) => {
+        const originalIdx = idxMap.get(g.key) ?? 0
+        const row = pointsByGroup.value.get(g.key) ?? []
         return {
-          type: 'polyline' as const,
-          shape: { points },
-          style: {
-            stroke: groupBorderColor(originalIdx),
-            lineWidth: 1.5,
-            fill: 'none',
-            opacity: opacityOf(g.key),
+          type: 'boxplot' as const,
+          name: g.label || '-',
+          boxWidth: [2, 24],
+          data: row.map((p): StatDatum<number[]> | number[] =>
+            p
+              ? {
+                  value: [p.min, p.p25, p.median, p.p95, p.max],
+                  _point: p,
+                  _colorIndex: originalIdx,
+                }
+              : EMPTY_BOX,
+          ),
+          itemStyle: {
+            color: groupColor(originalIdx),
+            borderColor: groupBorderColor(originalIdx),
           },
         }
+      })
+    : []
+
+  const medianSeries = visibleGroups.value.map((g) => {
+    const originalIdx = idxMap.get(g.key) ?? 0
+    const row = pointsByGroup.value.get(g.key) ?? []
+    return {
+      type: 'line' as const,
+      name: g.label || '-',
+      data: row.map((p): StatDatum<number> | null =>
+        p ? { value: p.median, _point: p, _colorIndex: originalIdx } : null,
+      ),
+      connectNulls: true,
+      // Straight segments over the boxes, so the line doesn't suggest values
+      // between buckets; smoothed on its own, like OverviewLineChart.
+      smooth: !boxMode.value,
+      symbol: 'none',
+      // Over the boxes the line takes the median stroke's color; on its own it
+      // uses the fill color, like OverviewLineChart.
+      lineStyle: { width: 1.5 },
+      itemStyle: {
+        color: boxMode.value ? groupBorderColor(originalIdx) : groupColor(originalIdx),
+      },
+      z: 3,
+      emphasis: { focus: 'series' as const },
+      blur: {
+        lineStyle: { opacity: 0.3 },
       },
     }
   })
@@ -244,7 +213,7 @@ const option = computed<EChartsOption>(() => {
     },
     tooltip: {
       trigger: 'axis',
-      axisPointer: { type: 'shadow' },
+      axisPointer: { type: boxMode.value ? 'shadow' : 'line' },
       backgroundColor: axis.tooltipBg,
       borderColor: axis.tooltipBorder,
       textStyle: { color: axis.tooltipText, fontSize: 10 },
@@ -257,9 +226,12 @@ const option = computed<EChartsOption>(() => {
           ? props.bucketFormat(bucket)
           : defaultBucketFormat(bucket)
         const head = `<div class="text-2xs text-ink-muted mb-1">${escape(bucketLabel)}</div>`
+        // In box mode a group shows up twice (box + median line); one row each.
+        const seen = new Set<number>()
         const lines = arr
-          .map((p) => p.data as BoxDatum | string | undefined)
-          .filter((d): d is BoxDatum => typeof d === 'object' && d !== null)
+          .map((p) => p.data as StatDatum<unknown> | string | null | undefined)
+          .filter((d): d is StatDatum<unknown> => typeof d === 'object' && d !== null)
+          .filter((d) => !seen.has(d._colorIndex) && !!seen.add(d._colorIndex))
           .map((d) => {
             const s = d._point
             const name = props.groups[d._colorIndex]?.label || '-'
@@ -269,9 +241,7 @@ const option = computed<EChartsOption>(() => {
         return `<div class="min-w-32">${head}${lines}</div>`
       },
     },
-    // Boxplot series come first so their seriesIndex equals the position in
-    // visibleGroups, which both boxOffset and onChartMouseover rely on.
-    series: [...boxSeries, ...medianLineSeries],
+    series: [...boxSeries, ...medianSeries],
   }
 })
 </script>
@@ -280,14 +250,7 @@ const option = computed<EChartsOption>(() => {
   <div class="flex flex-col gap-2">
     <div v-if="noData" class="text-2xs text-ink-muted">暂无数据</div>
     <template v-else>
-      <VChart
-        :option="option"
-        :style="{ height: (height ?? 180) + 'px' }"
-        autoresize
-        @mouseover="onChartMouseover"
-        @mouseout="clearFocus"
-        @globalout="clearFocus"
-      />
+      <VChart :option="option" :style="{ height: (height ?? 180) + 'px' }" autoresize />
       <ul class="flex flex-wrap gap-1">
         <li
           v-for="(g, i) in groups"

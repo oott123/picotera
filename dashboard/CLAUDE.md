@@ -67,7 +67,7 @@ Chart components live in `src/components/charts/` and use `vue-echarts` (Apache 
 
 - `OverviewAreaStack` — stacked area chart for request volume over time.
 - `OverviewDonut` — donut chart for distribution breakdowns.
-- `OverviewBoxplotSeries` — vertical multi-series boxplot over time buckets (each group's box sits side by side within a bucket), with the same per-series toggle/isolate legend as `OverviewLineChart`; used for the speed section (prefill/decode speed, TTFT). Colors match `OverviewSpeedTimeline`. Each group's medians are joined by a polyline drawn by a companion `custom` series, offset with a copy of ECharts' boxplot layout formula (`boxOffset`) so it runs through that group's boxes; hover focus is a component-level `focusedKey` rather than `emphasis.focus`, so a box and its own line fade together.
+- `OverviewBoxplotSeries` — per-bucket distribution chart for the speed section (prefill/decode speed, TTFT), with the same per-series toggle/isolate legend as `OverviewLineChart`. Its mode follows the number of *visible* groups: with exactly one it draws that group's boxplot (colors match `OverviewSpeedTimeline`) plus a straight line through the medians; with several it drops the boxes and draws only smoothed median lines, like `OverviewLineChart`.
 - `OverviewLineChart` — multi-series line chart with per-series toggle/isolate, used for per-bucket time series such as cache hit rate.
 - `OverviewSankey` — Sankey diagram for model → provider routing flow.
 - `OverviewSpeedTimeline` — horizontal boxplot chart for min-max speed ranges; the border is a darker (light themes) / lighter (dark themes) shade of the fill, which is what makes the median line stand out.

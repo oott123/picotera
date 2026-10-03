@@ -1030,23 +1030,31 @@ function compactNumber(v: number) {
   return v.toFixed(0)
 }
 
+// Bucket width of the current series window, parsed from its `window.bucket`
+// label ("10m", "6h", …).
+const seriesBucketMs = computed(() => {
+  const m = /^(\d+)([mh])$/.exec(seriesData.value?.window.bucket ?? '')
+  if (!m) return 0
+  return Number(m[1]) * (m[2] === 'm' ? 60_000 : 3_600_000)
+})
+
 function formatBucket(iso: string) {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
+  const date = `${d.getMonth() + 1}/${d.getDate()}`
+  // Day-wide buckets: the date alone.
+  if (seriesBucketMs.value >= 24 * 3_600_000) return date
   const hh = d.getHours().toString().padStart(2, '0')
-  if (granularity.value === '10m') {
-    const mm = d.getMinutes().toString().padStart(2, '0')
-    if (filters.range === '1d') return `${hh}:${mm}`
-    return `${d.getMonth() + 1}/${d.getDate()} ${hh}:${mm}`
-  }
+  const mm = d.getMinutes().toString().padStart(2, '0')
+  const time = `${hh}:${mm}`
+  // A window of at most one day reads fine as times alone; anything longer
+  // needs the date to tell the days apart.
   const buckets = seriesBuckets.value
-  if (buckets.length <= 24) {
-    return `${hh}:00`
-  }
-  if (buckets.length <= 24 * 7) {
-    return `${d.getMonth() + 1}/${d.getDate()} ${hh}:00`
-  }
-  return `${d.getMonth() + 1}/${d.getDate()}`
+  const first = buckets[0]
+  const last = buckets[buckets.length - 1]
+  const span = first && last ? Date.parse(last) - Date.parse(first) + seriesBucketMs.value : 0
+  if (span <= 24 * 3_600_000) return time
+  return `${date} ${time}`
 }
 
 function formatCurrencyCompact(v: number, code: string) {

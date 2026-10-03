@@ -12,7 +12,7 @@
 ## 方案概览
 
 1. 后端新增 `GET /overview/speed-series` 和 `GET /admin/overview/speed-series`，一次查询返回三项指标在每个（显示桶，分组）上的五数统计。
-2. 前端新增 `OverviewBoxplotSeries.vue` 纵向多系列盒须图组件，替换三张折线图。
+2. 前端新增 `OverviewBoxplotSeries.vue` 组件替换三张折线图：单个可见分组时画纵向盒须图并连起中位数，多个可见分组时只画各分组的中位数折线。
 3. 删除不再使用的旧数据源：series 接口的三个速度指标、`ListOverviewSpeedSeries` / `ListAdminOverviewSpeedSeries` 查询、`request_speed_bucketed` 连续聚合。
 4. 横向「输出速度」盒须图（`speed-boxplot` 接口 + `OverviewSpeedTimeline`）保持不变。
 
@@ -153,13 +153,15 @@ defineProps<{
 ```
 
 - 横轴 `category`（各桶，标签由 `bucketFormat` 生成），纵轴 `value`（标签由 `valueFormat` 生成），网格、坐标轴样式与 `OverviewLineChart` 相同。
-- 每个可见分组一条 `type: 'boxplot'` 系列。ECharts 会在同一类目内把多条 boxplot 系列并排摆放，这就是「每个点纵向多系列」。系列数据按 `buckets` 顺序对齐，缺数据的桶填 `'-'`（ECharts 的空数据占位）。
-- `boxWidth: [2, 24]`，桶多、分组多时箱体可以压到 2px，不会互相重叠。
+- 盒须图模式下，boxplot 系列数据按 `buckets` 顺序对齐，缺数据的桶填 `'-'`（ECharts 的空数据占位）。
+- `boxWidth: [2, 24]`，桶多时箱体可以压到 2px，不会互相重叠。
 - 颜色：`itemStyle.color = groupColor(originalIdx)`，`itemStyle.borderColor = groupBorderColor(originalIdx)`，`originalIdx` 是分组在 `groups` 中的下标，与图例色块一致；中位线靠边框色突出，做法与 `OverviewSpeedTimeline` 相同。
 - 图例：与 `OverviewLineChart` 相同的 `Tag` 列表，单击切换显示，右键单独显示，状态逻辑（`hiddenKeys` / `toggleSeries` / `isolateSeries`）照搬。
-- tooltip：`trigger: 'axis'`，头部为桶标签，下面每个有数据的分组一行：色块、分组名、`min · med · p99`（`p99` 位置显示 `max`，与现有文案一致）以及 `n=count`。
-- 中位数折线：每个可见分组再配一条 `type: 'custom'` 系列，用单个占位数据在 `renderItem` 里画整条 `polyline`，经过该分组各桶的中位数，没有样本的桶直接跳过（折线跨过空桶相连）。横向位置用 `boxOffset` 复刻 ECharts `boxplotLayout` 的 `calculateBase` 公式，对准本分组箱体的中心；颜色取 `groupBorderColor`，与箱体中位线同色。折线系列 `silent`、`tooltip.show = false`，不参与 tooltip。
-- 悬停聚焦：箱体和折线是两条系列，ECharts 的 `focus: 'series'` 会把被悬停分组自己的折线也淡化，所以改由组件维护 `focusedKey`（`mouseover` 箱体时设置，`mouseout` / `globalout` 时清空），非聚焦分组的箱体和折线透明度都降为 0.3。
+- tooltip：`trigger: 'axis'`，头部为桶标签，下面每个有数据的分组一行：色块、分组名、`min · med · p99`（`p99` 位置显示 `max`，与现有文案一致）以及 `n=count`。两种模式内容相同；盒须图模式下同一分组的箱体和折线只出一行。
+- 显示模式按可见分组数切换（`boxMode = visibleGroups.length === 1`，图例单击 / 右键改变可见分组时同样生效）：
+  - 单个可见分组：画该分组的 boxplot 系列，再叠一条中位数 `line` 系列。只有一条 boxplot 时箱体位于类目中心，折线点天然对准中位线。折线不平滑（`smooth: false`），颜色取 `groupBorderColor`，与箱体中位线同色。
+  - 多个可见分组：不画箱体，每个分组只画一条中位数 `line` 系列，样式与 `OverviewLineChart` 相同（`smooth`、`symbol: 'none'`、`connectNulls`、`groupColor` 配色）。
+- 中位数折线的数据按 `buckets` 对齐，没有样本的桶为 `null`，`connectNulls` 跨过空桶相连。
 - 默认高度 180px，与折线图相同。所有分组都没有点时只显示「暂无数据」，与 `OverviewSpeedTimeline` 相同。
 - 主题切换沿用 `themeVersion` 触发 option 重算。
 
