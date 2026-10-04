@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 import VChart from 'vue-echarts'
 import { Tag } from '@/ui'
 import { usePreferencesStore } from '@/stores/preferences'
@@ -35,12 +35,14 @@ const hiddenKeys = ref<Set<string>>(new Set())
 function toggleSeries(key: string) {
   if (hiddenKeys.value.size === props.groups.length - 1 && !hiddenKeys.value.has(key)) {
     hiddenKeys.value = new Set()
+    void nextTick(applyLegendHover)
     return
   }
   const next = new Set(hiddenKeys.value)
   if (next.has(key)) next.delete(key)
   else next.add(key)
   hiddenKeys.value = next
+  void nextTick(applyLegendHover)
 }
 
 function isolateSeries(key: string) {
@@ -51,13 +53,42 @@ function isolateSeries(key: string) {
     next.delete(key)
     hiddenKeys.value = next
   }
+  void nextTick(applyLegendHover)
 }
 
 const visibleGroups = computed(() => props.groups.filter((g) => !hiddenKeys.value.has(g.key)))
 
+// Hovering a legend item highlights its series the same way hovering the
+// series itself does. Toggling visibility shifts series indices, so the
+// highlight is re-applied once vue-echarts has set the new option.
+const chartRef = useTemplateRef<InstanceType<typeof VChart>>('chart')
+const hoveredKey = ref<string | null>(null)
+
+function applyLegendHover() {
+  const chart = chartRef.value
+  if (!chart) return
+  chart.dispatchAction({ type: 'downplay' })
+  if (hoveredKey.value === null) return
+  // Series are generated from visibleGroups in order; indices rather than
+  // names, since two groups may share a label.
+  const seriesIndex = visibleGroups.value.findIndex((g) => g.key === hoveredKey.value)
+  if (seriesIndex === -1) return
+  chart.dispatchAction({ type: 'highlight', seriesIndex })
+}
+
+function onLegendEnter(key: string) {
+  hoveredKey.value = key
+  applyLegendHover()
+}
+
+function onLegendLeave() {
+  hoveredKey.value = null
+  applyLegendHover()
+}
+
 interface Datum {
   bucket: string
-  values: Record<string, number>
+  values: Record<string, number | undefined>
 }
 
 const dataset = computed<Datum[]>(() => {
@@ -65,14 +96,14 @@ const dataset = computed<Datum[]>(() => {
   props.buckets.forEach((b, i) => indexByBucket.set(b, i))
   const rows: Datum[] = props.buckets.map((b) => ({
     bucket: b,
-    values: Object.fromEntries(props.groups.map((g) => [g.key, 0])),
+    values: Object.fromEntries(props.groups.map((g) => [g.key, undefined])),
   }))
   for (const point of props.points) {
     const idx = indexByBucket.get(point.bucketAt)
     if (idx === undefined) continue
     const row = rows[idx]
     if (!row) continue
-    row.values[point.groupKey] = (row.values[point.groupKey] ?? 0) + (point.value ?? 0)
+    row.values[point.groupKey] = (row.values[point.groupKey] ?? 0) + point.value
   }
   return rows
 })
@@ -159,7 +190,7 @@ const option = computed<EChartsOption>(() => {
           : defaultBucketFormat(bucket)
         const head = `<div class="text-2xs text-ink-muted mb-1">${escape(bucketLabel)}</div>`
         const lines = arr
-          .filter((p) => p.value != null && p.value !== 0)
+          .filter((p) => typeof p.value === 'number' && Number.isFinite(p.value) && p.value !== 0)
           .map((p) => {
             const formatted = fmtValue(p.value as number)
             return `<div class="flex items-center gap-1 text-2xs"><span style="background:${p.color};display:inline-block;width:8px;height:8px;border-radius:2px"></span><span class="text-ink-muted">${escape(p.seriesName || '-')}</span><span class="ml-auto mono tabular">${formatted}</span></div>`
@@ -174,7 +205,9 @@ const option = computed<EChartsOption>(() => {
       return {
         type: 'line' as const,
         name: g.label || '-',
-        data: dataset.value.map((d) => d.values[g.key] ?? 0),
+        // A bucket without a point is ECharts' '-' placeholder, which breaks
+        // the area instead of dropping it to 0.
+        data: dataset.value.map((d) => d.values[g.key] ?? '-'),
         stack: 'total',
         areaStyle: { opacity: 0.85 },
         smooth: true,
@@ -193,7 +226,7 @@ const option = computed<EChartsOption>(() => {
 
 <template>
   <div class="flex flex-col gap-2">
-    <VChart :option="option" :style="{ height: (height ?? 180) + 'px' }" autoresize />
+    <VChart ref="chart" :option="option" :style="{ height: (height ?? 180) + 'px' }" autoresize />
     <ul class="flex flex-wrap gap-1">
       <li
         v-for="(g, i) in groups"
@@ -202,6 +235,8 @@ const option = computed<EChartsOption>(() => {
         :class="{ 'opacity-30': hiddenKeys.has(g.key) }"
         @click="toggleSeries(g.key)"
         @contextmenu.prevent="isolateSeries(g.key)"
+        @mouseenter="onLegendEnter(g.key)"
+        @mouseleave="onLegendLeave"
       >
         <span class="h-2 w-2 shrink-0 rounded-xs" :style="{ background: colors[i] }" />
         <Tag variant="default">{{ g.label || '—' }}</Tag>

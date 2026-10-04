@@ -63,12 +63,14 @@ Routes: `/overview` (default), `/providers`, `/models`, `/endpoints`, `/requests
 
 ## Charts
 
-Chart components live in `src/components/charts/` and use `vue-echarts` (Apache ECharts v6 with modular imports via `echarts.ts`):
+Chart components live in `src/components/charts/` and use `vue-echarts` (Apache ECharts v6 with modular imports via `echarts.ts`).
+
+In `OverviewLineChart`, `OverviewAreaStack` and `OverviewBoxplotSeries`, a (group, bucket) the backend returned no point for is empty data and is filled with ECharts' `'-'`, so lines, areas and median lines break there; a returned point is drawn even when it is 0. Ratio metrics (cache hit rate, success rates, empty-reply rate, finish-reason share) omit the point when the denominator is 0, so they break on idle buckets; count metrics (tokens, cost, requests, traces) return a point for every bucket and never break. All three draw their own `<ul>` legend; hovering an item highlights its series via `dispatchAction`, the same as hovering the series itself (re-applied after a legend click / right-click changes which series exist).
 
 - `OverviewAreaStack` — stacked area chart for request volume over time.
 - `OverviewDonut` — donut chart for distribution breakdowns.
-- `OverviewBoxplotSeries` — per-bucket distribution chart for the speed section (prefill/decode speed, TTFT), with the same per-series toggle/isolate legend as `OverviewLineChart`. Its mode follows the number of *visible* groups: with exactly one it draws that group's boxplot (colors match `OverviewSpeedTimeline`) plus a straight line through the medians; with several it drops the boxes and draws only smoothed median lines, like `OverviewLineChart`.
-- `OverviewLineChart` — multi-series line chart with per-series toggle/isolate, used for per-bucket time series such as cache hit rate.
+- `OverviewBoxplotSeries` — per-bucket distribution chart for the speed section (prefill/decode speed, TTFT), with the same per-series toggle/isolate legend as `OverviewLineChart`. Its mode follows the number of *visible* groups: with exactly one it draws that group's boxplot (colors match `OverviewSpeedTimeline`) plus a straight line through the medians; with several it drops the boxes and draws only smoothed median lines with point symbols, like `OverviewLineChart`. The median lines break on buckets without samples, and highlight on hover through `emphasis.focus: 'series'`; legend hover does nothing in box mode, where there is a single group to begin with.
+- `OverviewLineChart` — multi-series line chart with per-series toggle/isolate, used for per-bucket time series such as cache hit rate. Draws a symbol on every point (`showAllSymbol: true`, since the category axis' default `'auto'` would thin out an isolated point between two gaps).
 - `OverviewSankey` — Sankey diagram for model → provider routing flow.
 - `OverviewSpeedTimeline` — horizontal boxplot chart for min-max speed ranges; the border is a darker (light themes) / lighter (dark themes) shade of the fill, which is what makes the median line stand out.
 

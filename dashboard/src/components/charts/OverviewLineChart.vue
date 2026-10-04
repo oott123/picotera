@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 import VChart from 'vue-echarts'
 import { Tag } from '@/ui'
 import { usePreferencesStore } from '@/stores/preferences'
@@ -33,12 +33,14 @@ const hiddenKeys = ref<Set<string>>(new Set())
 function toggleSeries(key: string) {
   if (hiddenKeys.value.size === props.groups.length - 1 && !hiddenKeys.value.has(key)) {
     hiddenKeys.value = new Set()
+    void nextTick(applyLegendHover)
     return
   }
   const next = new Set(hiddenKeys.value)
   if (next.has(key)) next.delete(key)
   else next.add(key)
   hiddenKeys.value = next
+  void nextTick(applyLegendHover)
 }
 
 function isolateSeries(key: string) {
@@ -49,9 +51,38 @@ function isolateSeries(key: string) {
     next.delete(key)
     hiddenKeys.value = next
   }
+  void nextTick(applyLegendHover)
 }
 
 const visibleGroups = computed(() => props.groups.filter((g) => !hiddenKeys.value.has(g.key)))
+
+// Hovering a legend item highlights its series the same way hovering the
+// series itself does. Toggling visibility shifts series indices, so the
+// highlight is re-applied once vue-echarts has set the new option.
+const chartRef = useTemplateRef<InstanceType<typeof VChart>>('chart')
+const hoveredKey = ref<string | null>(null)
+
+function applyLegendHover() {
+  const chart = chartRef.value
+  if (!chart) return
+  chart.dispatchAction({ type: 'downplay' })
+  if (hoveredKey.value === null) return
+  // Series are generated from visibleGroups in order; indices rather than
+  // names, since two groups may share a label.
+  const seriesIndex = visibleGroups.value.findIndex((g) => g.key === hoveredKey.value)
+  if (seriesIndex === -1) return
+  chart.dispatchAction({ type: 'highlight', seriesIndex })
+}
+
+function onLegendEnter(key: string) {
+  hoveredKey.value = key
+  applyLegendHover()
+}
+
+function onLegendLeave() {
+  hoveredKey.value = null
+  applyLegendHover()
+}
 
 interface Datum {
   bucket: string
@@ -70,7 +101,6 @@ const dataset = computed<Datum[]>(() => {
     if (idx === undefined) continue
     const row = rows[idx]
     if (!row) continue
-    if (point.value == null || point.value == 0) continue
     row.values[point.groupKey] = point.value
   }
   return rows
@@ -157,7 +187,7 @@ const option = computed<EChartsOption>(() => {
           : defaultBucketFormat(bucket)
         const head = `<div class="text-2xs text-ink-muted mb-1">${escape(bucketLabel)}</div>`
         const lines = arr
-          .filter((p) => p.value != null && p.value !== 0)
+          .filter((p) => typeof p.value === 'number' && Number.isFinite(p.value))
           .map((p) => {
             const formatted = fmtValue(p.value as number)
             return `<div class="flex items-center gap-1 text-2xs"><span style="background:${p.color};display:inline-block;width:8px;height:8px;border-radius:2px"></span><span class="text-ink-muted">${escape(p.seriesName || '-')}</span><span class="ml-auto mono tabular">${formatted}</span></div>`
@@ -172,15 +202,24 @@ const option = computed<EChartsOption>(() => {
       return {
         type: 'line' as const,
         name: g.label || '-',
-        data: dataset.value.map((d) => d.values[g.key] ?? null),
-        connectNulls: true,
+        // A bucket without a point is ECharts' '-' placeholder, which breaks
+        // the line; a returned 0 is real data and is drawn.
+        data: dataset.value.map((d) => d.values[g.key] ?? '-'),
         smooth: true,
-        symbol: 'none',
+        symbol: 'circle',
+        symbolSize: 3,
+        showSymbol: true,
+        // 'auto' thins symbols by label interval on a category axis, which
+        // would hide an isolated point between two gaps entirely.
+        showAllSymbol: true,
         lineStyle: { width: 1.5 },
         itemStyle: { color: chartColors[originalIdx] },
-        emphasis: { focus: 'series' },
+        // ECharts' default hover scale would take a 3px symbol to 6px; 4 / 3
+        // keeps it at 4px.
+        emphasis: { focus: 'series', scale: 4 / 3 },
         blur: {
           lineStyle: { opacity: 0.3 },
+          itemStyle: { opacity: 0.3 },
         },
       }
     }),
@@ -190,7 +229,7 @@ const option = computed<EChartsOption>(() => {
 
 <template>
   <div class="flex flex-col gap-2">
-    <VChart :option="option" :style="{ height: (height ?? 180) + 'px' }" autoresize />
+    <VChart ref="chart" :option="option" :style="{ height: (height ?? 180) + 'px' }" autoresize />
     <ul class="flex flex-wrap gap-1">
       <li
         v-for="(g, i) in groups"
@@ -199,6 +238,8 @@ const option = computed<EChartsOption>(() => {
         :class="{ 'opacity-30': hiddenKeys.has(g.key) }"
         @click="toggleSeries(g.key)"
         @contextmenu.prevent="isolateSeries(g.key)"
+        @mouseenter="onLegendEnter(g.key)"
+        @mouseleave="onLegendLeave"
       >
         <span class="h-2 w-2 shrink-0 rounded-xs" :style="{ background: colors[i] }" />
         <Tag variant="default">{{ g.label || '—' }}</Tag>
