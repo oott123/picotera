@@ -156,7 +156,7 @@
                   "-w"
                 ];
                 doCheck = false;
-                vendorHash = "sha256-miSoYdbmw3JPwYJ733xRSawDXReYGTXxBxsFh2fH0Iw=";
+                vendorHash = "sha256-PvbT3B3/aEJ9kSmW4eXKvb65jlq5jX4vjhpZsNbdIBU=";
                 meta = {
                   homepage = "https://github.com/oott123/picotera";
                   license = lib.licenses.bsd3;

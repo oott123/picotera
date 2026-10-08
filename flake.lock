@@ -3,11 +3,11 @@
     "axonhub": {
       "flake": false,
       "locked": {
-        "lastModified": 1784881694,
-        "narHash": "sha256-vE/DhxYLX8xc1d63R3eMw45Hz+4zfCz9ZMZPj7GiSmE=",
+        "lastModified": 1791442227,
+        "narHash": "sha256-kvih+ZqyGTttApAdJOnj3bTKURQbo1OGf7mINzVx7Z4=",
         "owner": "33forks",
         "repo": "picotera-axonhub",
-        "rev": "10299a1731ecf15a8669af45613c7dbb8cb28fcb",
+        "rev": "ecaf94e66c228f523b6643ad85737d529b60807f",
         "type": "github"
       },
       "original": {
