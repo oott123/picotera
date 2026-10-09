@@ -146,7 +146,7 @@
 
           goModule =
             attrs:
-            pkgs.buildGo126Module (
+            pkgs.buildGo127Module (
               {
                 inherit version;
                 src = goSrc;

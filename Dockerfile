@@ -5,7 +5,7 @@ RUN npm install -g pnpm@10 && \
     pnpm install --frozen-lockfile && \
     pnpm --dir dashboard build
 
-FROM golang:1.26.1-trixie AS backend-builder
+FROM golang:1.27.2-trixie AS backend-builder
 COPY . /app
 COPY --from=frontend-builder /app/dashboard/dist /app/dashboard/dist
 WORKDIR /app

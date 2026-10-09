@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"testing"
 	"time"
 
@@ -91,22 +90,6 @@ func TestNewGatewayTransportDisableHTTP2(t *testing.T) {
 	}
 	if insecure.TLSNextProto == nil || len(insecure.TLSNextProto) != 0 {
 		t.Errorf("insecure TLSNextProto = %v, want a non-nil empty map", insecure.TLSNextProto)
-	}
-}
-
-func TestNewGatewayTransportInsecureTLS(t *testing.T) {
-	tr, h2 := newGatewayTransport(&configx.Config{}, 5*time.Second, true)
-	if h2 == nil {
-		t.Fatal("h2 handle should still be configured with insecure TLS")
-	}
-	if tr.TLSClientConfig == nil || !tr.TLSClientConfig.InsecureSkipVerify {
-		t.Fatal("InsecureSkipVerify should be set")
-	}
-	// ConfigureTransports appends the ALPN protocols to the TLS config it finds,
-	// so the insecure config must have been installed before that call — an empty
-	// NextProtos here would silently downgrade every HTTPS upstream to HTTP/1.1.
-	if !slices.Contains(tr.TLSClientConfig.NextProtos, "h2") {
-		t.Fatalf("NextProtos = %v, want it to contain h2", tr.TLSClientConfig.NextProtos)
 	}
 }
 

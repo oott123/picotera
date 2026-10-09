@@ -77,7 +77,7 @@ To test the bundled binary locally: `pnpm --dir dashboard build && find pkg/serv
 
 PicoTera is an API gateway that routes LLM inference requests across multiple providers. It exposes a management API for configuring providers, models, and endpoints.
 
-**Stack**: Go 1.26, Huma v2 (REST framework) + Chi router, PostgreSQL via pgx, sqlc for type-safe queries, goose for migrations, Viper for config.
+**Stack**: Go 1.27, Huma v2 (REST framework) + Chi router, PostgreSQL via pgx, sqlc for type-safe queries, goose for migrations, Viper for config.
 
 **Startup flow**: Parse config → run goose migrations → connect PostgreSQL → register Huma operations → mount gateway handler → serve HTTP.
 
