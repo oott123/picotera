@@ -580,8 +580,25 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Match built-in pricing candidates for a model */
+        /** Match pricing candidates for a model against the current pricing catalog */
         post: operations["matchPricing"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/pricing/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Fetch the online pricing catalog and replace the in-memory one */
+        post: operations["refreshPricing"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1821,6 +1838,18 @@ export interface components {
              * @example 1234
              */
             updated: number;
+        };
+        RefreshPricingResponseBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/RefreshPricingResponseBody.json
+             */
+            readonly $schema?: string;
+            /** @example 2026-10-08T07:54:49.447687Z */
+            generatedAt: string;
+            /** @example https://raw.githubusercontent.com/oott123/picotera/refs/heads/master/pkg/pricing/pricing.json */
+            sourceUrl: string;
         };
         RequestLiveView: {
             /**
@@ -3425,6 +3454,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MatchPricingResponseBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    refreshPricing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefreshPricingResponseBody"];
                 };
             };
             /** @description Error */

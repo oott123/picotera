@@ -1537,6 +1537,25 @@ components:
         - updated
         - tookMs
       type: object
+    RefreshPricingResponseBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/RefreshPricingResponseBody.json
+          format: uri
+          readOnly: true
+          type: string
+        generatedAt:
+          example: "2026-10-08T07:54:49.447687Z"
+          type: string
+        sourceUrl:
+          example: https://raw.githubusercontent.com/oott123/picotera/refs/heads/master/pkg/pricing/pricing.json
+          type: string
+      required:
+        - sourceUrl
+        - generatedAt
+      type: object
     RequestLiveView:
       additionalProperties: false
       properties:
@@ -3642,7 +3661,24 @@ paths:
               schema:
                 $ref: "#/components/schemas/PicoTeraError"
           description: Error
-      summary: Match built-in pricing candidates for a model
+      summary: Match pricing candidates for a model against the current pricing catalog
+  /api/picotera/pricing/refresh:
+    post:
+      operationId: refreshPricing
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefreshPricingResponseBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PicoTeraError"
+          description: Error
+      summary: Fetch the online pricing catalog and replace the in-memory one
   /api/picotera/projects:
     get:
       operationId: listProjects

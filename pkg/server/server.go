@@ -18,6 +18,7 @@ import (
 	"picotera/pkg/kv"
 	"picotera/pkg/llmbridge"
 	"picotera/pkg/logx"
+	"picotera/pkg/pricing"
 	"picotera/pkg/server/static"
 	"syscall"
 	"time"
@@ -49,6 +50,7 @@ type Server struct {
 	projectExtractor          *projectExtractor
 	llmBridge                 llmbridge.Bridge
 	liveRequests              *liveRequestRegistry
+	pricing                   *pricing.Source
 	externalRequestIDHeaders  []string
 	externalResponseIDHeaders []string
 	httpServer                *http.Server
@@ -246,6 +248,14 @@ func NewServer(ctx context.Context) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid gateway_external_response_id_headers: %w", err)
 	}
+	pricingURLs := pricing.DefaultURLs
+	if config.PricingURL != "" {
+		pricingURLs = []string{config.PricingURL}
+	}
+	pricingSource, err := pricing.NewSource(pricingURLs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load pricing catalog: %w", err)
+	}
 	server := &Server{
 		config:                    config,
 		queries:                   queries,
@@ -263,6 +273,7 @@ func NewServer(ctx context.Context) (*Server, error) {
 		projectExtractor:          newProjectExtractor(queries),
 		llmBridge:                 llmBridge,
 		liveRequests:              newLiveRequestRegistry(),
+		pricing:                   pricingSource,
 		externalRequestIDHeaders:  reqHeaders,
 		externalResponseIDHeaders: respHeaders,
 		oidc:                      oidcAuth,
@@ -270,6 +281,7 @@ func NewServer(ctx context.Context) (*Server, error) {
 	server.registerOperations()
 	server.registerEndpoints()
 	logx.WithContext(ctx).Info("registered operations")
+	go server.refreshPricingAtStartup(ctx)
 
 	return server, nil
 }
@@ -390,6 +402,7 @@ func (s *Server) register(mgmt, admin *huma.Group) {
 	huma.Register(admin, contract.OperationPutExchangeRate, s.handlePutExchangeRate)
 	huma.Register(admin, contract.OperationDeleteExchangeRate, s.handleDeleteExchangeRate)
 	huma.Register(admin, contract.OperationMatchPricing, s.handleMatchPricing)
+	huma.Register(admin, contract.OperationRefreshPricing, s.handleRefreshPricing)
 	huma.Register(admin, contract.OperationListUsers, s.handleListUsers)
 	huma.Register(admin, contract.OperationGetUser, s.handleGetUser)
 	huma.Register(admin, contract.OperationCreateUser, s.handleCreateUser)

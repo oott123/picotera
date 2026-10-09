@@ -1,9 +1,6 @@
 package pricing
 
 import (
-	"embed"
-	"encoding/json"
-	"fmt"
 	"sort"
 	"strings"
 
@@ -12,11 +9,10 @@ import (
 	"github.com/agnivade/levenshtein"
 )
 
-//go:embed pricing.json
-var pricingFS embed.FS
-
 type catalog struct {
-	Providers []provider `json:"providers"`
+	SchemaVersion string     `json:"schema_version"`
+	GeneratedAt   string     `json:"generated_at"`
+	Providers     []provider `json:"providers"`
 }
 
 type provider struct {
@@ -89,16 +85,11 @@ func minScore(target string, candidates ...string) int {
 	return best
 }
 
-// Match returns the best built-in pricing candidates for target. Matching uses
+// match returns the best pricing candidates in c for target. Matching uses
 // target exactly as provided.
-func Match(target string, limit int) ([]contract.PricingMatchCandidate, error) {
-	cat, err := loadCatalog()
-	if err != nil {
-		return nil, err
-	}
-
+func (c *catalog) match(target string, limit int) []contract.PricingMatchCandidate {
 	var matches []matchedCandidate
-	for _, p := range cat.Providers {
+	for _, p := range c.Providers {
 		for _, m := range p.Models {
 			pricing, ok := convertModelPricing(m)
 			if !ok {
@@ -159,19 +150,7 @@ func Match(target string, limit int) ([]contract.PricingMatchCandidate, error) {
 	for i := range matches {
 		out[i] = matches[i].PricingMatchCandidate
 	}
-	return out, nil
-}
-
-func loadCatalog() (*catalog, error) {
-	raw, err := pricingFS.ReadFile("pricing.json")
-	if err != nil {
-		return nil, fmt.Errorf("read pricing catalog: %w", err)
-	}
-	var cat catalog
-	if err := json.Unmarshal(raw, &cat); err != nil {
-		return nil, fmt.Errorf("parse pricing catalog: %w", err)
-	}
-	return &cat, nil
+	return out
 }
 
 func convertModelPricing(m model) (contract.Pricing, bool) {

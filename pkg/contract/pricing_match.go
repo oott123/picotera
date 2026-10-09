@@ -31,5 +31,21 @@ var OperationMatchPricing = huma.Operation{
 	OperationID: "matchPricing",
 	Method:      http.MethodPost,
 	Path:        "/pricing/matches",
-	Summary:     "Match built-in pricing candidates for a model",
+	Summary:     "Match pricing candidates for a model against the current pricing catalog",
+}
+
+type RefreshPricingResponse struct {
+	Body struct {
+		// The url the installed catalog was fetched from.
+		SourceURL string `json:"sourceUrl" example:"https://raw.githubusercontent.com/oott123/picotera/refs/heads/master/pkg/pricing/pricing.json"`
+		// The catalog's own generated_at field, verbatim.
+		GeneratedAt string `json:"generatedAt" example:"2026-10-08T07:54:49.447687Z"`
+	}
+}
+
+var OperationRefreshPricing = huma.Operation{
+	OperationID: "refreshPricing",
+	Method:      http.MethodPost,
+	Path:        "/pricing/refresh",
+	Summary:     "Fetch the online pricing catalog and replace the in-memory one",
 }

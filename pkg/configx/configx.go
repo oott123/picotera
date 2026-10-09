@@ -40,6 +40,9 @@ type Config struct {
 	LLMBridgePluginStartTimeout      time.Duration `mapstructure:"llmbridge_plugin_start_timeout"`
 	HeapDumpDir                      string        `mapstructure:"heap_dump_dir"`
 	AppTitle                         string        `mapstructure:"app_title"`
+	// PricingURL replaces pricing.DefaultURLs as the only source of the online
+	// pricing catalog. Empty means the defaults.
+	PricingURL string `mapstructure:"pricing_url"`
 	// BaseURL is PicoTera's externally reachable base url. Required in oidc
 	// mode, where it is the base of the OAuth callback url; ignored otherwise.
 	BaseURL string     `mapstructure:"base_url"`
@@ -180,11 +183,25 @@ func Parse() (*Config, error) {
 	if err := validateAuth(&config); err != nil {
 		return nil, err
 	}
+	if config.PricingURL != "" {
+		if err := validatePricingURL(config.PricingURL); err != nil {
+			return nil, err
+		}
+	}
 	if config.S3.Endpoint != "" && (config.S3.AccessKey == "" || config.S3.SecretKey == "") {
 		return nil, errors.New("s3 access_key and secret_key are required when s3.endpoint is configured")
 	}
 
 	return &config, nil
+}
+
+// validatePricingURL requires an absolute http(s) url, taken verbatim.
+func validatePricingURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return errors.New("pricing_url must be an absolute http(s) url")
+	}
+	return nil
 }
 
 // validateAuth enforces that exactly one identity provider is enabled and, in

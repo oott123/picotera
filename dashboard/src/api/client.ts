@@ -193,6 +193,11 @@ export async function matchPricing(targetModel: string): Promise<PricingMatchCan
   return data.candidates ?? []
 }
 
+export async function refreshPricing(): Promise<void> {
+  const { error } = await api.POST('/api/picotera/pricing/refresh')
+  if (error) fail(error, '在线更新价格表失败')
+}
+
 export async function listScripts(): Promise<ScriptView[]> {
   const { data, error } = await api.GET('/api/picotera/scripts')
   if (error) fail(error, '加载脚本失败')

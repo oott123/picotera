@@ -98,7 +98,7 @@ PicoTera is an API gateway that routes LLM inference requests across multiple pr
 - `pkg/llmbridgeimpl/` — concrete implementations of `llmbridge` converters, compiled into the plugin target (`cmd/picotera-llmbridge-plugin`). Depends on `github.com/looplj/axonhub/llm` (LGPL-3.0; attribution in `THIRD_PARTY_NOTICES.md`).
 - `pkg/kv/` — key-value store abstraction with memory and Redis (KeyDB) backends. Used by user-supplied scripts. CRUD exposed at `/api/picotera/kv`.
 - `pkg/artifacts/` — request/response payload serialization. Stores bodies as zstd-compressed JSON with optional line-by-line SSE timings. MinIO-backed via the `picotera-artifacts` bucket.
-- `pkg/pricing/` — model pricing calculation and matching logic.
+- `pkg/pricing/` — model pricing calculation and matching logic. Matching runs against a `pricing.Source` that starts as the embedded `pricing.json`; at startup a background goroutine fetches the online catalog and swaps it in memory (never persisted — a restart falls back to the embedded one), and the admin op `POST /api/picotera/pricing/refresh` (the dashboard's 「在线更新」 button in `ModelPricingMatchPanel`) refetches on demand, keeping the current catalog when every url fails (502). URLs are tried in order with a 30s timeout each: GitHub raw, then CNB (`pricing.DefaultURLs`), or only `PICOTERA_PRICING_URL` when set (a single absolute http(s) url, validated at startup). A fetched catalog must be HTTP 200, ≤ 64 MiB, `schema_version = "1.0"` and carry at least one provider — the embedded one goes through the same check.
 - `pkg/annotations/` — request annotation parsing and handling.
 - `pkg/transform/` — generic data transformation utilities.
 - `pkg/auth/` — management-API authentication middleware + identity resolver. See "User authentication" and "User isolation & authorization" below.
@@ -199,7 +199,7 @@ Read paths inject the current user as a **mandatory** SQL filter (`WHERE user_id
 **2. `is_admin` capability gate (admin vs user features).** `registerOperations` (`server.go`) registers every Huma op on one of two groups sharing the `/api/picotera` prefix: `mgmt` (all authenticated users) and `admin` (`admin.UseMiddleware(s.requireAdmin)` → 403 for non-admins, 500 if context user is somehow nil). The split — see `register(mgmt, admin)`:
 
 - **mgmt (user):** `me`, `config`, overview ×6 (`summary`, `distribution`, `series`, `speed-boxplot`, `speed-series`, `outcome-series`), api-key ×5, request/trace ×6, **label** endpoints, **project** CRUD ×5, **user-setting** CRUD, exchange-rate *list* (read).
-- **admin:** providers, models, endpoints, provider-endpoints, scripts, kv, exchange-rate writes + match-pricing, fetch-models, user/user-identity CRUD, and the **admin overview** endpoints.
+- **admin:** providers, models, endpoints, provider-endpoints, scripts, kv, exchange-rate writes + match-pricing + refresh-pricing, fetch-models, user/user-identity CRUD, and the **admin overview** endpoints.
 
 The raw chi route `POST /api/picotera/test/direct` is not a Huma op, so it does its own admin check inside `handleTestDirect`. `NewHuma()` (openapi generator) calls the same `register()` so the spec never drifts from the live server. Both groups sit behind the chi-level `auth.Middleware`, so `requireAdmin` always sees a non-nil context user.
 

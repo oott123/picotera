@@ -25,10 +25,7 @@ func TestStripLastSlash(t *testing.T) {
 }
 
 func TestMatchExactIDFirst(t *testing.T) {
-	got, err := Match("claude-haiku-4-5", 8)
-	if err != nil {
-		t.Fatal(err)
-	}
+	got := matchEmbedded(t, "claude-haiku-4-5", 8)
 	if len(got) == 0 {
 		t.Fatal("expected candidates")
 	}
@@ -38,10 +35,7 @@ func TestMatchExactIDFirst(t *testing.T) {
 }
 
 func TestMatchStripTargetSlash(t *testing.T) {
-	got, err := Match("openai/gpt-5-5", 8)
-	if err != nil {
-		t.Fatal(err)
-	}
+	got := matchEmbedded(t, "openai/gpt-5-5", 8)
 	if len(got) == 0 {
 		t.Fatal("expected candidates")
 	}
@@ -53,10 +47,7 @@ func TestMatchStripTargetSlash(t *testing.T) {
 func TestMatchTrailingSlashDoesNotStrip(t *testing.T) {
 	// "openai/" stripped stays "openai/" (no content after slash), so it should not
 	// match anything exactly. Just verify it runs without panic and returns candidates.
-	got, err := Match("openai/", 4)
-	if err != nil {
-		t.Fatal(err)
-	}
+	got := matchEmbedded(t, "openai/", 4)
 	if len(got) == 0 {
 		t.Fatal("expected some candidates")
 	}
@@ -170,10 +161,7 @@ func TestMissingLongCacheWriteUsesCacheWrite(t *testing.T) {
 }
 
 func TestGPT56LunaCacheWrite1HMatchesCacheWrite(t *testing.T) {
-	candidates, err := Match("gpt-5.6-luna", 0)
-	if err != nil {
-		t.Fatal(err)
-	}
+	candidates := matchEmbedded(t, "gpt-5.6-luna", 0)
 	for _, candidate := range candidates {
 		if candidate.ModelName != "gpt-5.6-luna" {
 			continue
@@ -182,8 +170,8 @@ func TestGPT56LunaCacheWrite1HMatchesCacheWrite(t *testing.T) {
 			t.Fatalf("currency = %q, want USD", candidate.Pricing.Currency)
 		}
 		want := []contract.PricingTier{
-			{MinInputTokens: 0, Input: 1, Output: 6, CacheRead: 0.1, CacheWrite: 1.25, CacheWrite1H: 1.25, ImplicitCacheRead: 0.1},
-			{MinInputTokens: 272000, Input: 2, Output: 9, CacheRead: 0.2, CacheWrite: 2.5, CacheWrite1H: 2.5, ImplicitCacheRead: 0.2},
+			{MinInputTokens: 0, Input: 0.2, Output: 1.2, CacheRead: 0.02, CacheWrite: 0.25, CacheWrite1H: 0.25, ImplicitCacheRead: 0.02},
+			{MinInputTokens: 272000, Input: 0.4, Output: 1.8, CacheRead: 0.04, CacheWrite: 0.5, CacheWrite1H: 0.5, ImplicitCacheRead: 0.04},
 		}
 		if len(candidate.Pricing.Tiers) != len(want) {
 			t.Fatalf("tiers = %+v, want %+v", candidate.Pricing.Tiers, want)
@@ -232,4 +220,13 @@ func assertPricingEqual(t *testing.T, got, want contract.Pricing) {
 			t.Fatalf("tier %d = %+v, want %+v", i, got.Tiers[i], want.Tiers[i])
 		}
 	}
+}
+
+func matchEmbedded(t *testing.T, target string, limit int) []contract.PricingMatchCandidate {
+	t.Helper()
+	cat, err := embeddedCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cat.match(target, limit)
 }

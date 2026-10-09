@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import type { ModelView, PricingMatchCandidate, PricingTier } from '@/api'
-import { invalidateModels, matchPricing, upsertModel } from '@/api/client'
+import { invalidateModels, matchPricing, refreshPricing, upsertModel } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
 import { useCurrencyContext } from '@/composables/useCurrencyContext'
 import { Button, DataTable, MoneyDisplay, SidePanel, StateText, Td, Th, Tr, Icon } from '@/ui'
@@ -21,12 +21,14 @@ const candidatesQuery = useQuery({
   queryKey: queryKeys.pricingMatches.model(props.model.name),
   queryFn: () => matchPricing(props.model.name),
 })
+const refreshMutation = useMutation({ mutationFn: refreshPricing })
 const saveMutation = useMutation({
   mutationFn: upsertModel,
   onSuccess: () => invalidateModels(queryClient),
 })
 const candidates = computed<PricingMatchCandidate[]>(() => candidatesQuery.data.value ?? [])
 const loading = computed(() => candidatesQuery.isLoading.value || candidatesQuery.isFetching.value)
+const refreshing = computed(() => refreshMutation.isPending.value)
 const saving = computed(() => saveMutation.isPending.value)
 
 const selected = computed(() => candidates.value[selectedIndex.value] ?? null)
@@ -168,14 +170,17 @@ function pushDiff(out: DiffSegment[], text: string, kind: DiffSegment['kind']) {
   out.push({ text, kind })
 }
 
-async function load() {
+async function updateOnline() {
   error.value = ''
   try {
-    const res = await candidatesQuery.refetch()
-    if (res.error) throw res.error
+    await refreshMutation.mutateAsync()
+    // Every cached candidate list was matched against the old catalog; the
+    // active one here refetches as part of the invalidation.
+    await queryClient.invalidateQueries({ queryKey: queryKeys.pricingMatches.all })
+    if (candidatesQuery.error.value) throw candidatesQuery.error.value
     selectedIndex.value = candidates.value.length ? 0 : -1
   } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : '匹配价格失败'
+    error.value = e instanceof Error ? e.message : '在线更新价格表失败'
   }
 }
 
@@ -302,15 +307,15 @@ async function save() {
 
     <template #footer>
       <Button variant="ghost" @click="emit('close')">取消</Button>
-      <Button variant="ghost" :disabled="loading || saving" @click="load">
+      <Button variant="ghost" :disabled="loading || refreshing || saving" @click="updateOnline">
         <Icon
-          :name="loading ? 'loader' : 'refresh'"
+          :name="loading || refreshing ? 'loader' : 'refresh'"
           :size="13"
-          :class="loading ? 'animate-spin' : ''"
+          :class="loading || refreshing ? 'animate-spin' : ''"
         />
-        <span>重新匹配</span>
+        <span>在线更新</span>
       </Button>
-      <Button :disabled="loading || saving || !selected" @click="save">
+      <Button :disabled="loading || refreshing || saving || !selected" @click="save">
         {{ saving ? '保存中…' : '保存价格' }}
       </Button>
     </template>
