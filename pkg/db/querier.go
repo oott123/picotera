@@ -46,7 +46,6 @@ type Querier interface {
 	GetEndpoints(ctx context.Context) ([]Endpoint, error)
 	GetExchangeRateByCode(ctx context.Context, code string) (ExchangeRate, error)
 	GetExchangeRates(ctx context.Context) ([]ExchangeRate, error)
-	GetFirstEndpointByType(ctx context.Context, endpointType int32) (Endpoint, error)
 	GetModelByName(ctx context.Context, name string) (Model, error)
 	GetModels(ctx context.Context) ([]Model, error)
 	GetOverviewSpeedBoxplot(ctx context.Context, arg GetOverviewSpeedBoxplotParams) ([]GetOverviewSpeedBoxplotRow, error)

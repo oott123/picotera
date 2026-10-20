@@ -28,7 +28,10 @@ const saveMutation = useMutation({
 })
 
 const isModelPathLocked = computed(
-  () => form.value.endpointType === 'exaSearch' || form.value.endpointType === 'modelList',
+  () =>
+    form.value.endpointType === 'exaSearch' ||
+    form.value.endpointType === 'deepseekSearch' ||
+    form.value.endpointType === 'modelList',
 )
 // A codex endpoint stands for one Codex upstream's base_url; its sub-paths only
 // exist as request path suffixes, so prefix matching is mandatory (the server
@@ -37,7 +40,7 @@ const isPrefixMatchLocked = computed(() => form.value.endpointType === 'codex')
 watch(
   () => form.value.endpointType,
   (t) => {
-    if (t === 'exaSearch' || t === 'modelList') form.value.modelPath = ''
+    if (t === 'exaSearch' || t === 'deepseekSearch' || t === 'modelList') form.value.modelPath = ''
     if (t === 'codex') form.value.prefixMatch = true
   },
 )
@@ -120,7 +123,9 @@ async function submit() {
               ? '模型列表端点不解析模型'
               : form.endpointType === 'exaSearch'
                 ? 'Exa 搜索端点不解析模型'
-                : '可选，留空表示该端点不解析模型'
+                : form.endpointType === 'deepseekSearch'
+                  ? 'DeepSeek 搜索端点不解析模型'
+                  : '可选，留空表示该端点不解析模型'
           "
         />
         <p v-if="form.prefixMatch && form.modelPath" class="text-xs text-ink-faint">

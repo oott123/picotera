@@ -36,7 +36,7 @@ func extractUserMessage(body []byte, endpointType int32) (string, bool) {
 		if text, ok := extractGeminiUserMessage(body); ok {
 			return text, true
 		}
-	case contract.EndpointType_ExaSearch:
+	case contract.EndpointType_ExaSearch, contract.EndpointType_DeepSeekSearch:
 		return extractQueryUserMessage(body)
 	case contract.EndpointType_OpenAIEmbedding:
 		return extractEmbeddingUserMessage(body)

@@ -13,8 +13,9 @@ import (
 
 // webSearchSSETransformer wraps an Anthropic Messages SSE stream and inlines
 // web_search emulation: tool_use(web_search) blocks are buffered, the
-// accumulated input JSON is dispatched to Exa, and a synthesized
-// server_tool_use + web_search_tool_result pair is emitted to the client.
+// accumulated input JSON is dispatched to the search backend, and a
+// synthesized server_tool_use + web_search_tool_result pair is emitted to the
+// client.
 //
 // content_block indices on every passthrough event after an expansion are
 // shifted by +1 per expansion to keep the client-facing index space
@@ -235,10 +236,10 @@ func (t *webSearchSSETransformer) flushBufferedWebSearch() {
 	t.recordBlock(outIdxServer, serverToolUseBlock)
 
 	var resultBlock map[string]any
-	if exaResp, err := t.h.callExa(t.ctx, json.RawMessage(inputJSON), t.wsCtx); err != nil {
-		resultBlock = rawMessageToMap(buildWebSearchToolResultError(t.bufServerToolUseID, "unavailable"))
+	if hits, err := t.h.callWebSearch(t.ctx, json.RawMessage(inputJSON), t.wsCtx); err != nil {
+		resultBlock = rawMessageToMap(buildWebSearchToolResultError(t.bufServerToolUseID, webSearchErrorCode(err)))
 	} else {
-		resultBlock = rawMessageToMap(buildWebSearchToolResult(t.bufServerToolUseID, exaResp))
+		resultBlock = rawMessageToMap(buildWebSearchToolResult(t.bufServerToolUseID, hits))
 	}
 
 	t.writeEvent("content_block_start", map[string]any{

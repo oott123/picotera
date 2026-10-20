@@ -496,7 +496,7 @@ func identityPrepareAttempt(_ context.Context, _ *gatewayFlow, input attemptInpu
 
 func prepareUnifiedAttempt(ctx context.Context, f *gatewayFlow, input attemptInput) (attemptPrepared, error) {
 	req, reqBody := input.Request, input.RequestBody
-	wsCtx, err := prepareUnifiedWebSearch(f, input, reqBody)
+	wsCtx, err := prepareUnifiedWebSearch(ctx, f, input, reqBody)
 	if err != nil {
 		return attemptPrepared{}, err
 	}
@@ -515,11 +515,15 @@ func prepareUnifiedAttempt(ctx context.Context, f *gatewayFlow, input attemptInp
 	return attemptPrepared{Request: req, RequestBody: reqBody, OutboundProfile: profile, WebSearch: wsCtx}, nil
 }
 
-func prepareUnifiedWebSearch(f *gatewayFlow, input attemptInput, reqBody []byte) (*webSearchContext, error) {
+func prepareUnifiedWebSearch(ctx context.Context, f *gatewayFlow, input attemptInput, reqBody []byte) (*webSearchContext, error) {
 	if f.config.SourceFormat != llmbridge.FormatAnthropicMessages || input.Sidecar.SupportsNativeWebSearch || !hasWebSearchTool(reqBody) {
 		return nil, nil
 	}
-	rewrote, err := rewriteWebSearchTools(reqBody)
+	backend, err := resolveWebSearchBackend(ctx, f.h.queries)
+	if err != nil {
+		return nil, err
+	}
+	rewrote, err := rewriteWebSearchTools(reqBody, backend)
 	if err != nil {
 		return nil, err
 	}
@@ -527,7 +531,7 @@ func prepareUnifiedWebSearch(f *gatewayFlow, input attemptInput, reqBody []byte)
 	if err != nil {
 		return nil, err
 	}
-	return &webSearchContext{active: true, apiKeyToken: f.auth.APIKey.Key, metaID: f.meta.ID, metaCreatedAt: f.meta.CreatedAt, parentSpanID: f.meta.ParentSpanID, originalRequestBody: append([]byte(nil), f.preRewriteBody...), rewrittenBody: rewrote}, nil
+	return &webSearchContext{active: true, apiKeyToken: f.auth.APIKey.Key, metaID: f.meta.ID, metaCreatedAt: f.meta.CreatedAt, parentSpanID: f.meta.ParentSpanID, originalRequestBody: append([]byte(nil), f.preRewriteBody...), rewrittenBody: rewrote, backend: backend}, nil
 }
 
 func prepareUnifiedOutboundProfile(f *gatewayFlow, input attemptInput) (llmbridge.OutboundProfile, error) {

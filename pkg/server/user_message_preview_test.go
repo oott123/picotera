@@ -75,6 +75,12 @@ func TestExtractUserMessagePreviewSupportedFormats(t *testing.T) {
 			body:         `{"model":"text-embedding-3-small","input":["","first","second"]}`,
 			want:         "first",
 		},
+		{
+			name:         "deepseek search query",
+			endpointType: contract.EndpointType_DeepSeekSearch,
+			body:         `{"query":"deepseek search","count":5}`,
+			want:         "deepseek search",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

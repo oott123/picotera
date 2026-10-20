@@ -49,24 +49,6 @@ func (q *Queries) GetEndpoints(ctx context.Context) ([]Endpoint, error) {
 	return items, nil
 }
 
-const getFirstEndpointByType = `-- name: GetFirstEndpointByType :one
-SELECT path, name, model_path, credentials_resolver, endpoint_type, prefix_match FROM endpoint WHERE endpoint_type = $1 LIMIT 1
-`
-
-func (q *Queries) GetFirstEndpointByType(ctx context.Context, endpointType int32) (Endpoint, error) {
-	row := q.db.QueryRow(ctx, getFirstEndpointByType, endpointType)
-	var i Endpoint
-	err := row.Scan(
-		&i.Path,
-		&i.Name,
-		&i.ModelPath,
-		&i.CredentialsResolver,
-		&i.EndpointType,
-		&i.PrefixMatch,
-	)
-	return i, err
-}
-
 const upsertEndpoint = `-- name: UpsertEndpoint :one
 INSERT INTO endpoint (name, path, model_path, credentials_resolver, endpoint_type, prefix_match) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (path) DO UPDATE SET name = $1, model_path = $3, credentials_resolver = $4, endpoint_type = $5, prefix_match = $6 RETURNING path, name, model_path, credentials_resolver, endpoint_type, prefix_match
 `

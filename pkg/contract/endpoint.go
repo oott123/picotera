@@ -37,6 +37,7 @@ const (
 
 	EndpointType_OpenAIEmbedding int32 = 13
 	EndpointType_Codex           int32 = 14
+	EndpointType_DeepSeekSearch  int32 = 15
 )
 
 func ToEndpointType(s string) int32 {
@@ -65,6 +66,8 @@ func ToEndpointType(s string) int32 {
 		return EndpointType_Codex
 	case "openaiEmbedding":
 		return EndpointType_OpenAIEmbedding
+	case "deepseekSearch":
+		return EndpointType_DeepSeekSearch
 	default:
 		return EndpointType_Unknown
 	}
@@ -96,6 +99,8 @@ func FromEndpointType(t int32) string {
 		return "codex"
 	case EndpointType_OpenAIEmbedding:
 		return "openaiEmbedding"
+	case EndpointType_DeepSeekSearch:
+		return "deepseekSearch"
 	default:
 		return "unknown"
 	}
@@ -144,7 +149,7 @@ type EndpointView struct {
 	Path                string `json:"path"`
 	ModelPath           string `json:"modelPath"`
 	CredentialsResolver string `json:"credentialsResolver" enum:"followRequest,bearerToken,xApiKey,searchKey,googApiKey,unknown"`
-	EndpointType        string `json:"endpointType" enum:"general,openaiChatCompletions,openaiResponses,anthropicMessages,anthropicCountTokens,geminiGenerateContent,geminiStreamGenerateContent,exaSearch,modelList,codex,openaiEmbedding,unknown"`
+	EndpointType        string `json:"endpointType" enum:"general,openaiChatCompletions,openaiResponses,anthropicMessages,anthropicCountTokens,geminiGenerateContent,geminiStreamGenerateContent,exaSearch,deepseekSearch,modelList,codex,openaiEmbedding,unknown"`
 	// PrefixMatch turns Path into a prefix: the request path's remainder after
 	// the prefix is appended verbatim to the upstream URL. Mandatory for the
 	// codex type; see handleUpsertEndpoint for the path constraints it implies.

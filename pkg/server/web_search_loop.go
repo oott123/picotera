@@ -20,11 +20,11 @@ import (
 //
 // The returned body has:
 //   - messages: original messages + an assistant turn with accumulatedContent
-//   - tools: web_search server tools replaced with function-tool form
+//   - tools: web_search server tools replaced with backend's function-tool form
 //   - history: server_tool_use/web_search_tool_result converted to tool_use/tool_result
 //
 // The inner unified handler's hasWebSearchTool check returns false.
-func buildWebSearchSubBody(originalBody []byte, accumulatedContent []json.RawMessage) ([]byte, error) {
+func buildWebSearchSubBody(originalBody []byte, accumulatedContent []json.RawMessage, backend webSearchBackend) ([]byte, error) {
 	body := append([]byte(nil), originalBody...)
 
 	msgs := gjson.GetBytes(body, "messages")
@@ -55,7 +55,7 @@ func buildWebSearchSubBody(originalBody []byte, accumulatedContent []json.RawMes
 		return nil, err
 	}
 
-	body, err = rewriteWebSearchTools(body)
+	body, err = rewriteWebSearchTools(body, backend)
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +168,7 @@ func (h *gatewayHandler) loopWebSearchNonStream(ctx context.Context, accumulated
 		}
 
 		contentArr := gjsonContentToRawSlice(accumulated)
-		subBody, err := buildWebSearchSubBody(wsCtx.originalRequestBody, contentArr)
+		subBody, err := buildWebSearchSubBody(wsCtx.originalRequestBody, contentArr, wsCtx.backend)
 		if err != nil {
 			return accumulated
 		}

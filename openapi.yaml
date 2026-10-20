@@ -382,6 +382,7 @@ components:
             - geminiGenerateContent
             - geminiStreamGenerateContent
             - exaSearch
+            - deepseekSearch
             - modelList
             - codex
             - openaiEmbedding
@@ -424,6 +425,7 @@ components:
             - geminiGenerateContent
             - geminiStreamGenerateContent
             - exaSearch
+            - deepseekSearch
             - modelList
             - codex
             - openaiEmbedding

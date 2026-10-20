@@ -70,7 +70,7 @@ func (d *webSearchSSELoopDriver) run() {
 
 	// Phase C: self-call loop.
 	for d.round < webSearchMaxRounds {
-		subBody, err := buildWebSearchSubBody(d.wsCtx.originalRequestBody, d.accumulatedBlocks)
+		subBody, err := buildWebSearchSubBody(d.wsCtx.originalRequestBody, d.accumulatedBlocks, d.wsCtx.backend)
 		if err != nil {
 			d.fallbackPauseTurn()
 			return
