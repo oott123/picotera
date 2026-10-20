@@ -4,13 +4,19 @@ import { imageFromBase64, imageFromUrl, type ImageSource } from './images'
 
 export type ConversationRole = 'system' | 'user' | 'assistant' | 'tool'
 
+// One shape for both search backends: the Codex search output (citation / wordlim / crawled)
+// and DeepSeek's /v1/tools/search (siteName / authority / score). Fields a backend does not
+// report are '' / null.
 export interface SearchResult {
   citation: string
   title: string
   url: string | null
+  siteName: string | null
   wordlim: string | null
   published: string | null
   crawled: string | null
+  authority: number | null
+  score: number | null
   content: string
 }
 
@@ -47,6 +53,7 @@ type ConversationFormat =
   | 'anthropic'
   | 'gemini'
   | 'openaiSearch'
+  | 'deepseekSearch'
   | 'openaiImages'
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -209,6 +216,7 @@ export function detectFormat(
   }
 
   if (typeof root.output === 'string') return 'openaiSearch'
+  if (isDeepseekSearchResponse(root)) return 'deepseekSearch'
   if (Array.isArray(root.candidates)) return 'gemini'
   // Shape-matched on the first element so an embeddings response (`data: [{embedding}]`)
   // doesn't land here.
@@ -646,14 +654,74 @@ function parseSearchOutput(output: string): SearchResult[] {
     )
 
     if (!title && !content) continue
-    results.push({ citation, title, url, wordlim, published, crawled, content })
+    results.push({
+      citation,
+      title,
+      url,
+      siteName: null,
+      wordlim,
+      published,
+      crawled,
+      authority: null,
+      score: null,
+      content,
+    })
+  }
+  return results
+}
+
+// DeepSeek's /v1/tools/search answers `{results: [...]}`; `rerank_score` tells it apart from
+// other `results`-shaped bodies such as Exa's (whose entries carry `score`).
+function isDeepseekSearchResponse(root: Record<string, unknown>): boolean {
+  const first = asRecord(asArray(root.results)[0])
+  return typeof first?.url === 'string' && typeof first.rerank_score === 'number'
+}
+
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value !== '' ? value : null
+}
+
+function finiteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+// `summary` is what the web search emulation hands to the model; `content` is only filled
+// when the caller asked for need_content, and `snippet` is the last resort.
+function parseDeepseekSearchResults(root: Record<string, unknown>): SearchResult[] {
+  const results: SearchResult[] = []
+  for (const item of asArray(root.results)) {
+    const result = asRecord(item)
+    if (!result) continue
+    const title = nonEmptyString(result.title) ?? ''
+    const url = nonEmptyString(result.url)
+    const content =
+      nonEmptyString(result.summary) ??
+      nonEmptyString(result.content) ??
+      nonEmptyString(result.snippet) ??
+      ''
+    if (!title && !url && !content) continue
+    results.push({
+      citation: '',
+      title,
+      url,
+      siteName: nonEmptyString(result.site_name),
+      wordlim: null,
+      published: nonEmptyString(result.date),
+      crawled: null,
+      authority: finiteNumber(result.authority),
+      score: finiteNumber(result.rerank_score),
+      content,
+    })
   }
   return results
 }
 
 export function extractSearchResults(json: unknown): SearchResult[] {
-  const output = asRecord(json)?.output
-  return typeof output === 'string' ? parseSearchOutput(output) : []
+  const root = asRecord(json)
+  if (!root) return []
+  if (typeof root.output === 'string') return parseSearchOutput(root.output)
+  if (isDeepseekSearchResponse(root)) return parseDeepseekSearchResults(root)
+  return []
 }
 
 export function parseSearchResponse(json: unknown): ConversationMessage[] {
@@ -689,6 +757,7 @@ export function parseRequestConversation(json: unknown): ConversationMessage[] |
     case 'gemini':
       return parseGeminiRequest(json)
     case 'openaiSearch':
+    case 'deepseekSearch':
     case 'openaiImages':
       return []
   }
@@ -710,6 +779,7 @@ export function parseResponseConversation(
     case 'gemini':
       return parseGeminiResponse(json)
     case 'openaiSearch':
+    case 'deepseekSearch':
       return parseSearchResponse(json)
     case 'openaiImages':
       return parseOpenAIImagesResponse(json)
