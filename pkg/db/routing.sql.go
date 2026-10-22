@@ -219,6 +219,7 @@ SELECT
   p.priority AS provider_priority,
   pe.upstream_url,
   pe.credentials_resolver AS send_credentials_resolver,
+  e.credentials_resolver AS endpoint_credentials_resolver,
   p.proxy_url,
   p.insecure_tls,
   p.annotations AS provider_annotations,
@@ -232,24 +233,25 @@ WHERE e.endpoint_type = ANY($1::int[])
 `
 
 type GetProvidersByEndpointTypesRow struct {
-	ModelName               string      `json:"modelName"`
-	ProviderID              int32       `json:"providerId"`
-	EndpointPath            string      `json:"endpointPath"`
-	EndpointType            int32       `json:"endpointType"`
-	PrefixMatch             bool        `json:"prefixMatch"`
-	UpstreamModelName       string      `json:"upstreamModelName"`
-	Priority                int32       `json:"priority"`
-	Annotations             []byte      `json:"annotations"`
-	ProviderName            string      `json:"providerName"`
-	ProviderCredentials     string      `json:"providerCredentials"`
-	ProviderPriority        int32       `json:"providerPriority"`
-	UpstreamUrl             string      `json:"upstreamUrl"`
-	SendCredentialsResolver int32       `json:"sendCredentialsResolver"`
-	ProxyUrl                pgtype.Text `json:"proxyUrl"`
-	InsecureTls             bool        `json:"insecureTls"`
-	ProviderAnnotations     []byte      `json:"providerAnnotations"`
-	ModelAnnotations        []byte      `json:"modelAnnotations"`
-	SupportsNativeWebSearch bool        `json:"supportsNativeWebSearch"`
+	ModelName                   string      `json:"modelName"`
+	ProviderID                  int32       `json:"providerId"`
+	EndpointPath                string      `json:"endpointPath"`
+	EndpointType                int32       `json:"endpointType"`
+	PrefixMatch                 bool        `json:"prefixMatch"`
+	UpstreamModelName           string      `json:"upstreamModelName"`
+	Priority                    int32       `json:"priority"`
+	Annotations                 []byte      `json:"annotations"`
+	ProviderName                string      `json:"providerName"`
+	ProviderCredentials         string      `json:"providerCredentials"`
+	ProviderPriority            int32       `json:"providerPriority"`
+	UpstreamUrl                 string      `json:"upstreamUrl"`
+	SendCredentialsResolver     int32       `json:"sendCredentialsResolver"`
+	EndpointCredentialsResolver int32       `json:"endpointCredentialsResolver"`
+	ProxyUrl                    pgtype.Text `json:"proxyUrl"`
+	InsecureTls                 bool        `json:"insecureTls"`
+	ProviderAnnotations         []byte      `json:"providerAnnotations"`
+	ModelAnnotations            []byte      `json:"modelAnnotations"`
+	SupportsNativeWebSearch     bool        `json:"supportsNativeWebSearch"`
 }
 
 // Sister query to GetProvidersByEndpointTypesAndModel for requests that carry
@@ -279,6 +281,7 @@ func (q *Queries) GetProvidersByEndpointTypes(ctx context.Context, endpointTypes
 			&i.ProviderPriority,
 			&i.UpstreamUrl,
 			&i.SendCredentialsResolver,
+			&i.EndpointCredentialsResolver,
 			&i.ProxyUrl,
 			&i.InsecureTls,
 			&i.ProviderAnnotations,
@@ -310,6 +313,7 @@ SELECT
   p.priority AS provider_priority,
   pe.upstream_url,
   pe.credentials_resolver AS send_credentials_resolver,
+  e.credentials_resolver AS endpoint_credentials_resolver,
   p.proxy_url,
   p.insecure_tls,
   p.annotations AS provider_annotations,
@@ -340,24 +344,25 @@ type GetProvidersByEndpointTypesAndModelParams struct {
 }
 
 type GetProvidersByEndpointTypesAndModelRow struct {
-	ModelName               string      `json:"modelName"`
-	ProviderID              int32       `json:"providerId"`
-	EndpointPath            string      `json:"endpointPath"`
-	EndpointType            int32       `json:"endpointType"`
-	PrefixMatch             bool        `json:"prefixMatch"`
-	UpstreamModelName       string      `json:"upstreamModelName"`
-	Priority                int32       `json:"priority"`
-	Annotations             []byte      `json:"annotations"`
-	ProviderName            string      `json:"providerName"`
-	ProviderCredentials     string      `json:"providerCredentials"`
-	ProviderPriority        int32       `json:"providerPriority"`
-	UpstreamUrl             string      `json:"upstreamUrl"`
-	SendCredentialsResolver int32       `json:"sendCredentialsResolver"`
-	ProxyUrl                pgtype.Text `json:"proxyUrl"`
-	InsecureTls             bool        `json:"insecureTls"`
-	ProviderAnnotations     []byte      `json:"providerAnnotations"`
-	ModelAnnotations        []byte      `json:"modelAnnotations"`
-	SupportsNativeWebSearch bool        `json:"supportsNativeWebSearch"`
+	ModelName                   string      `json:"modelName"`
+	ProviderID                  int32       `json:"providerId"`
+	EndpointPath                string      `json:"endpointPath"`
+	EndpointType                int32       `json:"endpointType"`
+	PrefixMatch                 bool        `json:"prefixMatch"`
+	UpstreamModelName           string      `json:"upstreamModelName"`
+	Priority                    int32       `json:"priority"`
+	Annotations                 []byte      `json:"annotations"`
+	ProviderName                string      `json:"providerName"`
+	ProviderCredentials         string      `json:"providerCredentials"`
+	ProviderPriority            int32       `json:"providerPriority"`
+	UpstreamUrl                 string      `json:"upstreamUrl"`
+	SendCredentialsResolver     int32       `json:"sendCredentialsResolver"`
+	EndpointCredentialsResolver int32       `json:"endpointCredentialsResolver"`
+	ProxyUrl                    pgtype.Text `json:"proxyUrl"`
+	InsecureTls                 bool        `json:"insecureTls"`
+	ProviderAnnotations         []byte      `json:"providerAnnotations"`
+	ModelAnnotations            []byte      `json:"modelAnnotations"`
+	SupportsNativeWebSearch     bool        `json:"supportsNativeWebSearch"`
 }
 
 // Sister query to GetProvidersByEndpointAndModel that selects across a SET of
@@ -389,6 +394,7 @@ func (q *Queries) GetProvidersByEndpointTypesAndModel(ctx context.Context, arg G
 			&i.ProviderPriority,
 			&i.UpstreamUrl,
 			&i.SendCredentialsResolver,
+			&i.EndpointCredentialsResolver,
 			&i.ProxyUrl,
 			&i.InsecureTls,
 			&i.ProviderAnnotations,

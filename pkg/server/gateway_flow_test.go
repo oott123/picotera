@@ -164,7 +164,7 @@ func TestBuildUnifiedCandidateSetAnnotationsAndFormat(t *testing.T) {
 		Annotations:             []byte(`{"k":"entry"}`),
 		SupportsNativeWebSearch: true,
 	}}
-	set, err := buildUnifiedCandidateSet(rows, map[string]string{"k": "user"}, map[string]string{"k": "api"}, nil, db.Endpoint{}, "", upstreamFormatFor)
+	set, err := buildUnifiedCandidateSet(rows, map[string]string{"k": "user"}, map[string]string{"k": "api"}, nil, "", upstreamFormatFor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +223,7 @@ func TestBuildUnifiedCandidateSetCodex(t *testing.T) {
 		}
 		return upstreamFormatFor(t)
 	}
-	set, err := buildUnifiedCandidateSet(rows, nil, nil, nil, db.Endpoint{}, "/responses", upstreamFormat)
+	set, err := buildUnifiedCandidateSet(rows, nil, nil, nil, "/responses", upstreamFormat)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,6 +247,42 @@ func TestBuildUnifiedCandidateSetCodex(t *testing.T) {
 	bridged := set.Items[1].Sidecar
 	if bridged.AppendPath != "" || bridged.EndpointPath != "/v1/responses" {
 		t.Errorf("non-prefix candidate picked up the suffix: %+v", bridged)
+	}
+}
+
+// TestBuildUnifiedCandidateSetSendResolver pins that a unified candidate sends
+// credentials per its own endpoint row's resolver (overridden by the
+// provider_endpoint's when that is concrete), not the virtual endpoint's
+// Unknown — which would fall through to followRequest and mirror the client's
+// header (e.g. an Anthropic client's X-Api-Key) onto an OpenAI upstream.
+func TestBuildUnifiedCandidateSetSendResolver(t *testing.T) {
+	cases := []struct {
+		name     string
+		endpoint int32
+		pe       int32
+		want     int32
+	}{
+		{"endpoint resolver inherited", contract.CredentialsResolver_BearerToken, contract.CredentialsResolver_Unknown, contract.CredentialsResolver_BearerToken},
+		{"provider_endpoint overrides", contract.CredentialsResolver_BearerToken, contract.CredentialsResolver_XApiKey, contract.CredentialsResolver_XApiKey},
+		{"followRequest kept", contract.CredentialsResolver_FollowRequest, contract.CredentialsResolver_Unknown, contract.CredentialsResolver_FollowRequest},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rows := []db.GetProvidersByEndpointTypesAndModelRow{{
+				ProviderID:                  1,
+				EndpointPath:                "/v1/chat/completions",
+				EndpointType:                contract.EndpointType_OpenAIChatCompletions,
+				EndpointCredentialsResolver: tc.endpoint,
+				SendCredentialsResolver:     tc.pe,
+			}}
+			set, err := buildUnifiedCandidateSet(rows, nil, nil, nil, "", upstreamFormatFor)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := set.Items[0].Sidecar.SendResolver; got != tc.want {
+				t.Errorf("SendResolver = %d, want %d", got, tc.want)
+			}
+		})
 	}
 }
 

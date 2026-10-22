@@ -114,7 +114,7 @@ func buildPathCandidateSet(providers []providerCandidateRow, userAnno map[string
 // upstreamFormat resolves a row's endpoint type to its bridge format; the
 // unified config passes a closure so codex rows can report the route's own
 // source format (i.e. identity, no bridging) instead of FormatUnknown.
-func buildUnifiedCandidateSet(providers []db.GetProvidersByEndpointTypesAndModelRow, userAnno map[string]string, apiKeyAnno map[string]string, modelAnno map[string]string, virtualEndpoint db.Endpoint, suffix string, upstreamFormat func(int32) llmbridge.Format) (candidateSet, error) {
+func buildUnifiedCandidateSet(providers []db.GetProvidersByEndpointTypesAndModelRow, userAnno map[string]string, apiKeyAnno map[string]string, modelAnno map[string]string, suffix string, upstreamFormat func(int32) llmbridge.Format) (candidateSet, error) {
 	if len(providers) > 0 {
 		if m, err := annotations.Decode(providers[0].ModelAnnotations); err == nil {
 			modelAnno = m
@@ -155,7 +155,7 @@ func buildUnifiedCandidateSet(providers []db.GetProvidersByEndpointTypesAndModel
 				ProviderID:              row.ProviderID,
 				UpstreamURL:             row.UpstreamUrl,
 				Credentials:             row.ProviderCredentials,
-				SendResolver:            effectiveSendResolver(virtualEndpoint.CredentialsResolver, row.SendCredentialsResolver),
+				SendResolver:            effectiveSendResolver(row.EndpointCredentialsResolver, row.SendCredentialsResolver),
 				ProxyURL:                proxyURL,
 				InsecureTLS:             row.InsecureTls,
 				EndpointPath:            row.EndpointPath + appendPath,

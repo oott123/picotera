@@ -97,7 +97,7 @@ func (h *gatewayHandler) newUnifiedGatewayFlowConfig(route unifiedRoute, r *http
 			if err != nil {
 				return candidateSet{}, err
 			}
-			return buildUnifiedCandidateSet(providers, auth.UserAnno, auth.APIKeyAnno, nil, virtualEndpoint, route.UpstreamSuffix, upstreamFormat)
+			return buildUnifiedCandidateSet(providers, auth.UserAnno, auth.APIKeyAnno, nil, route.UpstreamSuffix, upstreamFormat)
 		},
 		PrepareAttempt: prepareAttempt,
 		HandleSuccess: func(input successInput) {
