@@ -64,8 +64,8 @@
           }
         },
         {
-          "id": "claude-haiku-3-5-retired-except-on-google-cloud",
-          "name": "Claude Haiku 3.5 (retired, except on Google Cloud)",
+          "id": "claude-haiku-3-5-retired-except-on-claude-models-on-google-cloud-google-managed",
+          "name": "Claude Haiku 3.5 (retired, except on Claude Models on Google Cloud (Google managed))",
           "aliases": [],
           "currency": "USD",
           "unit": "per_1m_tokens",
@@ -259,8 +259,8 @@
           }
         },
         {
-          "id": "claude-opus-4-1-retired-except-on-bedrock-and-google-cloud",
-          "name": "Claude Opus 4.1 (retired, except on Bedrock and Google Cloud)",
+          "id": "claude-opus-4-1-retired-except-on-bedrock-and-claude-models-on-google-cloud-google-managed",
+          "name": "Claude Opus 4.1 (retired, except on Bedrock and Claude Models on Google Cloud (Google managed))",
           "aliases": [],
           "currency": "USD",
           "unit": "per_1m_tokens",
@@ -404,8 +404,8 @@
           }
         },
         {
-          "id": "claude-opus-4-retired-except-on-google-cloud",
-          "name": "Claude Opus 4 (retired, except on Google Cloud)",
+          "id": "claude-opus-4-retired-except-on-claude-models-on-google-cloud-google-managed",
+          "name": "Claude Opus 4 (retired, except on Claude Models on Google Cloud (Google managed))",
           "aliases": [],
           "currency": "USD",
           "unit": "per_1m_tokens",
@@ -549,8 +549,8 @@
           }
         },
         {
-          "id": "claude-sonnet-4-retired-except-on-bedrock-and-google-cloud",
-          "name": "Claude Sonnet 4 (retired, except on Bedrock and Google Cloud)",
+          "id": "claude-sonnet-4-retired-except-on-bedrock-and-claude-models-on-google-cloud-google-managed",
+          "name": "Claude Sonnet 4 (retired, except on Bedrock and Claude Models on Google Cloud (Google managed))",
           "aliases": [],
           "currency": "USD",
           "unit": "per_1m_tokens",
@@ -1230,6 +1230,27 @@
           }
         },
         {
+          "id": "deepseek-v4-1-flash-1017",
+          "name": "DeepSeek V4.1 Flash 1017",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.3
+            },
+            "output": {
+              "type": "flat",
+              "price": 1.2
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.006
+            }
+          }
+        },
+        {
           "id": "gemini-2-5-flash",
           "name": "Gemini 2.5 Flash",
           "aliases": [],
@@ -1314,6 +1335,27 @@
           }
         },
         {
+          "id": "gemini-3-5-flash-lite",
+          "name": "Gemini 3.5 Flash Lite",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.3
+            },
+            "output": {
+              "type": "flat",
+              "price": 2.5
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.03
+            }
+          }
+        },
+        {
           "id": "gemini-3-6-flash",
           "name": "Gemini 3.6 Flash",
           "aliases": [],
@@ -1347,7 +1389,7 @@
             },
             "output": {
               "type": "flat",
-              "price": 3.5
+              "price": 3.75
             },
             "cache_read": {
               "type": "flat",
@@ -1368,7 +1410,7 @@
             },
             "output": {
               "type": "flat",
-              "price": 3.5
+              "price": 3.75
             },
             "cache_read": {
               "type": "flat",
@@ -2452,6 +2494,27 @@
               "price": 0.15
             }
           }
+        },
+        {
+          "id": "muse-wonder-1-0",
+          "name": "Muse Wonder",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 4
+            },
+            "output": {
+              "type": "flat",
+              "price": 20
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.2
+            }
+          }
         }
       ]
     },
@@ -3144,23 +3207,6 @@
           }
         },
         {
-          "id": "gemini-omni-flash-preview",
-          "name": "Gemini Omni Flash Preview",
-          "aliases": [],
-          "currency": "USD",
-          "unit": "per_1m_tokens",
-          "prices": {
-            "input": {
-              "type": "flat",
-              "price": 1.5
-            },
-            "output": {
-              "type": "flat",
-              "price": 9
-            }
-          }
-        },
-        {
           "id": "gemini-robotics-er-2-preview",
           "name": "Gemini Robotics ER 2 Preview",
           "aliases": [],
@@ -3295,6 +3341,64 @@
               "price": 40
             }
           }
+        },
+        {
+          "id": "kimi-k3-1-pro",
+          "name": "kimi-k3.1-pro",
+          "aliases": [],
+          "currency": "CNY",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 13
+            },
+            "output": {
+              "type": "flat",
+              "price": 68
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 1.3
+            },
+            "cache_write": {
+              "type": "flat",
+              "price": 13
+            },
+            "cache_write_long": {
+              "type": "flat",
+              "price": 26
+            }
+          }
+        },
+        {
+          "id": "kimi-k3-1-pro-highspeed",
+          "name": "kimi-k3.1-pro-highspeed",
+          "aliases": [],
+          "currency": "CNY",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 26
+            },
+            "output": {
+              "type": "flat",
+              "price": 136
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 1.3
+            },
+            "cache_write": {
+              "type": "flat",
+              "price": 26
+            },
+            "cache_write_long": {
+              "type": "flat",
+              "price": 52
+            }
+          }
         }
       ]
     },
@@ -3303,177 +3407,74 @@
       "name": "MiniMax",
       "models": [
         {
-          "id": "minimax-m2",
-          "name": "MiniMax-M2",
+          "id": "minimax-m3",
+          "name": "MiniMax-M3",
           "aliases": [],
           "currency": "CNY",
           "unit": "per_1m_tokens",
           "prices": {
             "input": {
-              "type": "flat",
-              "price": 2.1
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 2.1
+                },
+                {
+                  "min_input_tokens": 512001,
+                  "price": 4.2
+                }
+              ]
             },
             "output": {
-              "type": "flat",
-              "price": 8.4
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 8.4
+                },
+                {
+                  "min_input_tokens": 512001,
+                  "price": 16.8
+                }
+              ]
             },
             "cache_read": {
-              "type": "flat",
-              "price": 0.21
-            },
-            "cache_write": {
-              "type": "flat",
-              "price": 2.625
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 0.42
+                },
+                {
+                  "min_input_tokens": 512001,
+                  "price": 0.84
+                }
+              ]
             }
           }
         },
         {
-          "id": "minimax-m2-1",
-          "name": "MiniMax-M2.1",
+          "id": "minimax-m3-1-flash",
+          "name": "MiniMax-M3.1-Flash",
           "aliases": [],
           "currency": "CNY",
           "unit": "per_1m_tokens",
           "prices": {
             "input": {
               "type": "flat",
-              "price": 2.1
+              "price": 1
             },
             "output": {
               "type": "flat",
-              "price": 8.4
+              "price": 4
             },
             "cache_read": {
               "type": "flat",
-              "price": 0.21
-            },
-            "cache_write": {
-              "type": "flat",
-              "price": 2.625
-            }
-          }
-        },
-        {
-          "id": "minimax-m2-1-highspeed",
-          "name": "MiniMax-M2.1-highspeed",
-          "aliases": [],
-          "currency": "CNY",
-          "unit": "per_1m_tokens",
-          "prices": {
-            "input": {
-              "type": "flat",
-              "price": 4.2
-            },
-            "output": {
-              "type": "flat",
-              "price": 16.8
-            },
-            "cache_read": {
-              "type": "flat",
-              "price": 0.21
-            },
-            "cache_write": {
-              "type": "flat",
-              "price": 2.625
-            }
-          }
-        },
-        {
-          "id": "minimax-m2-5",
-          "name": "MiniMax-M2.5",
-          "aliases": [],
-          "currency": "CNY",
-          "unit": "per_1m_tokens",
-          "prices": {
-            "input": {
-              "type": "flat",
-              "price": 2.1
-            },
-            "output": {
-              "type": "flat",
-              "price": 8.4
-            },
-            "cache_read": {
-              "type": "flat",
-              "price": 0.21
-            },
-            "cache_write": {
-              "type": "flat",
-              "price": 2.625
-            }
-          }
-        },
-        {
-          "id": "minimax-m2-5-highspeed",
-          "name": "MiniMax-M2.5-highspeed",
-          "aliases": [],
-          "currency": "CNY",
-          "unit": "per_1m_tokens",
-          "prices": {
-            "input": {
-              "type": "flat",
-              "price": 4.2
-            },
-            "output": {
-              "type": "flat",
-              "price": 16.8
-            },
-            "cache_read": {
-              "type": "flat",
-              "price": 0.21
-            },
-            "cache_write": {
-              "type": "flat",
-              "price": 2.625
-            }
-          }
-        },
-        {
-          "id": "minimax-m2-7",
-          "name": "MiniMax-M2.7",
-          "aliases": [],
-          "currency": "CNY",
-          "unit": "per_1m_tokens",
-          "prices": {
-            "input": {
-              "type": "flat",
-              "price": 2.1
-            },
-            "output": {
-              "type": "flat",
-              "price": 8.4
-            },
-            "cache_read": {
-              "type": "flat",
-              "price": 0.42
-            },
-            "cache_write": {
-              "type": "flat",
-              "price": 2.625
-            }
-          }
-        },
-        {
-          "id": "minimax-m2-7-highspeed",
-          "name": "MiniMax-M2.7-highspeed",
-          "aliases": [],
-          "currency": "CNY",
-          "unit": "per_1m_tokens",
-          "prices": {
-            "input": {
-              "type": "flat",
-              "price": 4.2
-            },
-            "output": {
-              "type": "flat",
-              "price": 16.8
-            },
-            "cache_read": {
-              "type": "flat",
-              "price": 0.42
-            },
-            "cache_write": {
-              "type": "flat",
-              "price": 2.625
+              "price": 0.1
             }
           }
         }
@@ -3483,23 +3484,6 @@
       "id": "openai",
       "name": "OpenAI",
       "models": [
-        {
-          "id": "babbage-002",
-          "name": "babbage-002",
-          "aliases": [],
-          "currency": "USD",
-          "unit": "per_1m_tokens",
-          "prices": {
-            "input": {
-              "type": "flat",
-              "price": 0.4
-            },
-            "output": {
-              "type": "flat",
-              "price": 0.4
-            }
-          }
-        },
         {
           "id": "babbage-002-legacy",
           "name": "babbage-002 (legacy)",
@@ -3560,23 +3544,6 @@
           }
         },
         {
-          "id": "davinci-002",
-          "name": "davinci-002",
-          "aliases": [],
-          "currency": "USD",
-          "unit": "per_1m_tokens",
-          "prices": {
-            "input": {
-              "type": "flat",
-              "price": 2
-            },
-            "output": {
-              "type": "flat",
-              "price": 2
-            }
-          }
-        },
-        {
           "id": "davinci-002-legacy",
           "name": "davinci-002 (legacy)",
           "aliases": [],
@@ -3624,40 +3591,6 @@
             "output": {
               "type": "flat",
               "price": 1.5
-            }
-          }
-        },
-        {
-          "id": "gpt-3-5-turbo-1106",
-          "name": "gpt-3.5-turbo-1106",
-          "aliases": [],
-          "currency": "USD",
-          "unit": "per_1m_tokens",
-          "prices": {
-            "input": {
-              "type": "flat",
-              "price": 1
-            },
-            "output": {
-              "type": "flat",
-              "price": 2
-            }
-          }
-        },
-        {
-          "id": "gpt-3-5-turbo-instruct",
-          "name": "gpt-3.5-turbo-instruct",
-          "aliases": [],
-          "currency": "USD",
-          "unit": "per_1m_tokens",
-          "prices": {
-            "input": {
-              "type": "flat",
-              "price": 1.5
-            },
-            "output": {
-              "type": "flat",
-              "price": 2
             }
           }
         },
@@ -4370,20 +4303,6 @@
                   "price": 0.04
                 }
               ]
-            },
-            "cache_write": {
-              "type": "tiered",
-              "basis": "input_tokens",
-              "tiers": [
-                {
-                  "min_input_tokens": 0,
-                  "price": 0.25
-                },
-                {
-                  "min_input_tokens": 272000,
-                  "price": 0.5
-                }
-              ]
             }
           }
         },
@@ -4435,20 +4354,6 @@
                   "price": 0.8
                 }
               ]
-            },
-            "cache_write": {
-              "type": "tiered",
-              "basis": "input_tokens",
-              "tiers": [
-                {
-                  "min_input_tokens": 0,
-                  "price": 5
-                },
-                {
-                  "min_input_tokens": 272000,
-                  "price": 10
-                }
-              ]
             }
           }
         },
@@ -4498,20 +4403,6 @@
                 {
                   "min_input_tokens": 272000,
                   "price": 0.4
-                }
-              ]
-            },
-            "cache_write": {
-              "type": "tiered",
-              "basis": "input_tokens",
-              "tiers": [
-                {
-                  "min_input_tokens": 0,
-                  "price": 2.5
-                },
-                {
-                  "min_input_tokens": 272000,
-                  "price": 5
                 }
               ]
             }
@@ -4645,18 +4536,55 @@
                   "price": 0.2
                 }
               ]
-            },
-            "cache_write": {
+            }
+          }
+        },
+        {
+          "id": "gpt-6-1-terra",
+          "name": "gpt-6.1-terra",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
               "type": "tiered",
               "basis": "input_tokens",
               "tiers": [
                 {
                   "min_input_tokens": 0,
-                  "price": 2.5
+                  "price": 1
                 },
                 {
                   "min_input_tokens": 272000,
+                  "price": 2
+                }
+              ]
+            },
+            "output": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
                   "price": 5
+                },
+                {
+                  "min_input_tokens": 272000,
+                  "price": 7.5
+                }
+              ]
+            },
+            "cache_read": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 0.05
+                },
+                {
+                  "min_input_tokens": 272000,
+                  "price": 0.1
                 }
               ]
             }
@@ -4710,20 +4638,6 @@
                   "price": 2
                 }
               ]
-            },
-            "cache_write": {
-              "type": "tiered",
-              "basis": "input_tokens",
-              "tiers": [
-                {
-                  "min_input_tokens": 0,
-                  "price": 12.5
-                },
-                {
-                  "min_input_tokens": 272000,
-                  "price": 25
-                }
-              ]
             }
           }
         },
@@ -4773,20 +4687,6 @@
                 {
                   "min_input_tokens": 272000,
                   "price": 0.02
-                }
-              ]
-            },
-            "cache_write": {
-              "type": "tiered",
-              "basis": "input_tokens",
-              "tiers": [
-                {
-                  "min_input_tokens": 0,
-                  "price": 0.125
-                },
-                {
-                  "min_input_tokens": 272000,
-                  "price": 0.25
                 }
               ]
             }
@@ -4840,20 +4740,6 @@
                   "price": 0.4
                 }
               ]
-            },
-            "cache_write": {
-              "type": "tiered",
-              "basis": "input_tokens",
-              "tiers": [
-                {
-                  "min_input_tokens": 0,
-                  "price": 2.5
-                },
-                {
-                  "min_input_tokens": 272000,
-                  "price": 5
-                }
-              ]
             }
           }
         },
@@ -4893,27 +4779,6 @@
             "input": {
               "type": "flat",
               "price": 10
-            }
-          }
-        },
-        {
-          "id": "gpt-image-1",
-          "name": "gpt-image-1",
-          "aliases": [],
-          "currency": "USD",
-          "unit": "per_1m_tokens",
-          "prices": {
-            "input": {
-              "type": "flat",
-              "price": 10
-            },
-            "output": {
-              "type": "flat",
-              "price": 40
-            },
-            "cache_read": {
-              "type": "flat",
-              "price": 2.5
             }
           }
         },
@@ -5759,6 +5624,27 @@
         {
           "id": "deepseek-deepseek-v4-1-flash",
           "name": "DeepSeek: DeepSeek V4.1 Flash",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.15
+            },
+            "output": {
+              "type": "flat",
+              "price": 0.6
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.003
+            }
+          }
+        },
+        {
+          "id": "deepseek-deepseek-v4-1-flash-1017",
+          "name": "DeepSeek: DeepSeek V4.1 Flash 1017",
           "aliases": [],
           "currency": "USD",
           "unit": "per_1m_tokens",
@@ -6798,6 +6684,27 @@
           }
         },
         {
+          "id": "kimi-kimi-k3-1-pro",
+          "name": "MoonshotAI: Kimi K3.1 Pro",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 2
+            },
+            "output": {
+              "type": "flat",
+              "price": 10
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.2
+            }
+          }
+        },
+        {
           "id": "meta-muse-spark-1-1",
           "name": "Meta: Muse Spark 1.1",
           "aliases": [],
@@ -6941,6 +6848,27 @@
             "cache_read": {
               "type": "flat",
               "price": 0.06
+            }
+          }
+        },
+        {
+          "id": "minimax-minimax-m3-1-flash",
+          "name": "MiniMax: M3.1 Flash",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.15
+            },
+            "output": {
+              "type": "flat",
+              "price": 0.6
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.015
             }
           }
         },
@@ -9997,6 +9925,48 @@
           }
         },
         {
+          "id": "xiaomi-mimo-v2-6-flash",
+          "name": "Xiaomi: MiMo-V2.6-Flash",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.14
+            },
+            "output": {
+              "type": "flat",
+              "price": 0.28
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.0028
+            }
+          }
+        },
+        {
+          "id": "xiaomi-mimo-v2-6-pro",
+          "name": "Xiaomi: MiMo-V2.6-Pro",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.435
+            },
+            "output": {
+              "type": "flat",
+              "price": 0.87
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.0036000000135
+            }
+          }
+        },
+        {
           "id": "z-ai-glm-4-5",
           "name": "Z.ai: GLM 4.5",
           "aliases": [],
@@ -10443,27 +10413,6 @@
           }
         },
         {
-          "id": "pro-deepseek-ai-deepseek-v3-1-terminus",
-          "name": "Pro/deepseek-ai/DeepSeek-V3.1-Terminus",
-          "aliases": [],
-          "currency": "CNY",
-          "unit": "per_1m_tokens",
-          "prices": {
-            "input": {
-              "type": "flat",
-              "price": 4
-            },
-            "output": {
-              "type": "flat",
-              "price": 12
-            },
-            "cache_read": {
-              "type": "flat",
-              "price": 0.4
-            }
-          }
-        },
-        {
           "id": "pro-deepseek-ai-deepseek-v3-2",
           "name": "Pro/deepseek-ai/DeepSeek-V3.2",
           "aliases": [],
@@ -10892,7 +10841,218 @@
     {
       "id": "stepfun",
       "name": "StepFun",
-      "models": []
+      "models": [
+        {
+          "id": "step-1o-audio",
+          "name": "step-1o-audio",
+          "aliases": [],
+          "currency": "CNY",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 25
+            },
+            "output": {
+              "type": "flat",
+              "price": 60
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 5
+            }
+          }
+        },
+        {
+          "id": "step-1o-turbo-vision",
+          "name": "step-1o-turbo-vision",
+          "aliases": [],
+          "currency": "CNY",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 2.5
+            },
+            "output": {
+              "type": "flat",
+              "price": 8
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.5
+            }
+          }
+        },
+        {
+          "id": "step-3-5-flash",
+          "name": "step-3.5-flash",
+          "aliases": [],
+          "currency": "CNY",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.7
+            },
+            "output": {
+              "type": "flat",
+              "price": 2.1
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.14
+            }
+          }
+        },
+        {
+          "id": "step-3-5-flash-2603",
+          "name": "step-3.5-flash-2603",
+          "aliases": [],
+          "currency": "CNY",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.7
+            },
+            "output": {
+              "type": "flat",
+              "price": 2.1
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.14
+            }
+          }
+        },
+        {
+          "id": "step-3-7-flash",
+          "name": "step-3.7-flash",
+          "aliases": [],
+          "currency": "CNY",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 1.35
+            },
+            "output": {
+              "type": "flat",
+              "price": 8.1
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.27
+            }
+          }
+        },
+        {
+          "id": "step-5-preview",
+          "name": "step-5-preview",
+          "aliases": [],
+          "currency": "CNY",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 7
+            },
+            "output": {
+              "type": "flat",
+              "price": 20
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.7
+            }
+          }
+        },
+        {
+          "id": "step-audio-2",
+          "name": "step-audio-2",
+          "aliases": [],
+          "currency": "CNY",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 10
+            },
+            "output": {
+              "type": "flat",
+              "price": 70
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 2
+            }
+          }
+        },
+        {
+          "id": "step-audio-r1-5",
+          "name": "step-audio-r1.5",
+          "aliases": [],
+          "currency": "CNY",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 10
+            },
+            "output": {
+              "type": "flat",
+              "price": 105
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 2
+            }
+          }
+        },
+        {
+          "id": "stepaudio-2-5-chat",
+          "name": "stepaudio-2.5-chat",
+          "aliases": [],
+          "currency": "CNY",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 10
+            },
+            "output": {
+              "type": "flat",
+              "price": 25
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 2
+            }
+          }
+        },
+        {
+          "id": "stepaudio-2-5-realtime",
+          "name": "stepaudio-2.5-realtime",
+          "aliases": [],
+          "currency": "CNY",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 10
+            },
+            "output": {
+              "type": "flat",
+              "price": 70
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 2
+            }
+          }
+        }
+      ]
     },
     {
       "id": "vercel",
@@ -11693,15 +11853,15 @@
           "prices": {
             "input": {
               "type": "flat",
-              "price": 0.3
+              "price": 0.33
             },
             "output": {
               "type": "flat",
-              "price": 2.5
+              "price": 2.75
             },
             "cache_read": {
               "type": "flat",
-              "price": 0.075
+              "price": 0.0825
             }
           }
         },
@@ -11719,6 +11879,10 @@
             "output": {
               "type": "flat",
               "price": 0.24
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.015
             }
           }
         },
@@ -11736,6 +11900,10 @@
             "output": {
               "type": "flat",
               "price": 0.14
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.0087
             }
           }
         },
@@ -11753,6 +11921,10 @@
             "output": {
               "type": "flat",
               "price": 3.2
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.2
             }
           }
         },
@@ -12425,71 +12597,6 @@
           }
         },
         {
-          "id": "anthropic/claude-sonnet-4",
-          "name": "Claude Sonnet 4",
-          "aliases": [],
-          "currency": "USD",
-          "unit": "per_1m_tokens",
-          "prices": {
-            "input": {
-              "type": "tiered",
-              "basis": "input_tokens",
-              "tiers": [
-                {
-                  "min_input_tokens": 0,
-                  "price": 3
-                },
-                {
-                  "min_input_tokens": 200001,
-                  "price": 6
-                }
-              ]
-            },
-            "output": {
-              "type": "tiered",
-              "basis": "input_tokens",
-              "tiers": [
-                {
-                  "min_input_tokens": 0,
-                  "price": 15
-                },
-                {
-                  "min_input_tokens": 200001,
-                  "price": 22.5
-                }
-              ]
-            },
-            "cache_read": {
-              "type": "tiered",
-              "basis": "input_tokens",
-              "tiers": [
-                {
-                  "min_input_tokens": 0,
-                  "price": 0.3
-                },
-                {
-                  "min_input_tokens": 200001,
-                  "price": 0.6
-                }
-              ]
-            },
-            "cache_write": {
-              "type": "tiered",
-              "basis": "input_tokens",
-              "tiers": [
-                {
-                  "min_input_tokens": 0,
-                  "price": 3.75
-                },
-                {
-                  "min_input_tokens": 200001,
-                  "price": 7.5
-                }
-              ]
-            }
-          }
-        },
-        {
           "id": "anthropic/claude-sonnet-4.5",
           "name": "Claude Sonnet 4.5",
           "aliases": [],
@@ -12783,6 +12890,44 @@
             "output": {
               "type": "flat",
               "price": 0.8
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.06
+            }
+          }
+        },
+        {
+          "id": "baseten/elephant-1",
+          "name": "Elephant-1",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0
+            },
+            "output": {
+              "type": "flat",
+              "price": 0
+            }
+          }
+        },
+        {
+          "id": "baseten/mammoth-1",
+          "name": "Mammoth-1",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0
+            },
+            "output": {
+              "type": "flat",
+              "price": 0
             }
           }
         },
@@ -12976,6 +13121,32 @@
             "input": {
               "type": "flat",
               "price": 0.12
+            }
+          }
+        },
+        {
+          "id": "cohere/rerank-v5-fast",
+          "name": "Cohere Rerank 5 Fast",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.02
+            }
+          }
+        },
+        {
+          "id": "cohere/rerank-v5-pro",
+          "name": "Cohere Rerank 5 Pro",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.05
             }
           }
         },
@@ -13199,15 +13370,57 @@
           "prices": {
             "input": {
               "type": "flat",
-              "price": 0.3
+              "price": 0.075
             },
             "output": {
               "type": "flat",
-              "price": 1.2
+              "price": 0.3
             },
             "cache_read": {
               "type": "flat",
-              "price": 0.007
+              "price": 0.0015
+            }
+          }
+        },
+        {
+          "id": "deepseek/deepseek-v4.1-flash-1017",
+          "name": "DeepSeek V4.1 Flash 1017",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.075
+            },
+            "output": {
+              "type": "flat",
+              "price": 0.3
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.0015
+            }
+          }
+        },
+        {
+          "id": "deepseek/deepseek-v4.1-flash-1017-fast",
+          "name": "DeepSeek V4.1 Flash 1017 Fast",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.6
+            },
+            "output": {
+              "type": "flat",
+              "price": 2.4
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.014
             }
           }
         },
@@ -13233,6 +13446,27 @@
           }
         },
         {
+          "id": "elorian/glimpse",
+          "name": "Glimpse",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.6
+            },
+            "output": {
+              "type": "flat",
+              "price": 3
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.06
+            }
+          }
+        },
+        {
           "id": "fireworks/ember-1",
           "name": "Ember-1",
           "aliases": [],
@@ -13250,6 +13484,19 @@
             "cache_read": {
               "type": "flat",
               "price": 0.3
+            }
+          }
+        },
+        {
+          "id": "fish-audio/drama-3",
+          "name": "Drama 3",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 10
             }
           }
         },
@@ -14321,6 +14568,27 @@
           }
         },
         {
+          "id": "inception/mercury-3",
+          "name": "Mercury 3",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.1
+            },
+            "output": {
+              "type": "flat",
+              "price": 0.35
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.01
+            }
+          }
+        },
+        {
           "id": "inception/mercury-coder-small",
           "name": "Mercury Coder Small Beta",
           "aliases": [],
@@ -14430,28 +14698,15 @@
           "prices": {
             "input": {
               "type": "flat",
-              "price": 0
+              "price": 0.3
             },
             "output": {
               "type": "flat",
-              "price": 0
-            }
-          }
-        },
-        {
-          "id": "inclusionai/ling-3.1-flash-free",
-          "name": "Ling 3.1 Flash (Free)",
-          "aliases": [],
-          "currency": "USD",
-          "unit": "per_1m_tokens",
-          "prices": {
-            "input": {
-              "type": "flat",
-              "price": 0
+              "price": 0.9
             },
-            "output": {
+            "cache_read": {
               "type": "flat",
-              "price": 0
+              "price": 0.06
             }
           }
         },
@@ -14523,11 +14778,49 @@
           "prices": {
             "input": {
               "type": "flat",
-              "price": 0.04
+              "price": 0.02
             },
             "output": {
               "type": "flat",
               "price": 0
+            }
+          }
+        },
+        {
+          "id": "liquid/d1-ultra",
+          "name": "Liquid d1 Ultra",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.042
+            },
+            "output": {
+              "type": "flat",
+              "price": 0
+            }
+          }
+        },
+        {
+          "id": "liquid/lfm2.5-24b-a2b",
+          "name": "LFM2.5-24B-A2B",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.05
+            },
+            "output": {
+              "type": "flat",
+              "price": 0.7
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.025
             }
           }
         },
@@ -14764,6 +15057,27 @@
           }
         },
         {
+          "id": "meta/muse-spark-open",
+          "name": "Muse Spark Open",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 1.25
+            },
+            "output": {
+              "type": "flat",
+              "price": 4.25
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.15
+            }
+          }
+        },
+        {
           "id": "meta/muse-wonder-1.0",
           "name": "Muse Wonder",
           "aliases": [],
@@ -14781,6 +15095,40 @@
             "cache_read": {
               "type": "flat",
               "price": 0.2
+            }
+          }
+        },
+        {
+          "id": "microsoft/mai-image-2.6",
+          "name": "MAI-Image-2.6",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 5
+            },
+            "output": {
+              "type": "flat",
+              "price": 38
+            }
+          }
+        },
+        {
+          "id": "microsoft/mai-image-2.6-flash",
+          "name": "MAI-Image-2.6-Flash",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 1.75
+            },
+            "output": {
+              "type": "flat",
+              "price": 19
             }
           }
         },
@@ -15063,6 +15411,27 @@
           }
         },
         {
+          "id": "minimax/minimax-m3.1-flash",
+          "name": "MiniMax-M3.1-Flash",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.15
+            },
+            "output": {
+              "type": "flat",
+              "price": 0.6
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.015
+            }
+          }
+        },
+        {
           "id": "mistral/codestral",
           "name": "Mistral Codestral",
           "aliases": [],
@@ -15206,15 +15575,15 @@
           "prices": {
             "input": {
               "type": "flat",
-              "price": 0.68
+              "price": 1.36
             },
             "output": {
               "type": "flat",
-              "price": 2.09
+              "price": 4.18
             },
             "cache_read": {
               "type": "flat",
-              "price": 0.07
+              "price": 0.14
             }
           }
         },
@@ -15274,6 +15643,45 @@
             "cache_read": {
               "type": "flat",
               "price": 0.015
+            }
+          }
+        },
+        {
+          "id": "mistral/voxtral-mini-transcribe-3",
+          "name": "Voxtral Mini Transcribe 3",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0
+            }
+          }
+        },
+        {
+          "id": "mistral/voxtral-mini-tts-3",
+          "name": "Voxtral TTS 3",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 16
+            }
+          }
+        },
+        {
+          "id": "mistral/voxtral-small-transcribe-3",
+          "name": "Voxtral Small Transcribe 3",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0
             }
           }
         },
@@ -15438,6 +15846,56 @@
           }
         },
         {
+          "id": "moonshotai/kimi-k3.1-pro",
+          "name": "Kimi K3.1 Pro",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 2
+            },
+            "output": {
+              "type": "flat",
+              "price": 10
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.2
+            },
+            "cache_write": {
+              "type": "flat",
+              "price": 2
+            }
+          }
+        },
+        {
+          "id": "moonshotai/kimi-k3.1-pro-highspeed",
+          "name": "Kimi K3.1 Pro Highspeed",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 4
+            },
+            "output": {
+              "type": "flat",
+              "price": 20
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.2
+            },
+            "cache_write": {
+              "type": "flat",
+              "price": 4
+            }
+          }
+        },
+        {
           "id": "morph/morph-v3-fast",
           "name": "Morph V3 Fast",
           "aliases": [],
@@ -15552,6 +16010,44 @@
           }
         },
         {
+          "id": "nvidia/nemotron-3.5-lightning-free",
+          "name": "Nemotron 3.5 Lightning Free",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0
+            },
+            "output": {
+              "type": "flat",
+              "price": 0
+            }
+          }
+        },
+        {
+          "id": "nvidia/nemotron-3.5-super-vl",
+          "name": "NVIDIA Nemotron 3.5 Super VL",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.2
+            },
+            "output": {
+              "type": "flat",
+              "price": 0.5
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.04
+            }
+          }
+        },
+        {
           "id": "nvidia/nemotron-nano-12b-v2-vl",
           "name": "Nvidia Nemotron Nano 12B V2 VL",
           "aliases": [],
@@ -15582,40 +16078,6 @@
             "output": {
               "type": "flat",
               "price": 0.23
-            }
-          }
-        },
-        {
-          "id": "openai/gpt-3.5-turbo",
-          "name": "GPT-3.5 Turbo",
-          "aliases": [],
-          "currency": "USD",
-          "unit": "per_1m_tokens",
-          "prices": {
-            "input": {
-              "type": "flat",
-              "price": 0.5
-            },
-            "output": {
-              "type": "flat",
-              "price": 1.5
-            }
-          }
-        },
-        {
-          "id": "openai/gpt-4-turbo",
-          "name": "GPT-4 Turbo",
-          "aliases": [],
-          "currency": "USD",
-          "unit": "per_1m_tokens",
-          "prices": {
-            "input": {
-              "type": "flat",
-              "price": 10
-            },
-            "output": {
-              "type": "flat",
-              "price": 30
             }
           }
         },
@@ -15762,49 +16224,7 @@
             },
             "cache_read": {
               "type": "flat",
-              "price": 0.025
-            }
-          }
-        },
-        {
-          "id": "openai/gpt-4.1-nano-batch",
-          "name": "GPT-4.1 nano (Batch)",
-          "aliases": [],
-          "currency": "USD",
-          "unit": "per_1m_tokens",
-          "prices": {
-            "input": {
-              "type": "flat",
-              "price": 0.05
-            },
-            "output": {
-              "type": "flat",
-              "price": 0.2
-            },
-            "cache_read": {
-              "type": "flat",
-              "price": 0.0125
-            }
-          }
-        },
-        {
-          "id": "openai/gpt-4.1-nano-fast",
-          "name": "GPT-4.1 nano (Fast)",
-          "aliases": [],
-          "currency": "USD",
-          "unit": "per_1m_tokens",
-          "prices": {
-            "input": {
-              "type": "flat",
-              "price": 0.2
-            },
-            "output": {
-              "type": "flat",
-              "price": 0.8
-            },
-            "cache_read": {
-              "type": "flat",
-              "price": 0.05
+              "price": 0.03
             }
           }
         },
@@ -18280,23 +18700,132 @@
           }
         },
         {
-          "id": "openai/gpt-image-1",
-          "name": "GPT Image 1",
+          "id": "openai/gpt-6.1-terra",
+          "name": "GPT-6.1 Terra",
           "aliases": [],
           "currency": "USD",
           "unit": "per_1m_tokens",
           "prices": {
             "input": {
-              "type": "flat",
-              "price": 5
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 1
+                },
+                {
+                  "min_input_tokens": 272001,
+                  "price": 2
+                }
+              ]
             },
             "output": {
-              "type": "flat",
-              "price": 40
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 5
+                },
+                {
+                  "min_input_tokens": 272001,
+                  "price": 7.5
+                }
+              ]
             },
             "cache_read": {
-              "type": "flat",
-              "price": 1.25
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 0.05
+                },
+                {
+                  "min_input_tokens": 272001,
+                  "price": 0.1
+                }
+              ]
+            },
+            "cache_write": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 1.25
+                },
+                {
+                  "min_input_tokens": 272001,
+                  "price": 2.5
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "openai/gpt-6.1-terra-fast",
+          "name": "GPT-6.1 Terra (Fast)",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 2
+                },
+                {
+                  "min_input_tokens": 272001,
+                  "price": 4
+                }
+              ]
+            },
+            "output": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 10
+                },
+                {
+                  "min_input_tokens": 272001,
+                  "price": 15
+                }
+              ]
+            },
+            "cache_read": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 0.1
+                },
+                {
+                  "min_input_tokens": 272001,
+                  "price": 0.2
+                }
+              ]
+            },
+            "cache_write": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 2.5
+                },
+                {
+                  "min_input_tokens": 272001,
+                  "price": 5
+                }
+              ]
             }
           }
         },
@@ -18697,27 +19226,6 @@
           }
         },
         {
-          "id": "openai/o4-mini-fast",
-          "name": "o4-mini (Fast)",
-          "aliases": [],
-          "currency": "USD",
-          "unit": "per_1m_tokens",
-          "prices": {
-            "input": {
-              "type": "flat",
-              "price": 2
-            },
-            "output": {
-              "type": "flat",
-              "price": 8
-            },
-            "cache_read": {
-              "type": "flat",
-              "price": 0.5
-            }
-          }
-        },
-        {
           "id": "openai/text-embedding-3-large",
           "name": "text-embedding-3-large",
           "aliases": [],
@@ -18792,6 +19300,40 @@
             "input": {
               "type": "flat",
               "price": 0.0001
+            }
+          }
+        },
+        {
+          "id": "perplexity/pplx-decider-flash-v1.2",
+          "name": "Decider Flash V1.2 4B",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.01
+            },
+            "output": {
+              "type": "flat",
+              "price": 0
+            }
+          }
+        },
+        {
+          "id": "perplexity/pplx-decider-v1.2",
+          "name": "Decider V1.2 27B",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.02
+            },
+            "output": {
+              "type": "flat",
+              "price": 0
             }
           }
         },
@@ -18927,6 +19469,40 @@
             "cache_write": {
               "type": "flat",
               "price": 7.5
+            }
+          }
+        },
+        {
+          "id": "reflection/beam",
+          "name": "Beam 1.0",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0
+            },
+            "output": {
+              "type": "flat",
+              "price": 0
+            }
+          }
+        },
+        {
+          "id": "reflection/beam-free",
+          "name": "Beam 1.0 (Free)",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0
+            },
+            "output": {
+              "type": "flat",
+              "price": 0
             }
           }
         },
@@ -19092,44 +19668,36 @@
           }
         },
         {
-          "id": "spacexai/grok-4.1-fast-non-reasoning",
-          "name": "Grok 4.1 Fast Non-Reasoning",
+          "id": "scaledown/scaledown-extract-1",
+          "name": "Extract-1",
           "aliases": [],
           "currency": "USD",
           "unit": "per_1m_tokens",
           "prices": {
             "input": {
               "type": "flat",
-              "price": 0.2
+              "price": 0.05
             },
             "output": {
               "type": "flat",
-              "price": 0.5
-            },
-            "cache_read": {
-              "type": "flat",
-              "price": 0.05
+              "price": 0
             }
           }
         },
         {
-          "id": "spacexai/grok-4.1-fast-reasoning",
-          "name": "Grok 4.1 Fast Reasoning",
+          "id": "scaledown/scaledown-summarize-1",
+          "name": "Summarize-1",
           "aliases": [],
           "currency": "USD",
           "unit": "per_1m_tokens",
           "prices": {
             "input": {
               "type": "flat",
-              "price": 0.2
+              "price": 0.05
             },
             "output": {
               "type": "flat",
-              "price": 0.5
-            },
-            "cache_read": {
-              "type": "flat",
-              "price": 0.05
+              "price": 0
             }
           }
         },
@@ -19979,7 +20547,7 @@
             },
             "cache_read": {
               "type": "flat",
-              "price": 0.05
+              "price": 0.1
             }
           }
         },
@@ -20121,6 +20689,40 @@
         {
           "id": "typesafe-ai/jev",
           "name": "Jev",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.042
+            },
+            "output": {
+              "type": "flat",
+              "price": 0
+            }
+          }
+        },
+        {
+          "id": "typesafe-ai/jev-1.13.0",
+          "name": "Jev 1.13.0",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.042
+            },
+            "output": {
+              "type": "flat",
+              "price": 0
+            }
+          }
+        },
+        {
+          "id": "typesafe-ai/jev-1.14.0",
+          "name": "Jev 1.14.0",
           "aliases": [],
           "currency": "USD",
           "unit": "per_1m_tokens",
@@ -20326,15 +20928,15 @@
           "prices": {
             "input": {
               "type": "flat",
-              "price": 0.14
+              "price": 0.119
             },
             "output": {
               "type": "flat",
-              "price": 0.28
+              "price": 0.238
             },
             "cache_read": {
               "type": "flat",
-              "price": 0.0028
+              "price": 0.0025
             }
           }
         },
@@ -20347,15 +20949,15 @@
           "prices": {
             "input": {
               "type": "flat",
-              "price": 0.435
+              "price": 0.3045
             },
             "output": {
               "type": "flat",
-              "price": 0.87
+              "price": 0.609
             },
             "cache_read": {
               "type": "flat",
-              "price": 0.0036
+              "price": 0.0028
             }
           }
         },
@@ -20671,15 +21273,15 @@
           "prices": {
             "input": {
               "type": "flat",
-              "price": 1.4
+              "price": 1.2
             },
             "output": {
               "type": "flat",
-              "price": 4.4
+              "price": 4
             },
             "cache_read": {
               "type": "flat",
-              "price": 0.14
+              "price": 0.2
             }
           }
         },
@@ -21188,48 +21790,6 @@
       "name": "Xiaomi MiMo",
       "models": [
         {
-          "id": "mimo-v2-5",
-          "name": "mimo-v2.5",
-          "aliases": [],
-          "currency": "CNY",
-          "unit": "per_1m_tokens",
-          "prices": {
-            "input": {
-              "type": "flat",
-              "price": 1
-            },
-            "output": {
-              "type": "flat",
-              "price": 2
-            },
-            "cache_read": {
-              "type": "flat",
-              "price": 0.02
-            }
-          }
-        },
-        {
-          "id": "mimo-v2-5-pro",
-          "name": "mimo-v2.5-pro",
-          "aliases": [],
-          "currency": "CNY",
-          "unit": "per_1m_tokens",
-          "prices": {
-            "input": {
-              "type": "flat",
-              "price": 3
-            },
-            "output": {
-              "type": "flat",
-              "price": 6
-            },
-            "cache_read": {
-              "type": "flat",
-              "price": 0.025
-            }
-          }
-        },
-        {
           "id": "mimo-v2-6-flash",
           "name": "mimo-v2.6-flash",
           "aliases": [],
@@ -21337,10 +21897,10 @@
           }
         },
         {
-          "id": "atria-dawn-preview",
-          "name": "atria-dawn-preview",
+          "id": "atria-dawn",
+          "name": "atria-dawn",
           "aliases": [
-            "Atria-Dawn-Preview"
+            "Atria-Dawn"
           ],
           "currency": "USD",
           "unit": "per_1m_tokens",
@@ -21932,7 +22492,7 @@
             },
             "cache_read": {
               "type": "flat",
-              "price": 0.2
+              "price": 0.1
             },
             "cache_write": {
               "type": "flat",
@@ -22553,23 +23113,6 @@
                   "price": 3.235
                 }
               ]
-            }
-          }
-        },
-        {
-          "id": "ernie-x1-1-preview",
-          "name": "ernie-x1.1-preview",
-          "aliases": [],
-          "currency": "USD",
-          "unit": "per_1m_tokens",
-          "prices": {
-            "input": {
-              "type": "flat",
-              "price": 0.14
-            },
-            "output": {
-              "type": "flat",
-              "price": 0.56
             }
           }
         },
@@ -24784,6 +25327,71 @@
           }
         },
         {
+          "id": "gpt-6-1-terra",
+          "name": "gpt-6.1-terra",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 1
+                },
+                {
+                  "min_input_tokens": 272000,
+                  "price": 2
+                }
+              ]
+            },
+            "output": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 5
+                },
+                {
+                  "min_input_tokens": 272000,
+                  "price": 7.5
+                }
+              ]
+            },
+            "cache_read": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 0.05
+                },
+                {
+                  "min_input_tokens": 272000,
+                  "price": 0.1
+                }
+              ]
+            },
+            "cache_write": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 1.25
+                },
+                {
+                  "min_input_tokens": 272000,
+                  "price": 2.5
+                }
+              ]
+            }
+          }
+        },
+        {
           "id": "gpt-6-astra",
           "name": "gpt-6-astra",
           "aliases": [],
@@ -24864,7 +25472,7 @@
                   "price": 0.1
                 },
                 {
-                  "min_input_tokens": 272000,
+                  "min_input_tokens": 272001,
                   "price": 0.2
                 }
               ]
@@ -24878,7 +25486,7 @@
                   "price": 0.5
                 },
                 {
-                  "min_input_tokens": 272000,
+                  "min_input_tokens": 272001,
                   "price": 0.75
                 }
               ]
@@ -24892,7 +25500,7 @@
                   "price": 0.01
                 },
                 {
-                  "min_input_tokens": 272000,
+                  "min_input_tokens": 272001,
                   "price": 0.02
                 }
               ]
@@ -24906,7 +25514,7 @@
                   "price": 0.125
                 },
                 {
-                  "min_input_tokens": 272000,
+                  "min_input_tokens": 272001,
                   "price": 0.25
                 }
               ]
@@ -25421,6 +26029,19 @@
         {
           "id": "jev-1-13",
           "name": "jev-1.13",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.042
+            }
+          }
+        },
+        {
+          "id": "jev-1-14",
+          "name": "jev-1.14",
           "aliases": [
             "jev-latest"
           ],
@@ -25539,6 +26160,64 @@
           }
         },
         {
+          "id": "kimi-k3-1-pro",
+          "name": "kimi-k3.1-pro",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 2
+            },
+            "output": {
+              "type": "flat",
+              "price": 10
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.2
+            },
+            "cache_write": {
+              "type": "flat",
+              "price": 2
+            },
+            "cache_write_long": {
+              "type": "flat",
+              "price": 4
+            }
+          }
+        },
+        {
+          "id": "kimi-k3-1-pro-highspeed",
+          "name": "kimi-k3.1-pro-highspeed",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 4
+            },
+            "output": {
+              "type": "flat",
+              "price": 20
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.2
+            },
+            "cache_write": {
+              "type": "flat",
+              "price": 4
+            },
+            "cache_write_long": {
+              "type": "flat",
+              "price": 8
+            }
+          }
+        },
+        {
           "id": "ling-2-6-1t",
           "name": "ling-2.6-1t",
           "aliases": [],
@@ -25610,15 +26289,15 @@
           "prices": {
             "input": {
               "type": "flat",
-              "price": 0.06
+              "price": 0.075
             },
             "output": {
               "type": "flat",
-              "price": 0.18
+              "price": 0.22
             },
             "cache_read": {
               "type": "flat",
-              "price": 0.012
+              "price": 0.015
             }
           }
         },
@@ -25631,15 +26310,15 @@
           "prices": {
             "input": {
               "type": "flat",
-              "price": 0.06
+              "price": 0.075
             },
             "output": {
               "type": "flat",
-              "price": 0.18
+              "price": 0.22
             },
             "cache_read": {
               "type": "flat",
-              "price": 0.012
+              "price": 0.015
             }
           }
         },
@@ -25654,36 +26333,15 @@
           "prices": {
             "input": {
               "type": "flat",
-              "price": 0.06
+              "price": 0.075
             },
             "output": {
               "type": "flat",
-              "price": 0.18
+              "price": 0.22
             },
             "cache_read": {
               "type": "flat",
-              "price": 0.012
-            }
-          }
-        },
-        {
-          "id": "ling-3-0-tiny",
-          "name": "ling-3.0-tiny",
-          "aliases": [],
-          "currency": "USD",
-          "unit": "per_1m_tokens",
-          "prices": {
-            "input": {
-              "type": "flat",
-              "price": 0
-            },
-            "output": {
-              "type": "flat",
-              "price": 0
-            },
-            "cache_read": {
-              "type": "flat",
-              "price": 0
+              "price": 0.015
             }
           }
         },
@@ -25852,108 +26510,6 @@
             "cache_read": {
               "type": "flat",
               "price": 0.3
-            }
-          }
-        },
-        {
-          "id": "mimo-v2-5",
-          "name": "mimo-v2.5",
-          "aliases": [],
-          "currency": "USD",
-          "unit": "per_1m_tokens",
-          "prices": {
-            "input": {
-              "type": "tiered",
-              "basis": "input_tokens",
-              "tiers": [
-                {
-                  "min_input_tokens": 0,
-                  "price": 0.15
-                },
-                {
-                  "min_input_tokens": 256001,
-                  "price": 0.15
-                }
-              ]
-            },
-            "output": {
-              "type": "tiered",
-              "basis": "input_tokens",
-              "tiers": [
-                {
-                  "min_input_tokens": 0,
-                  "price": 0.29
-                },
-                {
-                  "min_input_tokens": 256001,
-                  "price": 0.29
-                }
-              ]
-            },
-            "cache_read": {
-              "type": "tiered",
-              "basis": "input_tokens",
-              "tiers": [
-                {
-                  "min_input_tokens": 0,
-                  "price": 0.0029
-                },
-                {
-                  "min_input_tokens": 256001,
-                  "price": 0.0029
-                }
-              ]
-            }
-          }
-        },
-        {
-          "id": "mimo-v2-5-pro",
-          "name": "mimo-v2.5-pro",
-          "aliases": [],
-          "currency": "USD",
-          "unit": "per_1m_tokens",
-          "prices": {
-            "input": {
-              "type": "tiered",
-              "basis": "input_tokens",
-              "tiers": [
-                {
-                  "min_input_tokens": 0,
-                  "price": 0.44
-                },
-                {
-                  "min_input_tokens": 256001,
-                  "price": 0.44
-                }
-              ]
-            },
-            "output": {
-              "type": "tiered",
-              "basis": "input_tokens",
-              "tiers": [
-                {
-                  "min_input_tokens": 0,
-                  "price": 0.88
-                },
-                {
-                  "min_input_tokens": 256001,
-                  "price": 0.88
-                }
-              ]
-            },
-            "cache_read": {
-              "type": "tiered",
-              "basis": "input_tokens",
-              "tiers": [
-                {
-                  "min_input_tokens": 0,
-                  "price": 0.0037
-                },
-                {
-                  "min_input_tokens": 256001,
-                  "price": 0.0037
-                }
-              ]
             }
           }
         },
@@ -26287,6 +26843,29 @@
                   "price": 0.12
                 }
               ]
+            }
+          }
+        },
+        {
+          "id": "minimax-m3-1-flash",
+          "name": "minimax-m3.1-flash",
+          "aliases": [
+            "MiniMax-M3.1-Flash"
+          ],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.15
+            },
+            "output": {
+              "type": "flat",
+              "price": 0.6
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.015
             }
           }
         },
