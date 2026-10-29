@@ -70,6 +70,9 @@ const contextKey = computed(() =>
 watch(
   traces,
   (newTraces) => {
+    // A new query key with no cached data yet: wait for its first result,
+    // otherwise the empty placeholder becomes the baseline and every row flashes.
+    if (tracesQuery.data.value === undefined) return
     const currentIds = new Set(newTraces.map((r) => rowKey(r)))
     if (contextKey.value !== lastContextKey.value) {
       lastContextKey.value = contextKey.value

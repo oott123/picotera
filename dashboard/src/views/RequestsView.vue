@@ -190,6 +190,9 @@ const requests = computed<RequestView[]>(() => requestsQuery.data.value?.items ?
 watch(
   requests,
   (newRequests) => {
+    // A new query key with no cached data yet: wait for its first result,
+    // otherwise the empty placeholder becomes the baseline and every row flashes.
+    if (requestsQuery.data.value === undefined) return
     const currentIds = new Set(newRequests.map((r) => rowKey(r)))
     // Navigation / filter change → new context: reset baseline, do not flash.
     if (contextKey.value !== lastContextKey.value) {
