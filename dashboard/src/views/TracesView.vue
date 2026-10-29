@@ -323,16 +323,17 @@ function formatCosts(costs: TraceCostView[] | null): { text: string; title?: str
         >
           <Icon name="refresh" :size="13" />
         </IconButton>
-        <Select
-          :model-value="refreshMs"
-          :options="AUTO_REFRESH_OPTIONS"
-          :searchable="false"
-          size="sm"
-          class="w-24"
-          title="自动刷新"
-          aria-label="自动刷新频率"
-          @update:model-value="(v) => (refreshMs = Number(v))"
-        />
+        <div class="w-24">
+          <Select
+            :model-value="refreshMs"
+            :options="AUTO_REFRESH_OPTIONS"
+            :searchable="false"
+            size="sm"
+            title="自动刷新"
+            aria-label="自动刷新频率"
+            @update:model-value="(v) => (refreshMs = Number(v))"
+          />
+        </div>
       </div>
     </div>
 
