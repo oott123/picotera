@@ -92,7 +92,8 @@ watch(
       }, 100)
     }
   },
-  { flush: 'post' },
+  // Immediate, so a remount served from cache sets the baseline right away.
+  { flush: 'post', immediate: true },
 )
 const loading = computed(() => tracesQuery.isLoading.value)
 const hasMore = computed(() => tracesQuery.data.value?.pagination.hasMore ?? false)
