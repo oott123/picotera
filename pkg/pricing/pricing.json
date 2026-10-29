@@ -2392,7 +2392,7 @@
         },
         {
           "id": "grok-4-7-fast-long",
-          "name": "Grok 4.7 (500k (Fast))",
+          "name": "Grok 4.7 500k (Fast)",
           "aliases": [],
           "currency": "USD",
           "unit": "per_1m_tokens",
@@ -2413,7 +2413,7 @@
         },
         {
           "id": "grok-4-7-long",
-          "name": "Grok 4.7 (500k)",
+          "name": "Grok 4.7 500k",
           "aliases": [],
           "currency": "USD",
           "unit": "per_1m_tokens",
@@ -3156,6 +3156,19 @@
             "cache_read": {
               "type": "flat",
               "price": 0.1
+            }
+          }
+        },
+        {
+          "id": "gemini-embedding-001",
+          "name": "Gemini Embedding",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.15
             }
           }
         },
@@ -4303,6 +4316,34 @@
                   "price": 0.04
                 }
               ]
+            },
+            "cache_write": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 0.25
+                },
+                {
+                  "min_input_tokens": 272000,
+                  "price": 0.5
+                }
+              ]
+            },
+            "cache_write_long": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 0.5
+                },
+                {
+                  "min_input_tokens": 272000,
+                  "price": 1
+                }
+              ]
             }
           }
         },
@@ -4354,6 +4395,34 @@
                   "price": 0.8
                 }
               ]
+            },
+            "cache_write": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 5
+                },
+                {
+                  "min_input_tokens": 272000,
+                  "price": 10
+                }
+              ]
+            },
+            "cache_write_long": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 10
+                },
+                {
+                  "min_input_tokens": 272000,
+                  "price": 20
+                }
+              ]
             }
           }
         },
@@ -4403,6 +4472,34 @@
                 {
                   "min_input_tokens": 272000,
                   "price": 0.4
+                }
+              ]
+            },
+            "cache_write": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 2.5
+                },
+                {
+                  "min_input_tokens": 272000,
+                  "price": 5
+                }
+              ]
+            },
+            "cache_write_long": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 5
+                },
+                {
+                  "min_input_tokens": 272000,
+                  "price": 10
                 }
               ]
             }
@@ -4536,6 +4633,34 @@
                   "price": 0.2
                 }
               ]
+            },
+            "cache_write": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 2.5
+                },
+                {
+                  "min_input_tokens": 272000,
+                  "price": 5
+                }
+              ]
+            },
+            "cache_write_long": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 5
+                },
+                {
+                  "min_input_tokens": 272000,
+                  "price": 10
+                }
+              ]
             }
           }
         },
@@ -4585,6 +4710,34 @@
                 {
                   "min_input_tokens": 272000,
                   "price": 0.1
+                }
+              ]
+            },
+            "cache_write": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 1.25
+                },
+                {
+                  "min_input_tokens": 272000,
+                  "price": 2.5
+                }
+              ]
+            },
+            "cache_write_long": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 2.5
+                },
+                {
+                  "min_input_tokens": 272000,
+                  "price": 5
                 }
               ]
             }
@@ -4638,6 +4791,34 @@
                   "price": 2
                 }
               ]
+            },
+            "cache_write": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 12.5
+                },
+                {
+                  "min_input_tokens": 272000,
+                  "price": 25
+                }
+              ]
+            },
+            "cache_write_long": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 25
+                },
+                {
+                  "min_input_tokens": 272000,
+                  "price": 50
+                }
+              ]
             }
           }
         },
@@ -4689,6 +4870,34 @@
                   "price": 0.02
                 }
               ]
+            },
+            "cache_write": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 0.125
+                },
+                {
+                  "min_input_tokens": 272000,
+                  "price": 0.25
+                }
+              ]
+            },
+            "cache_write_long": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 0.25
+                },
+                {
+                  "min_input_tokens": 272000,
+                  "price": 0.5
+                }
+              ]
             }
           }
         },
@@ -4738,6 +4947,34 @@
                 {
                   "min_input_tokens": 272000,
                   "price": 0.4
+                }
+              ]
+            },
+            "cache_write": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 2.5
+                },
+                {
+                  "min_input_tokens": 272000,
+                  "price": 5
+                }
+              ]
+            },
+            "cache_write_long": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 5
+                },
+                {
+                  "min_input_tokens": 272000,
+                  "price": 10
                 }
               ]
             }
@@ -12906,7 +13143,7 @@
           "prices": {
             "input": {
               "type": "flat",
-              "price": 0
+              "price": 0.035
             },
             "output": {
               "type": "flat",
@@ -12923,7 +13160,7 @@
           "prices": {
             "input": {
               "type": "flat",
-              "price": 0
+              "price": 0.1
             },
             "output": {
               "type": "flat",
@@ -13442,6 +13679,152 @@
             "cache_read": {
               "type": "flat",
               "price": 0.014
+            }
+          }
+        },
+        {
+          "id": "elevenlabs/eleven-flash-v2",
+          "name": "Eleven Flash v2",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 20
+            }
+          }
+        },
+        {
+          "id": "elevenlabs/eleven-flash-v2.5",
+          "name": "Eleven Flash v2.5",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 20
+            }
+          }
+        },
+        {
+          "id": "elevenlabs/eleven-multilingual-v2",
+          "name": "Eleven Multilingual v2",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 40
+            }
+          }
+        },
+        {
+          "id": "elevenlabs/eleven-realtime-v1-max",
+          "name": "Eleven Realtime v1 Max",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.9
+            },
+            "output": {
+              "type": "flat",
+              "price": 4.5
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.09
+            }
+          }
+        },
+        {
+          "id": "elevenlabs/eleven-realtime-v1-mini",
+          "name": "Eleven Realtime v1 Mini",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.1
+            },
+            "output": {
+              "type": "flat",
+              "price": 3
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.01
+            }
+          }
+        },
+        {
+          "id": "elevenlabs/eleven-v3",
+          "name": "Eleven v3",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 40
+            }
+          }
+        },
+        {
+          "id": "elevenlabs/eleven-v3-conversational",
+          "name": "Eleven v3 Conversational",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 20
+            }
+          }
+        },
+        {
+          "id": "elevenlabs/eleven-v4",
+          "name": "Eleven v4",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 40
+            }
+          }
+        },
+        {
+          "id": "elevenlabs/eleven-v4-turbo",
+          "name": "Eleven v4 Turbo",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 20
+            }
+          }
+        },
+        {
+          "id": "elevenlabs/scribe-v2",
+          "name": "Scribe v2",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0
             }
           }
         },
@@ -18239,8 +18622,50 @@
           "unit": "per_1m_tokens",
           "prices": {
             "input": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 0.1
+                },
+                {
+                  "min_input_tokens": 272001,
+                  "price": 0.2
+                }
+              ]
+            },
+            "output": {
               "type": "flat",
-              "price": 0.1
+              "price": 0
+            },
+            "cache_read": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 0.01
+                },
+                {
+                  "min_input_tokens": 272001,
+                  "price": 0.02
+                }
+              ]
+            },
+            "cache_write": {
+              "type": "tiered",
+              "basis": "input_tokens",
+              "tiers": [
+                {
+                  "min_input_tokens": 0,
+                  "price": 0.125
+                },
+                {
+                  "min_input_tokens": 272001,
+                  "price": 0.25
+                }
+              ]
             }
           }
         },
@@ -18935,6 +19360,19 @@
           }
         },
         {
+          "id": "openai/gpt-live-transcribe",
+          "name": "GPT Live Transcribe",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.0002
+            }
+          }
+        },
+        {
           "id": "openai/gpt-oss-120b",
           "name": "GPT OSS 120B",
           "aliases": [],
@@ -19100,6 +19538,19 @@
             "input": {
               "type": "flat",
               "price": 0.0002
+            }
+          }
+        },
+        {
+          "id": "openai/gpt-transcribe",
+          "name": "GPT Transcribe",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0
             }
           }
         },
@@ -19300,6 +19751,27 @@
             "input": {
               "type": "flat",
               "price": 0.0001
+            }
+          }
+        },
+        {
+          "id": "particle/particle-1",
+          "name": "Particle-1",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.125
+            },
+            "output": {
+              "type": "flat",
+              "price": 0.5
+            },
+            "cache_read": {
+              "type": "flat",
+              "price": 0.015
             }
           }
         },
@@ -21273,15 +21745,15 @@
           "prices": {
             "input": {
               "type": "flat",
-              "price": 1.2
+              "price": 1.4
             },
             "output": {
               "type": "flat",
-              "price": 4
+              "price": 4.4
             },
             "cache_read": {
               "type": "flat",
-              "price": 0.2
+              "price": 0.14
             }
           }
         },
@@ -22505,6 +22977,45 @@
           }
         },
         {
+          "id": "clef",
+          "name": "clef",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.24
+            }
+          }
+        },
+        {
+          "id": "clef-flash",
+          "name": "clef-flash",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.038
+            }
+          }
+        },
+        {
+          "id": "clef-omni",
+          "name": "clef-omni",
+          "aliases": [],
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "prices": {
+            "input": {
+              "type": "flat",
+              "price": 0.15
+            }
+          }
+        },
+        {
           "id": "deepseek-v3-2",
           "name": "deepseek-v3.2",
           "aliases": [],
@@ -23039,43 +23550,6 @@
             "cache_write_long": {
               "type": "flat",
               "price": 0.0025
-            }
-          }
-        },
-        {
-          "id": "ernie-5-0-thinking-preview",
-          "name": "ernie-5.0-thinking-preview",
-          "aliases": [],
-          "currency": "USD",
-          "unit": "per_1m_tokens",
-          "prices": {
-            "input": {
-              "type": "tiered",
-              "basis": "input_tokens",
-              "tiers": [
-                {
-                  "min_input_tokens": 0,
-                  "price": 0.84
-                },
-                {
-                  "min_input_tokens": 32000,
-                  "price": 1.41
-                }
-              ]
-            },
-            "output": {
-              "type": "tiered",
-              "basis": "input_tokens",
-              "tiers": [
-                {
-                  "min_input_tokens": 0,
-                  "price": 3.37
-                },
-                {
-                  "min_input_tokens": 32000,
-                  "price": 5.62
-                }
-              ]
             }
           }
         },
@@ -25002,7 +25476,7 @@
                   "price": 0.2
                 },
                 {
-                  "min_input_tokens": 272000,
+                  "min_input_tokens": 272001,
                   "price": 0.4
                 }
               ]
@@ -25016,7 +25490,7 @@
                   "price": 1.2
                 },
                 {
-                  "min_input_tokens": 272000,
+                  "min_input_tokens": 272001,
                   "price": 1.8
                 }
               ]
@@ -25030,7 +25504,7 @@
                   "price": 0.02
                 },
                 {
-                  "min_input_tokens": 272000,
+                  "min_input_tokens": 272001,
                   "price": 0.04
                 }
               ]
@@ -25044,7 +25518,7 @@
                   "price": 0.25
                 },
                 {
-                  "min_input_tokens": 272000,
+                  "min_input_tokens": 272001,
                   "price": 0.5
                 }
               ]
@@ -25067,7 +25541,7 @@
                   "price": 4
                 },
                 {
-                  "min_input_tokens": 272000,
+                  "min_input_tokens": 272001,
                   "price": 8
                 }
               ]
@@ -25081,7 +25555,7 @@
                   "price": 20
                 },
                 {
-                  "min_input_tokens": 272000,
+                  "min_input_tokens": 272001,
                   "price": 30
                 }
               ]
@@ -25095,7 +25569,7 @@
                   "price": 0.4
                 },
                 {
-                  "min_input_tokens": 272000,
+                  "min_input_tokens": 272001,
                   "price": 0.8
                 }
               ]
@@ -25109,7 +25583,7 @@
                   "price": 5
                 },
                 {
-                  "min_input_tokens": 272000,
+                  "min_input_tokens": 272001,
                   "price": 10
                 }
               ]
@@ -25132,7 +25606,7 @@
                   "price": 2
                 },
                 {
-                  "min_input_tokens": 272000,
+                  "min_input_tokens": 272001,
                   "price": 4
                 }
               ]
@@ -25146,7 +25620,7 @@
                   "price": 12
                 },
                 {
-                  "min_input_tokens": 272000,
+                  "min_input_tokens": 272001,
                   "price": 18
                 }
               ]
@@ -25160,7 +25634,7 @@
                   "price": 0.2
                 },
                 {
-                  "min_input_tokens": 272000,
+                  "min_input_tokens": 272001,
                   "price": 0.4
                 }
               ]
@@ -25174,7 +25648,7 @@
                   "price": 2.5
                 },
                 {
-                  "min_input_tokens": 272000,
+                  "min_input_tokens": 272001,
                   "price": 5
                 }
               ]
@@ -25277,7 +25751,7 @@
                   "price": 2
                 },
                 {
-                  "min_input_tokens": 272000,
+                  "min_input_tokens": 272001,
                   "price": 4
                 }
               ]
@@ -25291,7 +25765,7 @@
                   "price": 10
                 },
                 {
-                  "min_input_tokens": 272000,
+                  "min_input_tokens": 272001,
                   "price": 15
                 }
               ]
@@ -25305,7 +25779,7 @@
                   "price": 0.1
                 },
                 {
-                  "min_input_tokens": 272000,
+                  "min_input_tokens": 272001,
                   "price": 0.2
                 }
               ]
@@ -25319,7 +25793,7 @@
                   "price": 2.5
                 },
                 {
-                  "min_input_tokens": 272000,
+                  "min_input_tokens": 272001,
                   "price": 5
                 }
               ]
@@ -25407,7 +25881,7 @@
                   "price": 10
                 },
                 {
-                  "min_input_tokens": 272000,
+                  "min_input_tokens": 272001,
                   "price": 20
                 }
               ]
@@ -25421,7 +25895,7 @@
                   "price": 50
                 },
                 {
-                  "min_input_tokens": 272000,
+                  "min_input_tokens": 272001,
                   "price": 75
                 }
               ]
@@ -25449,7 +25923,7 @@
                   "price": 12.5
                 },
                 {
-                  "min_input_tokens": 272000,
+                  "min_input_tokens": 272001,
                   "price": 25
                 }
               ]
@@ -25537,7 +26011,7 @@
                   "price": 2
                 },
                 {
-                  "min_input_tokens": 272000,
+                  "min_input_tokens": 272001,
                   "price": 4
                 }
               ]
@@ -25551,7 +26025,7 @@
                   "price": 10
                 },
                 {
-                  "min_input_tokens": 272000,
+                  "min_input_tokens": 272001,
                   "price": 15
                 }
               ]
@@ -25565,7 +26039,7 @@
                   "price": 0.2
                 },
                 {
-                  "min_input_tokens": 272000,
+                  "min_input_tokens": 272001,
                   "price": 0.4
                 }
               ]
@@ -25579,7 +26053,7 @@
                   "price": 2.5
                 },
                 {
-                  "min_input_tokens": 272000,
+                  "min_input_tokens": 272001,
                   "price": 5
                 }
               ]
@@ -26162,7 +26636,9 @@
         {
           "id": "kimi-k3-1-pro",
           "name": "kimi-k3.1-pro",
-          "aliases": [],
+          "aliases": [
+            "kimi-k3-1-pro-261024"
+          ],
           "currency": "USD",
           "unit": "per_1m_tokens",
           "prices": {
@@ -26356,15 +26832,15 @@
           "prices": {
             "input": {
               "type": "flat",
-              "price": 0
+              "price": 0.3
             },
             "output": {
               "type": "flat",
-              "price": 0
+              "price": 0.9
             },
             "cache_read": {
               "type": "flat",
-              "price": 0
+              "price": 0.06
             }
           }
         },
