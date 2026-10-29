@@ -14,14 +14,11 @@ const DEFAULTS = {
   fontSize: 'tall' as FontSize,
   displayCurrency: null as string | null,
   overviewCurrencyOverride: null as OverviewCurrencyOverride,
-  requestsRefreshMs: 0,
-  tracesRefreshMs: 0,
 }
 
 const THEME_VALUES: Theme[] = ['light', 'solarized-light', 'solarized-dark', 'dark']
 const PANEL_MODE_VALUES: PanelMode[] = ['auto', 'right', 'modal']
 const FONT_SIZE_VALUES: FontSize[] = ['tall', 'grande', 'venti', 'trenta']
-const REFRESH_MS_VALUES: number[] = [0, 200, 5000, 10000, 30000, 60000]
 
 export const FONT_SIZE_PX: Record<FontSize, number> = {
   tall: 14,
@@ -54,12 +51,6 @@ function load() {
         parsed.overviewCurrencyOverride.length > 0
           ? parsed.overviewCurrencyOverride
           : DEFAULTS.overviewCurrencyOverride,
-      requestsRefreshMs: REFRESH_MS_VALUES.includes(parsed.requestsRefreshMs as number)
-        ? (parsed.requestsRefreshMs as number)
-        : DEFAULTS.requestsRefreshMs,
-      tracesRefreshMs: REFRESH_MS_VALUES.includes(parsed.tracesRefreshMs as number)
-        ? (parsed.tracesRefreshMs as number)
-        : DEFAULTS.tracesRefreshMs,
     }
   } catch {
     return { ...DEFAULTS }
@@ -73,8 +64,6 @@ export const usePreferencesStore = defineStore('preferences', () => {
   const fontSize = ref<FontSize>(initial.fontSize)
   const displayCurrency = ref<string | null>(initial.displayCurrency)
   const overviewCurrencyOverride = ref<OverviewCurrencyOverride>(initial.overviewCurrencyOverride)
-  const requestsRefreshMs = ref<number>(initial.requestsRefreshMs)
-  const tracesRefreshMs = ref<number>(initial.tracesRefreshMs)
 
   function apply() {
     const root = document.documentElement
@@ -94,8 +83,6 @@ export const usePreferencesStore = defineStore('preferences', () => {
           fontSize: fontSize.value,
           displayCurrency: displayCurrency.value,
           overviewCurrencyOverride: overviewCurrencyOverride.value,
-          requestsRefreshMs: requestsRefreshMs.value,
-          tracesRefreshMs: tracesRefreshMs.value,
         }),
       )
     } catch {
@@ -103,34 +90,14 @@ export const usePreferencesStore = defineStore('preferences', () => {
     }
   }
 
-  watch(
-    [
-      theme,
-      panelMode,
-      fontSize,
-      displayCurrency,
-      overviewCurrencyOverride,
-      requestsRefreshMs,
-      tracesRefreshMs,
-    ],
-    () => {
-      apply()
-      persist()
-    },
-  )
+  watch([theme, panelMode, fontSize, displayCurrency, overviewCurrencyOverride], () => {
+    apply()
+    persist()
+  })
 
   function init() {
     apply()
   }
 
-  return {
-    theme,
-    panelMode,
-    fontSize,
-    displayCurrency,
-    overviewCurrencyOverride,
-    requestsRefreshMs,
-    tracesRefreshMs,
-    init,
-  }
+  return { theme, panelMode, fontSize, displayCurrency, overviewCurrencyOverride, init }
 })

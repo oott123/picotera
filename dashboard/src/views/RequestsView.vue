@@ -8,9 +8,8 @@ import type { RequestView, EndpointView, ModelView } from '@/api'
 import { listEndpoints, listModels, listRequests } from '@/api/client'
 import { queryKeys, type RequestsFilters } from '@/api/queryKeys'
 import RequestDetailsPanel from '@/components/RequestDetailsPanel.vue'
-import AutoRefreshSelect from '@/components/AutoRefreshSelect.vue'
 import { useSidePanel } from '@/composables/useSidePanel'
-import { usePreferencesStore } from '@/stores/preferences'
+import { useAutoRefreshMs, AUTO_REFRESH_OPTIONS } from '@/composables/useAutoRefreshMs'
 import {
   Button,
   IconButton,
@@ -20,6 +19,7 @@ import {
   Field,
   Icon,
   SegmentedControl,
+  Select,
   ColumnFilter,
   MoneyDisplay,
   type AutoDataTableColumn,
@@ -32,7 +32,7 @@ const route = useRoute()
 const router = useRouter()
 const { providers, providerLabel } = useProvidersMap()
 const { projects, projectLabel } = useProjectsMap()
-const prefs = usePreferencesStore()
+const refreshMs = useAutoRefreshMs('picotera.requests.refreshMs')
 
 // Track new rows for animation on refresh
 const previousRequestIds = ref(new Set<string | number>())
@@ -117,9 +117,7 @@ const requestsQuery = useQuery({
       limit: pageSize,
       cursor: currentCursor.value || undefined,
     }),
-  refetchInterval: computed(() => (prefs.requestsRefreshMs > 0 ? prefs.requestsRefreshMs : false)),
-  // Immediate refresh on return to a hidden/minimized tab, only while auto-refresh is on.
-  refetchOnWindowFocus: () => prefs.requestsRefreshMs > 0,
+  refetchInterval: computed(() => (refreshMs.value > 0 ? refreshMs.value : false)),
 })
 const requests = computed<RequestView[]>(() => requestsQuery.data.value?.items ?? [])
 
@@ -496,7 +494,11 @@ function cacheHitRate(r: RequestView): number | null {
         <IconButton title="刷新" aria-label="刷新" @click="requestsQuery.refetch()">
           <Icon name="refresh" :size="13" />
         </IconButton>
-        <AutoRefreshSelect v-model="prefs.requestsRefreshMs" />
+        <Select v-model.number="refreshMs" size="sm" title="自动刷新" aria-label="自动刷新频率">
+          <option v-for="o in AUTO_REFRESH_OPTIONS" :key="o.value" :value="o.value">
+            {{ o.label }}
+          </option>
+        </Select>
       </div>
     </div>
 
