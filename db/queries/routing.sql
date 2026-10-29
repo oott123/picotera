@@ -39,6 +39,7 @@ SELECT
   pe.upstream_url,
   pe.credentials_resolver AS send_credentials_resolver,
   p.proxy_url,
+  p.insecure_tls,
   p.annotations AS provider_annotations,
   m.annotations AS model_annotations
 FROM provider AS p
@@ -70,6 +71,7 @@ SELECT
   p.id AS provider_id,
   pe.endpoint_path,
   e.endpoint_type AS endpoint_type,
+  e.prefix_match AS prefix_match,
   COALESCE(elem ->> 'upstreamModelName', '')::text AS upstream_model_name,
   COALESCE((elem ->> 'priority')::int, 0)::int AS priority,
   (COALESCE(elem -> 'annotations', '{}'::jsonb))::jsonb AS annotations,
@@ -78,7 +80,9 @@ SELECT
   p.priority AS provider_priority,
   pe.upstream_url,
   pe.credentials_resolver AS send_credentials_resolver,
+  e.credentials_resolver AS endpoint_credentials_resolver,
   p.proxy_url,
+  p.insecure_tls,
   p.annotations AS provider_annotations,
   m.annotations AS model_annotations,
   p.supports_native_web_search
@@ -100,6 +104,37 @@ WHERE e.endpoint_type = ANY(sqlc.arg('endpoint_types')::int[])
     OR elem -> 'endpoints' @> to_jsonb(ARRAY[pe.endpoint_path])
   );
 
+-- name: GetProvidersByEndpointTypes :many
+-- Sister query to GetProvidersByEndpointTypesAndModel for requests that carry
+-- no model (prefix-style unified mounts whose body has no model field). Model
+-- related columns are flattened to constants so both shapes project onto one
+-- row type; the model table and provider_models are not consulted at all.
+SELECT
+  ''::text AS model_name,
+  p.id AS provider_id,
+  pe.endpoint_path,
+  e.endpoint_type AS endpoint_type,
+  e.prefix_match AS prefix_match,
+  ''::text AS upstream_model_name,
+  0::int AS priority,
+  '{}'::jsonb AS annotations,
+  p.name AS provider_name,
+  p.credentials AS provider_credentials,
+  p.priority AS provider_priority,
+  pe.upstream_url,
+  pe.credentials_resolver AS send_credentials_resolver,
+  e.credentials_resolver AS endpoint_credentials_resolver,
+  p.proxy_url,
+  p.insecure_tls,
+  p.annotations AS provider_annotations,
+  '{}'::jsonb AS model_annotations,
+  p.supports_native_web_search
+FROM provider AS p
+JOIN provider_endpoint AS pe ON pe.provider_id = p.id
+JOIN endpoint AS e ON e.path = pe.endpoint_path
+WHERE e.endpoint_type = ANY(sqlc.arg('endpoint_types')::int[])
+  AND p.disabled = FALSE;
+
 -- name: GetProvidersByEndpoint :many
 -- Sister query to GetProvidersByEndpointAndModel for "no-model" endpoints
 -- (endpoint.model_path = ''). Returns every non-disabled provider bound to the
@@ -118,6 +153,7 @@ SELECT
   pe.upstream_url,
   pe.credentials_resolver AS send_credentials_resolver,
   p.proxy_url,
+  p.insecure_tls,
   p.annotations AS provider_annotations,
   '{}'::jsonb AS model_annotations
 FROM provider AS p
@@ -127,16 +163,16 @@ WHERE pe.endpoint_path = sqlc.arg('endpoint_path')::text
 
 -- name: InsertRequest :one
 INSERT INTO request (
-  id, span_id, parent_span_id, type, status,
+  id, span_id, parent_span_id, type,
   provider_id, endpoint_path, api_key_id, model, upstream_model,
   input_tokens, cache_read_tokens, output_tokens, cache_write_tokens, cache_write_1h_tokens,
   status_code, error_message, ttft_ms, time_spent_ms,
-  user_message_preview, project_id, created_at
+  user_message_preview, project_id, created_at, user_id, external_request_id, external_response_id
 ) VALUES (
-  $1, $2, $3, $4, $5,
-  $6, $7, $8, $9, $10,
-  $11, $12, $13, $14, $15,
-  $16, $17, $18, $19,
-  $20, $21, $22
+  $1, $2, $3, $4,
+  $5, $6, $7, $8, $9,
+  $10, $11, $12, $13, $14,
+  $15, $16, $17, $18,
+  $19, $20, $21, $22, $23, $24
 )
 RETURNING created_at;

@@ -22,6 +22,9 @@ export default defineConfig({
       '/api/': {
         target: 'http://localhost:9898',
         changeOrigin: true,
+        headers: {
+          'X-User-Identity': 'root',
+        },
       },
       '/v1': {
         target: 'http://localhost:9898',

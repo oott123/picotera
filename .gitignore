@@ -3,6 +3,7 @@
 /.env.*
 /.direnv/
 /picotera
+/result
 .pnpm-store
 node_modules
 /.claude/worktrees
@@ -10,3 +11,5 @@ node_modules
 .superpowers/
 /.references
 /dist
+*.pyc
+__pycache__

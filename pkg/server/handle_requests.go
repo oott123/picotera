@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"picotera/pkg/artifacts"
 	"picotera/pkg/contract"
@@ -16,6 +17,73 @@ import (
 )
 
 const artifactPresignTTL = time.Hour
+
+// filterLookback is the default lookback window for requestId and annotations
+// searches when the caller omits startAt; an explicit startAt is respected as-is.
+const filterLookback = 30 * 24 * time.Hour
+
+// parseTimeWindow strictly parses optional RFC3339/RFC3339Nano start/end timestamps.
+// Empty strings yield invalid (NULL) timestamps. The server does not trim,
+// case-fold, infer timezones, or otherwise normalize the input.
+func parseTimeWindow(startAt, endAt string) (start pgtype.Timestamp, end pgtype.Timestamp, err error) {
+	if startAt != "" {
+		t, parseErr := time.Parse(time.RFC3339Nano, startAt)
+		if parseErr != nil {
+			return pgtype.Timestamp{}, pgtype.Timestamp{}, huma.Error400BadRequest("invalid startAt")
+		}
+		start = pgtype.Timestamp{Time: t.UTC(), Valid: true}
+	}
+	if endAt != "" {
+		t, parseErr := time.Parse(time.RFC3339Nano, endAt)
+		if parseErr != nil {
+			return pgtype.Timestamp{}, pgtype.Timestamp{}, huma.Error400BadRequest("invalid endAt")
+		}
+		end = pgtype.Timestamp{Time: t.UTC(), Valid: true}
+	}
+	if start.Valid && end.Valid && start.Time.After(end.Time) {
+		return pgtype.Timestamp{}, pgtype.Timestamp{}, huma.Error400BadRequest("invalid time range")
+	}
+	return start, end, nil
+}
+
+// parseAnnotationsFilter strictly parses the annotations query parameter into
+// canonical JSONB bytes for a containment (@>) match. Empty input yields nil (no
+// filter). Fail fast: the value must be a JSON object with at least one pair and
+// all string values — arrays, nested objects, numbers, booleans, and null are
+// rejected with 400. The re-marshaled Go map (not the raw input) is returned so
+// only canonical JSON reaches SQL.
+func parseAnnotationsFilter(s string) ([]byte, error) {
+	if s == "" {
+		return nil, nil
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return nil, huma.Error400BadRequest("annotations must be a JSON object")
+	}
+	if len(raw) == 0 {
+		return nil, huma.Error400BadRequest("annotations must contain at least one pair")
+	}
+	filter := make(map[string]string, len(raw))
+	for k, v := range raw {
+		var val any
+		if err := json.Unmarshal(v, &val); err != nil {
+			return nil, huma.Error400BadRequest("annotations values must be strings")
+		}
+		// Reject non-string values (numbers, booleans, null, arrays, objects).
+		// json unmarshals JSON null into a string as "" without error, so a
+		// typed decode alone would not catch it.
+		str, ok := val.(string)
+		if !ok {
+			return nil, huma.Error400BadRequest("annotations values must be strings")
+		}
+		filter[k] = str
+	}
+	b, err := json.Marshal(filter)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to encode annotations filter", err)
+	}
+	return b, nil
+}
 
 // attachArtifactUrls fills in presigned URLs for the given view using id+createdAt.
 // Errors are logged and silently dropped (URL fields stay empty).
@@ -39,6 +107,10 @@ func (s *Server) attachArtifactUrls(ctx context.Context, v *contract.RequestView
 }
 
 func (s *Server) handleListRequests(ctx context.Context, input *contract.ListRequestsRequest) (*contract.ListRequestsResponse, error) {
+	u, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
 	limit := input.Limit
 	if limit <= 0 {
 		limit = 20
@@ -68,6 +140,10 @@ func (s *Server) handleListRequests(ctx context.Context, input *contract.ListReq
 	if input.ProviderID != 0 {
 		filterProviderID = pgtype.Int4{Int32: input.ProviderID, Valid: true}
 	}
+	var filterProjectID pgtype.Int4
+	if input.ProjectID != 0 {
+		filterProjectID = pgtype.Int4{Int32: input.ProjectID, Valid: true}
+	}
 	var filterEndpointPath pgtype.Text
 	if input.EndpointPath != "" {
 		filterEndpointPath = pgtype.Text{String: input.EndpointPath, Valid: true}
@@ -80,6 +156,17 @@ func (s *Server) handleListRequests(ctx context.Context, input *contract.ListReq
 	if input.UpstreamModel != "" {
 		filterUpstreamModel = pgtype.Text{String: input.UpstreamModel, Valid: true}
 	}
+	var filterFinishReason pgtype.Int4
+	if input.FinishReason != 0 {
+		filterFinishReason = pgtype.Int4{Int32: input.FinishReason, Valid: true}
+	}
+	var filterRouted pgtype.Bool
+	switch input.Routing {
+	case "detected":
+		filterRouted = pgtype.Bool{Bool: true, Valid: true}
+	case "undetected":
+		filterRouted = pgtype.Bool{Bool: false, Valid: true}
+	}
 	var filterTraceID pgtype.Text
 	if input.TraceID != "" {
 		if err := validateTraceID(input.TraceID); err != nil {
@@ -88,13 +175,43 @@ func (s *Server) handleListRequests(ctx context.Context, input *contract.ListReq
 		filterTraceID = pgtype.Text{String: input.TraceID, Valid: true}
 	}
 
+	var filterRequestID pgtype.Text
+	if input.RequestID != "" {
+		filterRequestID = pgtype.Text{String: input.RequestID, Valid: true}
+	}
+
+	filterAnnotations, err := parseAnnotationsFilter(input.Annotations)
+	if err != nil {
+		return nil, err
+	}
+
+	startAt, endAt, err := parseTimeWindow(input.StartAt, input.EndAt)
+	if err != nil {
+		return nil, err
+	}
+
+	// requestId / annotations search: default to the last 30 days when the caller
+	// omits startAt. An explicit startAt (any age) is respected and never clamped.
+	if (input.RequestID != "" || filterAnnotations != nil) && !startAt.Valid {
+		startAt = pgtype.Timestamp{Time: time.Now().UTC().Add(-filterLookback), Valid: true}
+	}
+
 	rows, err := s.queries.ListRequests(ctx, db.ListRequestsParams{
+		UserID:          u.ID,
 		TraceID:         filterTraceID,
+		RequestID:       filterRequestID,
 		Type:            filterType,
 		ProviderID:      filterProviderID,
+		ProjectID:       filterProjectID,
 		EndpointPath:    filterEndpointPath,
 		Model:           filterModel,
 		UpstreamModel:   filterUpstreamModel,
+		Routed:          filterRouted,
+		StartAt:         startAt,
+		EndAt:           endAt,
+		EmptyResponse:   pgtype.Bool{Bool: input.EmptyResponse, Valid: true},
+		FinishReason:    filterFinishReason,
+		Annotations:     filterAnnotations,
 		CursorCreatedAt: cursorCreatedAt,
 		CursorID:        cursorID,
 		Limit:           pgtype.Int4{Int32: fetchLimit, Valid: true},
@@ -133,6 +250,10 @@ func (s *Server) handleListRequests(ctx context.Context, input *contract.ListReq
 }
 
 func (s *Server) handleListRequestTraces(ctx context.Context, input *contract.ListRequestTracesRequest) (*contract.ListRequestTracesResponse, error) {
+	u, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
 	limit := input.Limit
 	if limit <= 0 {
 		limit = 20
@@ -157,7 +278,15 @@ func (s *Server) handleListRequestTraces(ctx context.Context, input *contract.Li
 		cursorTraceID = pgtype.Text{String: traceID, Valid: true}
 	}
 
+	startAt, endAt, err := parseTimeWindow(input.StartAt, input.EndAt)
+	if err != nil {
+		return nil, err
+	}
+
 	rows, err := s.queries.ListRequestTraces(ctx, db.ListRequestTracesParams{
+		UserID:              u.ID,
+		StartAt:             startAt,
+		EndAt:               endAt,
 		CursorLastRequestAt: cursorLastRequestAt,
 		CursorTraceID:       cursorTraceID,
 		Limit:               pgtype.Int4{Int32: fetchLimit, Valid: true},
@@ -203,6 +332,10 @@ func (s *Server) handleListRequestTraces(ctx context.Context, input *contract.Li
 }
 
 func (s *Server) handleGetRequest(ctx context.Context, input *contract.GetRequestRequest) (*contract.GetRequestResponse, error) {
+	u, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
 	idCreatedAt, err := requestIDCreatedAt(input.ID)
 	if err != nil {
 		return nil, err
@@ -210,6 +343,7 @@ func (s *Server) handleGetRequest(ctx context.Context, input *contract.GetReques
 	req, err := s.queries.GetRequest(ctx, db.GetRequestParams{
 		ID:          input.ID,
 		IDCreatedAt: pgtype.Timestamp{Time: idCreatedAt, Valid: true},
+		UserID:      u.ID,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -223,6 +357,10 @@ func (s *Server) handleGetRequest(ctx context.Context, input *contract.GetReques
 }
 
 func (s *Server) handleListRequestSpans(ctx context.Context, input *contract.ListRequestSpansRequest) (*contract.ListRequestSpansResponse, error) {
+	u, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
 	idCreatedAt, err := requestIDCreatedAt(input.ID)
 	if err != nil {
 		return nil, err
@@ -230,6 +368,7 @@ func (s *Server) handleListRequestSpans(ctx context.Context, input *contract.Lis
 	req, err := s.queries.GetRequest(ctx, db.GetRequestParams{
 		ID:          input.ID,
 		IDCreatedAt: pgtype.Timestamp{Time: idCreatedAt, Valid: true},
+		UserID:      u.ID,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -240,6 +379,7 @@ func (s *Server) handleListRequestSpans(ctx context.Context, input *contract.Lis
 	rows, err := s.queries.ListRequestsBySpan(ctx, db.ListRequestsBySpanParams{
 		ID:          input.ID,
 		IDCreatedAt: pgtype.Timestamp{Time: idCreatedAt, Valid: true},
+		UserID:      u.ID,
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to list request spans", err)

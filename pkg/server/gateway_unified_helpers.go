@@ -3,8 +3,10 @@ package server
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -17,34 +19,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
 
-// sourceEndpointType maps an llmbridge format back to the EndpointType_*
-// constant used by the contract package, so the synthetic endpoint shown to
-// JS hooks reports a consistent endpoint_type.
-func sourceEndpointType(f llmbridge.Format) int32 {
-	switch f {
-	case llmbridge.FormatAnthropicMessages:
-		return contract.EndpointType_AnthropicMessages
-	case llmbridge.FormatOpenAIChatCompletions:
-		return contract.EndpointType_OpenAIChatCompletions
-	case llmbridge.FormatOpenAIResponses:
-		return contract.EndpointType_OpenAIResponses
-	case llmbridge.FormatGeminiGenerateContent:
-		return contract.EndpointType_GeminiGenerateContent
-	case llmbridge.FormatGeminiStreamGenerateContent:
-		return contract.EndpointType_GeminiStreamGenerateContent
-	default:
-		return contract.EndpointType_Unknown
-	}
-}
-
-// upstreamFormatFor maps a candidate row's endpoint_type to the bridge
-// format. Endpoint types not in the generation set never appear in the
-// type-set query result, so they default to Unknown which fails the bridge
-// loudly if it ever sneaks in.
+// upstreamFormatFor maps an endpoint_type to the bridge format. Endpoint
+// types outside the generation set (general, model list, search, ...) map to
+// FormatUnknown; for unified candidates those never appear in the type-set
+// query result, so the bridge fails loudly if one ever sneaks in.
 func upstreamFormatFor(t int32) llmbridge.Format {
 	switch t {
 	case contract.EndpointType_AnthropicMessages:
@@ -63,12 +44,17 @@ func upstreamFormatFor(t int32) llmbridge.Format {
 }
 
 // candidateEndpointTypes returns the endpoint_type ids that should be
-// considered for a given (source format, stream flag) tuple. Mirrors the
-// table in api.md.
-func candidateEndpointTypes(src llmbridge.Format, streaming bool) []int32 {
+// considered for a given (route, stream flag) tuple. Mirrors the table in
+// api.md.
+func candidateEndpointTypes(route unifiedRoute, streaming bool) []int32 {
+	// Passthrough routes have no converter, so the only upstream that can
+	// serve them is one configured with the very same endpoint type.
+	if route.passthrough() {
+		return []int32{route.SourceType}
+	}
 	// Anthropic and OpenAI sources share the same set; only the Gemini pair
 	// is filtered by the stream flag.
-	switch src {
+	switch route.Format {
 	case llmbridge.FormatGeminiGenerateContent:
 		return []int32{
 			contract.EndpointType_AnthropicMessages,
@@ -88,45 +74,54 @@ func candidateEndpointTypes(src llmbridge.Format, streaming bool) []int32 {
 	if streaming {
 		geminiVariant = contract.EndpointType_GeminiStreamGenerateContent
 	}
-	return []int32{
+	types := []int32{
 		contract.EndpointType_AnthropicMessages,
 		contract.EndpointType_OpenAIChatCompletions,
 		contract.EndpointType_OpenAIResponses,
 		geminiVariant,
 	}
+	if route.Codex {
+		// /api/unified/codex/responses: a codex upstream serves it byte-for-byte
+		// (same format), and the four generation types serve it through the
+		// bridge. dedupeUnifiedRows' srcType is EndpointType_Codex, so a channel
+		// configured with both wins with its codex row.
+		types = append(types, contract.EndpointType_Codex)
+	}
+	return types
 }
 
-// extractUnifiedModel picks the model name for the inbound request. For
-// Anthropic / OpenAI the body carries it; for Gemini it lives in the chi
-// {model} path variable. The streaming flag is no longer derived here — it
-// comes solely from detectStreaming (five rules) in resolveAndRewriteModel.
-func extractUnifiedModel(src llmbridge.Format, r *http.Request, body []byte) (string, error) {
-	switch src {
-	case llmbridge.FormatGeminiGenerateContent, llmbridge.FormatGeminiStreamGenerateContent:
+// extractUnifiedModel resolves the routing model for the inbound request. Only
+// the two Gemini routes take it from the chi {model} path variable; every other
+// route — including the Codex passthrough ones — carries it in the body. On a
+// prefix mount (route.PrefixMount) an absent body field degrades to no-model
+// routing rather than 400; see modelFromBody. The streaming flag is no longer
+// derived here — it comes solely from detectStreaming (five rules) in
+// resolveAndRewriteModel.
+func extractUnifiedModel(route unifiedRoute, r *http.Request, body []byte) (gatewayModelMode, error) {
+	if geminiRoute(route) {
 		m := chi.URLParam(r, "model")
 		if m == "" {
-			return "", &gatewayError{status: http.StatusBadRequest, message: "missing {model} path variable", code: errorx.ModelNotFound.Error()}
+			return gatewayModelMode{}, &gatewayError{status: http.StatusBadRequest, message: "missing {model} path variable", code: errorx.ModelNotFound.Error()}
 		}
-		return m, nil
-	case llmbridge.FormatAnthropicMessages, llmbridge.FormatOpenAIChatCompletions, llmbridge.FormatOpenAIResponses:
-		model := gjson.GetBytes(body, "model").Str
-		if model == "" {
-			return "", &gatewayError{status: http.StatusBadRequest, message: "model is required", code: errorx.ModelNotFound.Error()}
-		}
-		return model, nil
+		return gatewayModelMode{OriginalModel: m, HasModel: true}, nil
 	}
-	return "", &gatewayError{status: http.StatusBadRequest, message: "unsupported source format", code: errorx.InvalidRequest.Error()}
+	return modelFromBody(body, "model", route.PrefixMount)
 }
 
 // setUnifiedModel rewrites the model name carried by the source body. Gemini
 // requests carry no model field — the unified handler swaps the URL path
 // variable instead, but at this layer we just leave the body alone.
-func setUnifiedModel(src llmbridge.Format, body []byte, newModel string) ([]byte, error) {
-	switch src {
-	case llmbridge.FormatGeminiGenerateContent, llmbridge.FormatGeminiStreamGenerateContent:
+func setUnifiedModel(route unifiedRoute, body []byte, newModel string) ([]byte, error) {
+	if geminiRoute(route) {
 		return body, nil
 	}
 	return sjson.SetBytes(body, "model", newModel)
+}
+
+// geminiRoute reports whether the route's model lives in the URL rather than
+// the body — the single distinction extractUnifiedModel / setUnifiedModel make.
+func geminiRoute(route unifiedRoute) bool {
+	return route.Format == llmbridge.FormatGeminiGenerateContent || route.Format == llmbridge.FormatGeminiStreamGenerateContent
 }
 
 // chiURLParams collects path variables that the chi router matched onto r,
@@ -152,22 +147,57 @@ func chiURLParams(r *http.Request) map[string]string {
 	return out
 }
 
+// unifiedUpstreamPathVars returns the path variables used to fill tokens in a
+// unified upstream URL. The only token a unified upstream URL can carry is the
+// {model} of a Gemini generate/streamGenerate endpoint; it must resolve to the
+// upstream model name — not the inbound requested model — so that
+// format-converted requests whose inbound route carries no {model} (Anthropic /
+// OpenAI sources) still produce a valid Gemini URL.
+func unifiedUpstreamPathVars(upstreamModel string) map[string]string {
+	if upstreamModel == "" {
+		return nil
+	}
+	return map[string]string{"model": upstreamModel}
+}
+
 // resolveProvidersByTypes is the unified handler's analogue of resolveProviders.
-// It runs the new sqlc query and applies the same priority sort and minimum
+// It runs the sqlc type-set query and applies the same priority sort and minimum
 // validity filter (upstream URL + credentials non-empty). srcType is the
-// inbound request's endpoint_type (from sourceEndpointType(srcFormat)) and
-// drives the per-(provider, model) dedupe — see dedupeUnifiedRows.
-func (s *Server) resolveProvidersByTypes(ctx context.Context, model string, types []int32, srcType int32) ([]db.GetProvidersByEndpointTypesAndModelRow, error) {
-	rows, err := s.queries.GetProvidersByEndpointTypesAndModel(ctx, db.GetProvidersByEndpointTypesAndModelParams{
-		ModelName:     model,
-		EndpointTypes: types,
-	})
-	if err != nil {
-		logx.WithContext(ctx).WithError(err).Error("unified provider lookup failed")
-		return nil, &gatewayError{status: http.StatusInternalServerError, message: "failed to query providers", code: errorx.InternalError.Error()}
+// inbound request's endpoint_type (the route's SourceType) and drives the
+// per-(provider, model) dedupe — see dedupeUnifiedRows.
+//
+// When mode.HasModel is false (a prefix mount whose body carried no model) the
+// sister no-model query runs instead: every non-disabled provider bound to an
+// endpoint of one of the types is a candidate, independent of the model /
+// model_provider_endpoint configuration. Everything after the lookup — validity
+// filter, dedupe, priority sort — is shared.
+func (s *Server) resolveProvidersByTypes(ctx context.Context, mode gatewayModelMode, types []int32, srcType int32) ([]db.GetProvidersByEndpointTypesAndModelRow, error) {
+	var rows []db.GetProvidersByEndpointTypesAndModelRow
+	notFound := "no provider available"
+	if mode.HasModel {
+		notFound = "no provider available for model"
+		raw, err := s.queries.GetProvidersByEndpointTypesAndModel(ctx, db.GetProvidersByEndpointTypesAndModelParams{
+			ModelName:     mode.RoutedModel,
+			EndpointTypes: types,
+		})
+		if err != nil {
+			logx.WithContext(ctx).WithError(err).Error("unified provider lookup failed")
+			return nil, &gatewayError{status: http.StatusInternalServerError, message: "failed to query providers", code: errorx.InternalError.Error()}
+		}
+		rows = raw
+	} else {
+		raw, err := s.queries.GetProvidersByEndpointTypes(ctx, types)
+		if err != nil {
+			logx.WithContext(ctx).WithError(err).Error("unified no-model provider lookup failed")
+			return nil, &gatewayError{status: http.StatusInternalServerError, message: "failed to query providers", code: errorx.InternalError.Error()}
+		}
+		rows = make([]db.GetProvidersByEndpointTypesAndModelRow, 0, len(raw))
+		for _, r := range raw {
+			rows = append(rows, fromNoModelTypesRow(r))
+		}
 	}
 	if len(rows) == 0 {
-		return nil, &gatewayError{status: http.StatusNotFound, message: "no provider available for model", code: errorx.NoProviderAvailable.Error()}
+		return nil, &gatewayError{status: http.StatusNotFound, message: notFound, code: errorx.NoProviderAvailable.Error()}
 	}
 	valid := make([]db.GetProvidersByEndpointTypesAndModelRow, 0, len(rows))
 	for _, row := range rows {
@@ -176,21 +206,50 @@ func (s *Server) resolveProvidersByTypes(ctx context.Context, model string, type
 		}
 	}
 	if len(valid) == 0 {
-		return nil, &gatewayError{status: http.StatusNotFound, message: "no provider available for model", code: errorx.NoProviderAvailable.Error()}
+		return nil, &gatewayError{status: http.StatusNotFound, message: notFound, code: errorx.NoProviderAvailable.Error()}
 	}
 	valid = dedupeUnifiedRows(valid, srcType)
-	// Sort by combined priority (provider + per-model-entry) descending.
-	for i := 1; i < len(valid); i++ {
-		for j := i; j > 0; j-- {
-			pi := int(valid[j].Priority) + int(valid[j].ProviderPriority)
-			pj := int(valid[j-1].Priority) + int(valid[j-1].ProviderPriority)
-			if pi <= pj {
-				break
-			}
-			valid[j], valid[j-1] = valid[j-1], valid[j]
-		}
-	}
+	// Sort by combined priority (provider + per-model-entry) descending,
+	// with higher provider IDs first when priorities tie.
+	slices.SortFunc(valid, func(a, b db.GetProvidersByEndpointTypesAndModelRow) int {
+		return compareCandidateOrder(
+			a.ProviderID,
+			a.Priority,
+			a.ProviderPriority,
+			b.ProviderID,
+			b.Priority,
+			b.ProviderPriority,
+		)
+	})
 	return valid, nil
+}
+
+// fromNoModelTypesRow projects a no-model type-set row onto the model-routed
+// row type. The two queries select the same column list — the no-model one just
+// flattens the model-related columns to constants — so this is a field-for-field
+// copy that keeps the rest of the unified path on one row shape.
+func fromNoModelTypesRow(r db.GetProvidersByEndpointTypesRow) db.GetProvidersByEndpointTypesAndModelRow {
+	return db.GetProvidersByEndpointTypesAndModelRow{
+		ModelName:                   r.ModelName,
+		ProviderID:                  r.ProviderID,
+		EndpointPath:                r.EndpointPath,
+		EndpointType:                r.EndpointType,
+		PrefixMatch:                 r.PrefixMatch,
+		UpstreamModelName:           r.UpstreamModelName,
+		Priority:                    r.Priority,
+		Annotations:                 r.Annotations,
+		ProviderName:                r.ProviderName,
+		ProviderCredentials:         r.ProviderCredentials,
+		ProviderPriority:            r.ProviderPriority,
+		UpstreamUrl:                 r.UpstreamUrl,
+		SendCredentialsResolver:     r.SendCredentialsResolver,
+		EndpointCredentialsResolver: r.EndpointCredentialsResolver,
+		ProxyUrl:                    r.ProxyUrl,
+		InsecureTls:                 r.InsecureTls,
+		ProviderAnnotations:         r.ProviderAnnotations,
+		ModelAnnotations:            r.ModelAnnotations,
+		SupportsNativeWebSearch:     r.SupportsNativeWebSearch,
+	}
 }
 
 // dedupeUnifiedRows collapses the type-set query result so that each
@@ -248,9 +307,11 @@ func betterRow(a, b db.GetProvidersByEndpointTypesAndModelRow, srcType int32) bo
 // unifiedStreamArgs bundles the (many) inputs the unified streaming success
 // path needs. Wrapped so the call site stays readable.
 //
-// metaEndpointPath is the unified route path (`/api/picotera/v1/messages` …)
-// — what the meta row should record. upstreamPath is the chosen upstream's
-// configured endpoint.path — what the upstream row should record.
+// metaEndpointPath is the unified route pattern (`/api/unified/v1/messages`,
+// `/api/unified/v1beta/models/{model}:generateContent` …) — what the meta row
+// should record (with the {model} placeholder, not a concrete model name).
+// upstreamPath is the chosen upstream's configured endpoint.path — what the
+// upstream row should record.
 type unifiedStreamArgs struct {
 	w                 http.ResponseWriter
 	r                 *http.Request
@@ -274,7 +335,13 @@ type unifiedStreamArgs struct {
 	upstreamStartTime time.Time
 	metaLogs          []artifacts.LogEntry
 	apiKeyID          pgtype.Int4
+	userID            pgtype.Int8
 	wsCtx             *webSearchContext
+	recordBody        bool
+	// flow is the owning gateway flow, carried so the meta-row updates below go
+	// through flow.updateMeta (which mirrors them into the requestFinished
+	// snapshot) rather than straight to updateRequest.
+	flow *gatewayFlow
 }
 
 func unifiedStreamArgsFromSuccess(input successInput) unifiedStreamArgs {
@@ -286,10 +353,13 @@ func unifiedStreamArgsFromSuccess(input successInput) unifiedStreamArgs {
 		metaID: input.Flow.meta.ID, metaCreatedAt: input.Flow.meta.CreatedAt,
 		gatewayStart: input.Flow.startedAt, providerID: input.ProviderID,
 		routedModel: input.RoutedModel, upstreamModel: input.UpstreamModel,
-		metaEndpointPath: input.Flow.config.Endpoint.Path, upstreamPath: input.Sidecar.EndpointPath,
+		metaEndpointPath: input.Flow.config.RecordedEndpointPath, upstreamPath: input.Sidecar.EndpointPath,
 		upstreamStartTime: input.UpstreamStartTime,
 		metaLogs:          input.Flow.collectLogs(), apiKeyID: input.Flow.auth.APIKeyID,
-		wsCtx: input.Prepared.WebSearch,
+		userID:     input.Flow.auth.UserID,
+		wsCtx:      input.Prepared.WebSearch,
+		recordBody: input.Flow.otr.recordBody(),
+		flow:       input.Flow,
 	}
 }
 
@@ -316,26 +386,20 @@ func (h *gatewayHandler) unifiedStreamSuccess(input successInput) {
 	hdrCtx, hdrCancel := input.Flow.ctxs.Persist()
 	defer hdrCancel()
 
-	h.updateRequestOnHeader(hdrCtx, db.UpdateRequestOnHeaderParams{
-		ID:            a.metaID,
-		ProviderID:    pgtype.Int4{Int32: a.providerID, Valid: true},
-		Model:         pgtype.Text{String: a.routedModel, Valid: a.routedModel != ""},
-		UpstreamModel: pgtype.Text{String: a.upstreamModel, Valid: a.upstreamModel != ""},
-		EndpointPath:  pgtype.Text{String: a.metaEndpointPath, Valid: a.metaEndpointPath != ""},
-		ApiKeyID:      a.apiKeyID,
-		Status:        db.RequestStatusHeaderReceived,
-		CreatedAt:     pgtype.Timestamp{Time: a.metaCreatedAt, Valid: true},
-	})
-	h.updateRequestOnHeader(hdrCtx, db.UpdateRequestOnHeaderParams{
-		ID:            a.upstreamID,
-		ProviderID:    pgtype.Int4{Int32: a.providerID, Valid: true},
-		Model:         pgtype.Text{String: a.routedModel, Valid: a.routedModel != ""},
-		UpstreamModel: pgtype.Text{String: a.upstreamModel, Valid: a.upstreamModel != ""},
-		EndpointPath:  pgtype.Text{String: a.upstreamPath, Valid: a.upstreamPath != ""},
-		ApiKeyID:      a.apiKeyID,
-		Status:        db.RequestStatusHeaderReceived,
-		CreatedAt:     pgtype.Timestamp{Time: a.upstreamCreatedAt, Valid: true},
-	})
+	// user_id / project_id are intentionally NOT touched here: they were
+	// backfilled post-auth on the meta row and must survive the header update.
+	a.flow.updateMeta(hdrCtx, newRequestUpdate(a.metaID, a.metaCreatedAt).
+		ProviderID(pgtype.Int4{Int32: a.providerID, Valid: true}).
+		Model(pgtype.Text{String: a.routedModel, Valid: a.routedModel != ""}).
+		UpstreamModel(pgtype.Text{String: a.upstreamModel, Valid: a.upstreamModel != ""}).
+		EndpointPath(pgtype.Text{String: a.metaEndpointPath, Valid: a.metaEndpointPath != ""}).
+		ApiKeyID(a.apiKeyID))
+	h.updateRequest(hdrCtx, newRequestUpdate(a.upstreamID, a.upstreamCreatedAt).
+		ProviderID(pgtype.Int4{Int32: a.providerID, Valid: true}).
+		Model(pgtype.Text{String: a.routedModel, Valid: a.routedModel != ""}).
+		UpstreamModel(pgtype.Text{String: a.upstreamModel, Valid: a.upstreamModel != ""}).
+		EndpointPath(pgtype.Text{String: a.upstreamPath, Valid: a.upstreamPath != ""}).
+		ApiKeyID(a.apiKeyID))
 
 	// Live records, one per row and each the single source for that row's live
 	// view and persisted artifact. The upstream row records the upstream-format
@@ -346,13 +410,13 @@ func (h *gatewayHandler) unifiedStreamSuccess(input successInput) {
 		upstreamProgress = input.Entry.progress
 	}
 	if upstreamProgress == nil {
-		upstreamProgress = newLiveProgressWithOrigin(a.upstreamStartTime)
+		upstreamProgress = newLiveProgressWithOrigin(a.upstreamStartTime, a.recordBody)
 	}
 	upstreamProgress.markHeaders(resp.StatusCode, a.upstreamStartTime)
 
 	var metaProgress *liveProgress
 	if transforming {
-		metaProgress = newLiveProgressWithOrigin(a.upstreamStartTime)
+		metaProgress = newLiveProgressWithOrigin(a.upstreamStartTime, a.recordBody)
 		metaProgress.markHeaders(resp.StatusCode, a.upstreamStartTime)
 	}
 	metaLive := upstreamProgress
@@ -371,7 +435,7 @@ func (h *gatewayHandler) unifiedStreamSuccess(input successInput) {
 	// bytes.
 	for key, values := range resp.Header {
 		lower := strings.ToLower(key)
-		if lower == "content-length" {
+		if lower == "content-length" || shouldStripUpstreamHeader(lower) {
 			continue
 		}
 		if transforming && (lower == "content-encoding" || lower == "transfer-encoding") {
@@ -414,10 +478,18 @@ func (h *gatewayHandler) unifiedStreamSuccess(input successInput) {
 		return
 	}
 	internalBody := internalReader.Body
-	w.WriteHeader(http.StatusOK)
+	// Commit the headers to the wire before the client writer starts. On the
+	// bridging path the first client chunk waits for llmbridge to convert the
+	// upstream's first native event, so without this flush the client's
+	// response-header timer would cover that whole conversion latency.
+	if streamMode {
+		markSSENoBuffering(w.Header(), clientCT)
+	}
+	commitResponseHeaders(w, http.StatusOK)
 	if err := internalReader.StartClientWrite(); err != nil {
 		cancel()
 		closeDecodedInternalResponseReader(internalBody, resp)
+		h.failUnifiedSuccessCommitted(hdrCtx, a, "start client write: "+err.Error(), db.FinishReasonCancelled, streamMode)
 		return
 	}
 	metaRespHeader := w.Header().Clone()
@@ -438,7 +510,7 @@ func (h *gatewayHandler) unifiedStreamSuccess(input successInput) {
 			br, err := h.llmBridge.BridgeStream(ctx, a.srcFormat, a.upFormat, teedUpstream, upstreamCT, a.outboundProfile)
 			if err != nil {
 				cancel()
-				h.failUnifiedSuccess(hdrCtx, a, err.Error())
+				h.failUnifiedSuccessCommitted(hdrCtx, a, err.Error(), db.FinishReasonStreamError, true)
 				return
 			}
 			clientReader = br
@@ -447,15 +519,16 @@ func (h *gatewayHandler) unifiedStreamSuccess(input successInput) {
 			// then expose the bridged bytes as a reader.
 			upstreamBody, err := io.ReadAll(teedUpstream)
 			if err != nil {
+				_ = teedUpstream.Close()
 				cancel()
-				h.failUnifiedSuccess(hdrCtx, a, err.Error())
+				h.failUnifiedSuccessCommitted(hdrCtx, a, err.Error(), db.FinishReasonStreamError, false)
 				return
 			}
 			_ = teedUpstream.Close()
 			bridged, _, berr := h.llmBridge.BridgeNonStream(ctx, a.srcFormat, a.upFormat, upstreamBody, resp.Header, a.outboundProfile)
 			if berr != nil {
 				cancel()
-				h.failUnifiedSuccess(hdrCtx, a, berr.Error())
+				h.failUnifiedSuccessCommitted(hdrCtx, a, berr.Error(), db.FinishReasonStreamError, false)
 				return
 			}
 			clientReader = io.NopCloser(bytes.NewReader(bridged))
@@ -477,13 +550,13 @@ func (h *gatewayHandler) unifiedStreamSuccess(input successInput) {
 			_ = clientReader.Close()
 			if rerr != nil {
 				cancel()
-				h.failUnifiedSuccess(hdrCtx, a, "read bridge output: "+rerr.Error())
+				h.failUnifiedSuccessCommitted(hdrCtx, a, "read bridge output: "+rerr.Error(), db.FinishReasonStreamError, false)
 				return
 			}
 			transformed, terr := h.transformWebSearchResponse(ctx, allBytes, a.wsCtx)
 			if terr != nil {
 				cancel()
-				h.failUnifiedSuccess(hdrCtx, a, "web search transform: "+terr.Error())
+				h.failUnifiedSuccessCommitted(hdrCtx, a, "web search transform: "+terr.Error(), db.FinishReasonStreamError, false)
 				return
 			}
 			transformed = h.loopWebSearchNonStream(ctx, transformed, a.wsCtx, buildForwardedHeaders(r))
@@ -537,71 +610,87 @@ func (h *gatewayHandler) unifiedStreamSuccess(input successInput) {
 	pctx, pcancel := input.Flow.ctxs.Persist()
 	defer pcancel()
 
-	upstreamAggregated := buildAggregatedArtifact(pctx, h.llmBridge, a.upFormat, upstreamCT, upstreamBytes, a.outboundProfile)
+	// OTR body modes move bodies + aggregation + timings out of the record. The
+	// live records above already returned empty bytes/timings for this case; here
+	// we additionally skip the aggregation builds.
+	var upstreamAggregated *artifacts.AggregatedResponse
 	var metaAggregated *artifacts.AggregatedResponse
-	if profile, ok := defaultAggregationProfile(a.srcFormat); ok {
-		metaAggregated = buildAggregatedArtifact(pctx, h.llmBridge, a.srcFormat, metaRespHeader.Get("Content-Type"), clientBytes, profile)
+	if a.recordBody {
+		upstreamAggregated = buildAggregatedArtifact(pctx, h.llmBridge, a.upFormat, upstreamCT, upstreamBytes, a.outboundProfile)
+		if profile, ok := defaultAggregationProfile(a.srcFormat); ok {
+			metaAggregated = buildAggregatedArtifact(pctx, h.llmBridge, a.srcFormat, metaRespHeader.Get("Content-Type"), clientBytes, profile)
+		}
 	}
 	h.uploadResponseArtifactWithAggregation(pctx, a.upstreamID, a.upstreamCreatedAt, resp.StatusCode, resp.Header.Clone(), upstreamBytes, upstreamAggregated, upstreamTimings)
 	h.uploadMetaResponseArtifactWithAggregation(pctx, a.metaID, a.metaCreatedAt, http.StatusOK, metaRespHeader, clientBytes, a.metaLogs, metaAggregated, metaTimings)
-	finishReason := classifyStreamFinishReason(finalReadErr, r.Context())
+	finishReason := classifyStreamFinishReason(finalReadErr, r.Context(), extractor.StreamCompleted())
 
 	m := extractor.Metrics()
 	ttftMs, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, cacheWrite1hTokens := metricsToPG(m)
 	modelCost, modelCcy := h.costsFor(pctx, a.routedModel, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, cacheWrite1hTokens)
+	toolUsage, toolCost, toolCcy := a.flow.resolveToolUsageCost(m)
 
 	// An in-stream error event (HTTP 200 with an error.message payload) marks
 	// both rows failed while keeping the real upstream status code and metrics.
 	// The extractor wraps the upstream's native bytes, so the error is detected
 	// in the upstream format (the true source of the failure).
 	streamErr := extractor.StreamError()
-	status := int32(db.RequestStatusCompleted)
 	errMsg := pgtype.Text{Valid: false}
 	fr := finishReason
 	if streamErr != "" {
-		status = int32(db.RequestStatusFailed)
 		errMsg = pgtype.Text{String: streamErr, Valid: true}
 		fr = int32(db.FinishReasonStreamError)
+		input.Flow.runStreamErrorHook(a.providerID, input.CurrentRetryCount, input.TotalAttemptCount, resp.StatusCode, streamErr)
 	}
 
 	upstreamFr := input.Flow.finishReasonFor(a.upstreamID, fr)
 	metaFr := input.Flow.finishReasonFor(a.metaID, fr)
 	upstreamTimeSpent := int32(time.Since(a.attemptStart).Milliseconds())
-	h.updateRequestOnComplete(pctx, db.UpdateRequestOnCompleteParams{
-		ID:                 a.upstreamID,
-		StatusCode:         pgtype.Int4{Int32: int32(resp.StatusCode), Valid: true},
-		ErrorMessage:       errMsg,
-		TimeSpentMs:        pgtype.Int4{Int32: upstreamTimeSpent, Valid: true},
-		Status:             status,
-		TtftMs:             ttftMs,
-		InputTokens:        inputTokens,
-		OutputTokens:       outputTokens,
-		CacheReadTokens:    cacheReadTokens,
-		CacheWriteTokens:   cacheWriteTokens,
-		CacheWrite1hTokens: cacheWrite1hTokens,
-		ModelCost:          modelCost,
-		ModelCostCurrency:  modelCcy,
-		FinishReason:       pgtype.Int4{Int32: upstreamFr, Valid: true},
-		CreatedAt:          pgtype.Timestamp{Time: a.upstreamCreatedAt, Valid: true},
-	})
+	h.updateRequest(pctx, newRequestUpdate(a.upstreamID, a.upstreamCreatedAt).
+		StatusCode(pgtype.Int4{Int32: int32(resp.StatusCode), Valid: true}).
+		ErrorMessage(errMsg).
+		TimeSpentMs(pgtype.Int4{Int32: upstreamTimeSpent, Valid: true}).
+		TtftMs(ttftMs).
+		InputTokens(inputTokens).
+		OutputTokens(outputTokens).
+		CacheReadTokens(cacheReadTokens).
+		CacheWriteTokens(cacheWriteTokens).
+		CacheWrite1hTokens(cacheWrite1hTokens).
+		ModelCost(modelCost).
+		ModelCostCurrency(modelCcy).
+		ToolUsage(toolUsage).
+		ToolCost(toolCost).
+		ToolCostCurrency(toolCcy).
+		UsageRaw(m.UsageRaw).
+		ToolUsageRaw(m.ToolUsageRaw).
+		FinishReason(pgtype.Int4{Int32: upstreamFr, Valid: true}).
+		InferredProvider(pgtype.Text{String: m.InferredProvider, Valid: m.InferredProvider != ""}).
+		InferredModel(pgtype.Text{String: m.InferredModel, Valid: m.InferredModel != ""}).
+		InferredModelSource(int16(m.InferredModelSource)).
+		ExternalResponseID(matchExternalIDHeader(resp.Header, h.externalResponseIDHeaders)))
 	metaTimeSpent := int32(time.Since(a.gatewayStart).Milliseconds())
-	h.updateRequestOnComplete(pctx, db.UpdateRequestOnCompleteParams{
-		ID:                 a.metaID,
-		StatusCode:         pgtype.Int4{Int32: int32(resp.StatusCode), Valid: true},
-		ErrorMessage:       errMsg,
-		TimeSpentMs:        pgtype.Int4{Int32: metaTimeSpent, Valid: true},
-		Status:             status,
-		TtftMs:             ttftMs,
-		InputTokens:        inputTokens,
-		OutputTokens:       outputTokens,
-		CacheReadTokens:    cacheReadTokens,
-		CacheWriteTokens:   cacheWriteTokens,
-		CacheWrite1hTokens: cacheWrite1hTokens,
-		ModelCost:          modelCost,
-		ModelCostCurrency:  modelCcy,
-		FinishReason:       pgtype.Int4{Int32: metaFr, Valid: true},
-		CreatedAt:          pgtype.Timestamp{Time: a.metaCreatedAt, Valid: true},
-	})
+	a.flow.updateMeta(pctx, newRequestUpdate(a.metaID, a.metaCreatedAt).
+		StatusCode(pgtype.Int4{Int32: int32(resp.StatusCode), Valid: true}).
+		ErrorMessage(errMsg).
+		TimeSpentMs(pgtype.Int4{Int32: metaTimeSpent, Valid: true}).
+		TtftMs(ttftMs).
+		InputTokens(inputTokens).
+		OutputTokens(outputTokens).
+		CacheReadTokens(cacheReadTokens).
+		CacheWriteTokens(cacheWriteTokens).
+		CacheWrite1hTokens(cacheWrite1hTokens).
+		ModelCost(modelCost).
+		ModelCostCurrency(modelCcy).
+		ToolUsage(toolUsage).
+		ToolCost(toolCost).
+		ToolCostCurrency(toolCcy).
+		UsageRaw(m.UsageRaw).
+		ToolUsageRaw(m.ToolUsageRaw).
+		FinishReason(pgtype.Int4{Int32: metaFr, Valid: true}).
+		InferredProvider(pgtype.Text{String: m.InferredProvider, Valid: m.InferredProvider != ""}).
+		InferredModel(pgtype.Text{String: m.InferredModel, Valid: m.InferredModel != ""}).
+		InferredModelSource(int16(m.InferredModelSource)).
+		ExternalResponseID(matchExternalIDHeader(resp.Header, h.externalResponseIDHeaders)))
 	_ = r
 }
 
@@ -610,27 +699,90 @@ func (h *gatewayHandler) unifiedStreamSuccess(input successInput) {
 // candidate. We can't recover by retrying because part of the upstream may
 // have been read; surface the bridge failure as 502 and complete the rows.
 func (h *gatewayHandler) failUnifiedSuccess(ctx context.Context, a unifiedStreamArgs, errMsg string) {
-	h.updateRequestOnComplete(ctx, db.UpdateRequestOnCompleteParams{
-		ID:           a.upstreamID,
-		StatusCode:   pgtype.Int4{Int32: int32(a.resp.StatusCode), Valid: true},
-		ErrorMessage: pgtype.Text{String: errMsg, Valid: true},
-		TimeSpentMs:  pgtype.Int4{Int32: int32(time.Since(a.attemptStart).Milliseconds()), Valid: true},
-		Status:       db.RequestStatusFailed,
-		FinishReason: pgtype.Int4{Int32: db.FinishReasonInternal, Valid: true},
-		CreatedAt:    pgtype.Timestamp{Time: a.upstreamCreatedAt, Valid: true},
-	})
+	h.updateRequest(ctx, newRequestUpdate(a.upstreamID, a.upstreamCreatedAt).
+		StatusCode(pgtype.Int4{Int32: int32(a.resp.StatusCode), Valid: true}).
+		ErrorMessage(pgtype.Text{String: errMsg, Valid: true}).
+		TimeSpentMs(pgtype.Int4{Int32: int32(time.Since(a.attemptStart).Milliseconds()), Valid: true}).
+		FinishReason(pgtype.Int4{Int32: db.FinishReasonInternal, Valid: true}).
+		ExternalResponseID(matchExternalIDHeader(a.resp.Header, h.externalResponseIDHeaders)))
 	respBody := writeGatewayError(a.w, http.StatusBadGateway, "bridge failed: "+errMsg, errorx.UpstreamError.Error())
-	h.updateRequestOnComplete(ctx, db.UpdateRequestOnCompleteParams{
-		ID:           a.metaID,
-		StatusCode:   pgtype.Int4{Int32: http.StatusBadGateway, Valid: true},
-		ErrorMessage: pgtype.Text{String: errMsg, Valid: true},
-		TimeSpentMs:  pgtype.Int4{Int32: int32(time.Since(a.gatewayStart).Milliseconds()), Valid: true},
-		Status:       db.RequestStatusFailed,
-		FinishReason: pgtype.Int4{Int32: db.FinishReasonInternal, Valid: true},
-		CreatedAt:    pgtype.Timestamp{Time: a.metaCreatedAt, Valid: true},
-	})
-	h.uploadMetaResponseArtifact(ctx, a.metaID, a.metaCreatedAt, http.StatusBadGateway, a.w.Header().Clone(), respBody, a.metaLogs, nil)
+	a.flow.updateMeta(ctx, newRequestUpdate(a.metaID, a.metaCreatedAt).
+		StatusCode(pgtype.Int4{Int32: http.StatusBadGateway, Valid: true}).
+		ErrorMessage(pgtype.Text{String: errMsg, Valid: true}).
+		TimeSpentMs(pgtype.Int4{Int32: int32(time.Since(a.gatewayStart).Milliseconds()), Valid: true}).
+		FinishReason(pgtype.Int4{Int32: db.FinishReasonInternal, Valid: true}).
+		ExternalResponseID(matchExternalIDHeader(a.resp.Header, h.externalResponseIDHeaders)))
+	artifactBody := respBody
+	if !a.recordBody {
+		artifactBody = nil
+	}
+	h.uploadMetaResponseArtifact(ctx, a.metaID, a.metaCreatedAt, http.StatusBadGateway, a.w.Header().Clone(), artifactBody, a.metaLogs, nil)
 	_ = a.resp.Body.Close()
+}
+
+func (h *gatewayHandler) failUnifiedSuccessCommitted(ctx context.Context, a unifiedStreamArgs, errMsg string, finishReason int32, stream bool) {
+	body := unifiedCommittedErrorBody(a.srcFormat, errMsg, stream)
+	_, _ = a.w.Write(body)
+	if flusher, ok := a.w.(http.Flusher); ok {
+		flusher.Flush()
+	}
+
+	status := int32(http.StatusOK)
+	h.updateRequest(ctx, newRequestUpdate(a.upstreamID, a.upstreamCreatedAt).
+		StatusCode(pgtype.Int4{Int32: status, Valid: true}).
+		ErrorMessage(pgtype.Text{String: errMsg, Valid: true}).
+		TimeSpentMs(pgtype.Int4{Int32: int32(time.Since(a.attemptStart).Milliseconds()), Valid: true}).
+		FinishReason(pgtype.Int4{Int32: finishReason, Valid: true}).
+		ExternalResponseID(matchExternalIDHeader(a.resp.Header, h.externalResponseIDHeaders)))
+	a.flow.updateMeta(ctx, newRequestUpdate(a.metaID, a.metaCreatedAt).
+		StatusCode(pgtype.Int4{Int32: status, Valid: true}).
+		ErrorMessage(pgtype.Text{String: errMsg, Valid: true}).
+		TimeSpentMs(pgtype.Int4{Int32: int32(time.Since(a.gatewayStart).Milliseconds()), Valid: true}).
+		FinishReason(pgtype.Int4{Int32: finishReason, Valid: true}).
+		ExternalResponseID(matchExternalIDHeader(a.resp.Header, h.externalResponseIDHeaders)))
+
+	artifactBody := body
+	if !a.recordBody {
+		artifactBody = nil
+	}
+	h.uploadMetaResponseArtifact(ctx, a.metaID, a.metaCreatedAt, http.StatusOK, a.w.Header().Clone(), artifactBody, a.metaLogs, nil)
+	_ = a.resp.Body.Close()
+}
+
+func unifiedCommittedErrorBody(format llmbridge.Format, errMsg string, stream bool) []byte {
+	payload := map[string]any{
+		"error": map[string]any{
+			"message": errMsg,
+		},
+	}
+	eventName := "error"
+	switch format {
+	case llmbridge.FormatAnthropicMessages:
+		payload["type"] = "error"
+		payload["error"].(map[string]any)["type"] = "api_error"
+	case llmbridge.FormatOpenAIResponses:
+		eventName = "response.failed"
+		payload = map[string]any{
+			"type": "response.failed",
+			"response": map[string]any{
+				"error": map[string]any{
+					"message": errMsg,
+				},
+			},
+		}
+	}
+	if !stream {
+		b, _ := json.Marshal(payload)
+		return append(b, '\n')
+	}
+	b, _ := json.Marshal(payload)
+	var out bytes.Buffer
+	out.WriteString("event: ")
+	out.WriteString(eventName)
+	out.WriteString("\ndata: ")
+	out.Write(b)
+	out.WriteString("\n\n")
+	return out.Bytes()
 }
 
 // asReadCloser pairs an io.Reader (the response extractor) with the original

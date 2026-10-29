@@ -56,7 +56,12 @@ function escape(s: string) {
 
 const prefs = usePreferencesStore()
 const themeVersion = ref(0)
-watch(() => prefs.theme, () => { themeVersion.value++ })
+watch(
+  () => prefs.theme,
+  () => {
+    themeVersion.value++
+  },
+)
 
 const layerDepthMap = computed(() => {
   const presentLayers = new Set<number>()
@@ -72,7 +77,9 @@ const layerDepthMap = computed(() => {
 const option = computed<EChartsOption>(() => {
   void themeVersion.value
   const axis = getThemeAxisStyle()
-  const faintColor = getComputedStyle(document.documentElement).getPropertyValue('--color-ink-faint').trim()
+  const faintColor = getComputedStyle(document.documentElement)
+    .getPropertyValue('--color-ink-faint')
+    .trim()
 
   const nodeMap = new Map(props.nodes.map((n) => [n.id, n]))
 
@@ -119,7 +126,7 @@ const option = computed<EChartsOption>(() => {
           fontFamily: 'Geist, Geist Fallback, ui-sans-serif, system-ui, sans-serif',
           formatter: (params) => {
             return nodeMap.get(params.name)?.label ?? params.name
-          }
+          },
         },
         lineStyle: { color: 'gradient', opacity: 0.2 },
         data: props.nodes.map((n) => ({
@@ -138,7 +145,7 @@ const option = computed<EChartsOption>(() => {
         blur: {
           label: { opacity: 0.4 },
           itemStyle: { opacity: 0.4 },
-          lineStyle: { opacity: 0.08 }
+          lineStyle: { opacity: 0.08 },
         },
       },
     ],
@@ -149,7 +156,10 @@ const option = computed<EChartsOption>(() => {
 <template>
   <div>
     <VChart :option="option" style="height: 288px" autoresize />
-    <div v-if="layers && layers.length > 0" class="flex flex-wrap items-center justify-center gap-3 mt-2">
+    <div
+      v-if="layers && layers.length > 0"
+      class="flex flex-wrap items-center justify-center gap-3 mt-2"
+    >
       <button
         v-for="layer in layers"
         :key="layer.index"

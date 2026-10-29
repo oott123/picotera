@@ -1,14 +1,33 @@
-import type { OverviewDimension, OverviewSeriesDimension } from './index'
+import type {
+  OverviewDimension,
+  OverviewRange,
+  OverviewSeriesDimension,
+  AdminOverviewDimension,
+  AdminOverviewSeriesDimension,
+} from './index'
 
 export type ProviderEndpointFilters = Readonly<{ providerId?: number }>
 
+export type OverviewGranularity = 'auto' | '10m' | '1h' | '6h' | '12h' | '24h'
+
 export type OverviewFilters = Readonly<{
-  range: '1d' | '7d' | '1m'
+  range: OverviewRange
   apiKeyId?: number
   model?: string
   upstreamModel?: string
   providerId?: number
   projectId?: number
+  startAt?: string
+  endAt?: string
+}>
+export type AdminOverviewFilters = Readonly<{
+  range: OverviewRange
+  userId?: number
+  model?: string
+  upstreamModel?: string
+  providerId?: number
+  startAt?: string
+  endAt?: string
 }>
 
 export type RequestsFilters = Readonly<{
@@ -18,7 +37,16 @@ export type RequestsFilters = Readonly<{
   model?: string
   upstreamModel?: string
   traceId?: string
+  requestId?: string
   projectId?: number
+  startAt?: string
+  endAt?: string
+  emptyResponse?: boolean
+  finishReason?: number
+  // Whether the inferred model differs from both the requested and the upstream
+  // model (case-insensitive): "detected" = 检测到路由, "undetected" = 未检测到路由.
+  routing?: 'detected' | 'undetected'
+  annotations?: string
 }>
 
 export type KvListFilters = Readonly<{ pattern?: string; cursor?: number }>
@@ -27,6 +55,14 @@ export type CursorFilters = Readonly<{ limit: number; cursor?: string }>
 export type RequestListFilters = RequestsFilters & Partial<CursorFilters>
 
 export const queryKeys = {
+  me: ['me'] as const,
+  labels: {
+    providers: ['labels', 'providers'] as const,
+    models: ['labels', 'models'] as const,
+    endpoints: ['labels', 'endpoints'] as const,
+    projects: ['labels', 'projects'] as const,
+    upstreamModels: ['labels', 'upstreamModels'] as const,
+  },
   providers: {
     all: ['providers'] as const,
     detail: (id: number) => ['providers', id] as const,
@@ -50,6 +86,11 @@ export const queryKeys = {
     all: ['apiKeys'] as const,
     detail: (id: number) => ['apiKeys', id] as const,
   },
+  users: {
+    all: ['users'] as const,
+    detail: (id: number) => ['users', id] as const,
+    identities: (userId: number) => ['users', userId, 'identities'] as const,
+  },
   projects: {
     all: ['projects'] as const,
     detail: (id: number) => ['projects', id] as const,
@@ -65,7 +106,8 @@ export const queryKeys = {
   },
   requestTraces: {
     all: ['requestTraces'] as const,
-    list: (filters: CursorFilters) => ['requestTraces', { ...filters }] as const,
+    list: (filters: CursorFilters & { startAt?: string; endAt?: string }) =>
+      ['requestTraces', { ...filters }] as const,
   },
   requestSpans: {
     all: ['requestSpans'] as const,
@@ -92,22 +134,48 @@ export const queryKeys = {
     all: ['artifacts'] as const,
     detail: (url: string) => ['artifacts', url] as const,
   },
-  globalSettings: {
-    all: ['globalSettings'] as const,
-    detail: (key: string) => ['globalSettings', key] as const,
+  userSettings: {
+    all: ['userSettings'] as const,
+    detail: (key: string) => ['userSettings', key] as const,
   },
+  config: ['config'] as const,
   overview: {
     all: ['overview'] as const,
     summary: (f: OverviewFilters) => ['overview', 'summary', { ...f }] as const,
     distribution: (f: OverviewFilters, dim: OverviewDimension) =>
       ['overview', 'distribution', dim, { ...f }] as const,
-    series: (f: OverviewFilters, dim: OverviewSeriesDimension) =>
-      ['overview', 'series', dim, { ...f }] as const,
-    speed: (f: OverviewFilters, dim: OverviewSeriesDimension) =>
-      ['overview', 'speed', dim, { ...f }] as const,
+    series: (f: OverviewFilters, dim: OverviewSeriesDimension, bucket: OverviewGranularity) =>
+      ['overview', 'series', dim, bucket, { ...f }] as const,
+    speed: (f: OverviewFilters, dim: OverviewSeriesDimension, bucket: OverviewGranularity) =>
+      ['overview', 'speed', dim, bucket, { ...f }] as const,
     speedBoxplot: (f: OverviewFilters, dim: OverviewSeriesDimension) =>
       ['overview', 'speedBoxplot', dim, { ...f }] as const,
-    cacheHitRate: (f: OverviewFilters, dim: OverviewSeriesDimension) =>
-      ['overview', 'cacheHitRate', dim, { ...f }] as const,
+    cacheHitRate: (f: OverviewFilters, dim: OverviewSeriesDimension, bucket: OverviewGranularity) =>
+      ['overview', 'cacheHitRate', dim, bucket, { ...f }] as const,
+    outcome: (f: OverviewFilters, dim: OverviewSeriesDimension, bucket: OverviewGranularity) =>
+      ['overview', 'outcome', dim, bucket, { ...f }] as const,
+  },
+  adminOverview: {
+    all: ['adminOverview'] as const,
+    summary: (f: AdminOverviewFilters) => ['adminOverview', 'summary', { ...f }] as const,
+    distribution: (f: AdminOverviewFilters, dim: AdminOverviewDimension) =>
+      ['adminOverview', 'distribution', dim, { ...f }] as const,
+    series: (
+      f: AdminOverviewFilters,
+      dim: AdminOverviewSeriesDimension,
+      bucket: OverviewGranularity,
+    ) => ['adminOverview', 'series', dim, bucket, { ...f }] as const,
+    speed: (
+      f: AdminOverviewFilters,
+      dim: AdminOverviewSeriesDimension,
+      bucket: OverviewGranularity,
+    ) => ['adminOverview', 'speed', dim, bucket, { ...f }] as const,
+    speedBoxplot: (f: AdminOverviewFilters, dim: AdminOverviewSeriesDimension) =>
+      ['adminOverview', 'speedBoxplot', dim, { ...f }] as const,
+    cacheHitRate: (
+      f: AdminOverviewFilters,
+      dim: AdminOverviewSeriesDimension,
+      bucket: OverviewGranularity,
+    ) => ['adminOverview', 'cacheHitRate', dim, bucket, { ...f }] as const,
   },
 }

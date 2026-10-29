@@ -31,7 +31,11 @@ func isUniqueViolation(err error) bool {
 }
 
 func (s *Server) handleListApiKeys(ctx context.Context, _ *struct{}) (*contract.ListApiKeysResponse, error) {
-	rows, err := s.queries.ListApiKeys(ctx)
+	u, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.queries.ListApiKeys(ctx, u.ID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to list api keys", err)
 	}
@@ -47,7 +51,11 @@ func (s *Server) handleListApiKeys(ctx context.Context, _ *struct{}) (*contract.
 }
 
 func (s *Server) handleGetApiKey(ctx context.Context, in *contract.GetApiKeyRequest) (*contract.GetApiKeyResponse, error) {
-	r, err := s.queries.GetApiKey(ctx, in.ID)
+	u, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	r, err := s.queries.GetApiKey(ctx, db.GetApiKeyParams{ID: in.ID, UserID: u.ID})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, huma.Error404NotFound("api key not found")
@@ -62,6 +70,10 @@ func (s *Server) handleGetApiKey(ctx context.Context, in *contract.GetApiKeyRequ
 }
 
 func (s *Server) handleCreateApiKey(ctx context.Context, in *contract.CreateApiKeyRequest) (*contract.CreateApiKeyResponse, error) {
+	u, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if in.Body.Key == "" {
 		return nil, huma.Error400BadRequest("key is required")
 	}
@@ -74,6 +86,7 @@ func (s *Server) handleCreateApiKey(ctx context.Context, in *contract.CreateApiK
 		Key:         in.Body.Key,
 		Disabled:    in.Body.Disabled,
 		Annotations: annotations,
+		UserID:      u.ID,
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -89,6 +102,10 @@ func (s *Server) handleCreateApiKey(ctx context.Context, in *contract.CreateApiK
 }
 
 func (s *Server) handleUpdateApiKey(ctx context.Context, in *contract.UpdateApiKeyRequest) (*contract.UpdateApiKeyResponse, error) {
+	u, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if in.Body.Key == "" {
 		return nil, huma.Error400BadRequest("key is required")
 	}
@@ -102,6 +119,7 @@ func (s *Server) handleUpdateApiKey(ctx context.Context, in *contract.UpdateApiK
 		Key:         in.Body.Key,
 		Disabled:    in.Body.Disabled,
 		Annotations: annotations,
+		UserID:      u.ID,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -120,7 +138,11 @@ func (s *Server) handleUpdateApiKey(ctx context.Context, in *contract.UpdateApiK
 }
 
 func (s *Server) handleDeleteApiKey(ctx context.Context, in *contract.DeleteApiKeyRequest) (*struct{}, error) {
-	if err := s.queries.DeleteApiKey(ctx, in.Body.ID); err != nil {
+	u, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.queries.DeleteApiKey(ctx, db.DeleteApiKeyParams{ID: in.Body.ID, UserID: u.ID}); err != nil {
 		return nil, huma.Error500InternalServerError("failed to delete api key", err)
 	}
 	return &struct{}{}, nil

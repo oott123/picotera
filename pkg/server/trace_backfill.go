@@ -17,12 +17,13 @@ func backfillTraces(ctx context.Context, queries *db.Queries) error {
 		return fmt.Errorf("list trace backfill candidates: %w", err)
 	}
 	for _, row := range rows {
-		if !row.ParentSpanID.Valid || !row.FirstRequestAt.Valid || !row.LastRequestAt.Valid {
+		if !row.ParentSpanID.Valid || !row.UserID.Valid || !row.FirstRequestAt.Valid || !row.LastRequestAt.Valid {
 			continue
 		}
 		if err := queries.BackfillTrace(ctx, db.BackfillTraceParams{
 			ID:             xid.New().String(),
 			ParentSpanID:   row.ParentSpanID.String,
+			UserID:         row.UserID.Int64,
 			FirstRequestAt: row.FirstRequestAt,
 			LastRequestAt:  row.LastRequestAt,
 		}); err != nil {

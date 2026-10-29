@@ -11,6 +11,15 @@ const props = defineProps<{ provider?: ProviderView; onSave?: () => void }>()
 const queryClient = useQueryClient()
 
 const isEdit = !!props.provider
+
+const modelsEndpointResolverOptions = [
+  { value: 'followRequest', label: '跟随请求' },
+  { value: 'bearerToken', label: 'Bearer Token' },
+  { value: 'xApiKey', label: 'x-api-key' },
+  { value: 'searchKey', label: 'Search Key' },
+  { value: 'googApiKey', label: 'Google API Key' },
+]
+
 const form = ref({
   name: props.provider?.name ?? '',
   credentials: props.provider?.credentials ?? '',
@@ -18,8 +27,9 @@ const form = ref({
   annotations: { ...props.provider?.annotations } as Record<string, string>,
   disabled: props.provider?.disabled ?? false,
   proxyUrl: props.provider?.proxyUrl ?? '',
+  insecureTls: props.provider?.insecureTls ?? false,
   modelsEndpointUrl: props.provider?.modelsEndpointUrl ?? '',
-  modelsEndpointResolver: props.provider?.modelsEndpointResolver ?? 'generalApiKey',
+  modelsEndpointResolver: props.provider?.modelsEndpointResolver ?? 'followRequest',
   supportsNativeWebSearch: props.provider?.supportsNativeWebSearch ?? false,
 })
 const saving = ref(false)
@@ -41,6 +51,7 @@ async function submit() {
     annotations: form.value.annotations,
     disabled: form.value.disabled,
     ...(form.value.proxyUrl ? { proxyUrl: form.value.proxyUrl } : {}),
+    insecureTls: form.value.insecureTls,
     modelsEndpointUrl: form.value.modelsEndpointUrl,
     modelsEndpointResolver: form.value.modelsEndpointResolver,
     supportsNativeWebSearch: form.value.supportsNativeWebSearch,
@@ -64,10 +75,10 @@ async function submit() {
   >
     <form id="provider-form" class="flex flex-col gap-4" @submit.prevent="submit">
       <Field label="名称">
-        <Input v-model="form.name" required placeholder="例如 openai" />
+        <Input v-model="form.name" required />
       </Field>
       <Field label="凭证">
-        <Input v-model="form.credentials" required placeholder="密钥或密钥" />
+        <Input v-model="form.credentials" required />
       </Field>
       <Field label="优先级">
         <Input v-model.number="form.priority" type="number" required />
@@ -75,31 +86,31 @@ async function submit() {
       <Field label="状态" as="div">
         <label class="inline-flex items-center gap-2 text-sm cursor-pointer">
           <input v-model="form.disabled" type="checkbox" class="cursor-pointer" />
-          <span>禁用此渠道（不参与调度）</span>
+          <span>禁用</span>
         </label>
       </Field>
       <Field label="标注" as="div">
         <AnnotationsEditor v-model="form.annotations" />
       </Field>
       <Field label="代理 URL">
-        <Input v-model="form.proxyUrl" placeholder="留空使用环境代理，填 direct 禁用代理" />
+        <Input v-model="form.proxyUrl" placeholder="留空默认， direct 直连" />
+      </Field>
+      <Field label="TLS" as="div">
+        <label class="inline-flex items-center gap-2 text-sm cursor-pointer">
+          <input v-model="form.insecureTls" type="checkbox" class="cursor-pointer" />
+          <span>忽略 HTTPS 证书错误</span>
+        </label>
       </Field>
       <Field label="模型列表 URL">
         <Input v-model="form.modelsEndpointUrl" placeholder="https://api.openai.com/v1/models" />
       </Field>
-      <Field label="模型列表凭证解析">
-        <Select v-model="form.modelsEndpointResolver">
-          <option value="generalApiKey">通用 API Key</option>
-          <option value="bearerToken">Bearer Token</option>
-          <option value="xApiKey">x-api-key</option>
-          <option value="searchKey">Search Key</option>
-          <option value="googApiKey">Google API Key</option>
-        </Select>
+      <Field label="模型列表凭证发送">
+        <Select v-model="form.modelsEndpointResolver" :options="modelsEndpointResolverOptions" />
       </Field>
       <Field label="Web 搜索" as="div">
         <label class="inline-flex items-center gap-2 text-sm cursor-pointer">
           <input v-model="form.supportsNativeWebSearch" type="checkbox" class="cursor-pointer" />
-          <span>支持原生 Web 搜索（关闭时由网关使用 Exa 模拟）</span>
+          <span>支持原生 Web 搜索</span>
         </label>
       </Field>
       <p v-if="!isEdit" class="text-xs text-ink-faint">

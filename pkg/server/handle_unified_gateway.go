@@ -8,46 +8,103 @@ import (
 	"picotera/pkg/contract"
 	"picotera/pkg/db"
 	"picotera/pkg/llmbridge"
+
+	"github.com/go-chi/chi/v5"
 )
 
-func (s *Server) handleUnifiedGenerate(srcFormat llmbridge.Format) http.HandlerFunc {
+func (s *Server) handleUnifiedGenerate(route unifiedRoute) http.HandlerFunc {
 	h := &gatewayHandler{s}
 	return func(w http.ResponseWriter, r *http.Request) {
-		newGatewayFlow(h, w, r, time.Now(), h.newUnifiedGatewayFlowConfig(srcFormat, r)).run()
+		auth := h.authenticateGatewayClient(r.Context(), r)
+		newGatewayFlow(h, w, r, time.Now(), auth, h.newUnifiedGatewayFlowConfig(route, r)).run()
 	}
 }
 
-func (h *gatewayHandler) newUnifiedGatewayFlowConfig(srcFormat llmbridge.Format, r *http.Request) gatewayFlowConfig {
+// handleUnifiedCodex serves the codex wildcard mount, registered on both
+// prefixes in codexMountPatterns. The sub-path decides everything: `/responses`
+// is an OpenAI Responses source that can bridge to any generation upstream,
+// anything else is a codex-only passthrough. Both compute their route value per
+// request rather than reading it out of unifiedRoutes, and both record an
+// endpoint_path under codexMountPath — the /backend-api alias never shows up in
+// a served request's row. The one exception is a sub-path that fails to
+// normalize: that 404 is recorded at the path the client asked for.
+func (s *Server) handleUnifiedCodex() http.HandlerFunc {
+	h := &gatewayHandler{s}
+	return func(w http.ResponseWriter, r *http.Request) {
+		started := time.Now()
+		suffix, ok := normalizeCodexSuffix("/" + chi.URLParam(r, "*"))
+		if !ok {
+			// A sub-path that normalizes to nothing is a routing miss like any
+			// other, so it goes through the shared 404 path — an authenticated
+			// client gets a recorded meta row. Its endpoint_path is whatever the
+			// client actually asked for, so unlike a served codex request a 404
+			// row can carry the /backend-api alias prefix.
+			h.serveRouteNotFound(w, r, started)
+			return
+		}
+		route := codexUnifiedRoute(suffix)
+		auth := h.authenticateGatewayClient(r.Context(), r)
+		newGatewayFlow(h, w, r, started, auth, h.newUnifiedGatewayFlowConfig(route, r)).run()
+	}
+}
+
+func (h *gatewayHandler) newUnifiedGatewayFlowConfig(route unifiedRoute, r *http.Request) gatewayFlowConfig {
 	virtualEndpoint := db.Endpoint{
-		Name:                "(unified)",
-		Path:                r.URL.Path,
+		Name: "(unified)",
+		// Carry the registered route pattern (e.g. .../{model}:generateContent)
+		// rather than r.URL.Path, so the meta row's endpoint_path keeps the
+		// {model} placeholder instead of baking in a concrete model name. The
+		// concrete model still reaches the upstream URL via PathVars below. For
+		// the codex mount route.Path is already the normalized concrete path.
+		Path:                route.Path,
 		ModelPath:           "",
 		CredentialsResolver: contract.CredentialsResolver_Unknown,
-		EndpointType:        sourceEndpointType(srcFormat),
+		EndpointType:        route.SourceType,
+	}
+	// Passthrough routes (embeddings, every codex sub-path but /responses) have
+	// no llmbridge format, so they skip beforeTransform and the request/response
+	// conversion entirely — identityPrepareAttempt forwards the bytes as built.
+	// Every other hook still runs.
+	prepareAttempt := prepareUnifiedAttempt
+	if route.passthrough() {
+		prepareAttempt = identityPrepareAttempt
+	}
+	// A codex upstream speaks whatever the codex source speaks — on /responses
+	// that is OpenAI Responses (so bridging is a no-op), on the passthrough
+	// sub-paths both sides are FormatUnknown. Either way the pairing is identity
+	// and the bytes are forwarded verbatim.
+	upstreamFormat := func(t int32) llmbridge.Format {
+		if t == contract.EndpointType_Codex {
+			return route.Format
+		}
+		return upstreamFormatFor(t)
 	}
 	return gatewayFlowConfig{
-		Kind:         gatewayRouteUnified,
-		Endpoint:     virtualEndpoint,
-		PathVars:     chiURLParams(r),
-		SourceFormat: srcFormat,
-		Credentials:  contract.CredentialsResolver_Unknown,
+		Kind:                 gatewayRouteUnified,
+		Endpoint:             virtualEndpoint,
+		RecordedEndpointPath: route.Path,
+		PathVars:             chiURLParams(r),
+		SourceFormat:         route.Format,
 		ExtractModel: func(req *http.Request, body []byte, _ map[string]string) (gatewayModelMode, error) {
-			model, err := extractUnifiedModel(srcFormat, req, body)
-			return gatewayModelMode{OriginalModel: model, HasModel: true}, err
+			return extractUnifiedModel(route, req, body)
 		},
 		SetBodyModel: func(body []byte, model string) ([]byte, error) {
-			return setUnifiedModel(srcFormat, body, model)
+			return setUnifiedModel(route, body, model)
 		},
 		ResolveCandidates: func(ctx context.Context, mode gatewayModelMode, auth gatewayAuthState) (candidateSet, error) {
-			typeSet := candidateEndpointTypes(srcFormat, mode.Streaming)
-			providers, err := h.resolveProvidersByTypes(ctx, mode.RoutedModel, typeSet, sourceEndpointType(srcFormat))
+			typeSet := candidateEndpointTypes(route, mode.Streaming)
+			providers, err := h.resolveProvidersByTypes(ctx, mode, typeSet, route.SourceType)
 			if err != nil {
 				return candidateSet{}, err
 			}
-			return buildUnifiedCandidateSet(providers, auth.APIKeyAnno, nil, virtualEndpoint)
+			return buildUnifiedCandidateSet(providers, auth.UserAnno, auth.APIKeyAnno, nil, route.UpstreamSuffix, upstreamFormat)
 		},
-		PrepareAttempt: prepareUnifiedAttempt,
+		PrepareAttempt: prepareAttempt,
 		HandleSuccess: func(input successInput) {
+			// unifiedStreamSuccess degenerates to byte forwarding when
+			// srcFormat == upFormat (always true on passthrough routes, where
+			// both are FormatUnknown), while still recording the route pattern
+			// on the meta row and the upstream's configured path on its own row.
 			input.Flow.h.unifiedStreamSuccess(input)
 		},
 	}

@@ -20,7 +20,9 @@ import {
 } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
 import ModelForm from '@/components/ModelForm.vue'
+import ModelCostRecalcPanel from '@/components/ModelCostRecalcPanel.vue'
 import ModelPricingMatchPanel from '@/components/ModelPricingMatchPanel.vue'
+import PricingExportPanel from '@/components/PricingExportPanel.vue'
 import ModelUpstreamsPanel, { type Upstream } from '@/components/ModelUpstreamsPanel.vue'
 import { useSidePanel } from '@/composables/useSidePanel'
 import {
@@ -160,14 +162,16 @@ function openPricingMatch(m: ModelView) {
   panel.open(ModelPricingMatchPanel, { model: m }, { key: `model-pricing-match:${m.name}` })
 }
 
+function openPricingExport(m: ModelView) {
+  panel.open(PricingExportPanel, { model: m }, { key: `model-pricing-export:${m.name}` })
+}
+
+function openCostRecalc(m: ModelView) {
+  panel.open(ModelCostRecalcPanel, { model: m }, { key: `model-cost-recalc:${m.name}` })
+}
+
 async function toggleDisabled(m: ModelView) {
-  const body = {
-    name: m.name,
-    disabled: !m.disabled,
-    annotations: m.annotations ?? {},
-    ...(m.pricing ? { pricing: m.pricing } : {}),
-  }
-  await upsertModelMutation.mutateAsync(body)
+  await upsertModelMutation.mutateAsync({ ...m, disabled: !m.disabled })
 }
 
 function openCreateFromOrphan(name: string) {
@@ -212,7 +216,7 @@ function confirmDelete(_event: Event, m: ModelView) {
               v-for="m in sortedModels"
               :key="m.name"
               :selected="panel.isActive(`model:${m.name}`)"
-              :class="m.disabled ? 'opacity-55' : ''"
+              :dimmed="m.disabled"
             >
               <Td>
                 <span class="font-mono font-medium">{{ m.name }}</span>
@@ -283,6 +287,24 @@ function confirmDelete(_event: Event, m: ModelView) {
                     <Icon name="cloud-dollar" :size="13" />
                   </IconButton>
                   <IconButton
+                    v-if="m.pricing?.tiers?.length"
+                    :active="panel.isActive(`model-pricing-export:${m.name}`)"
+                    title="导出价格表达式"
+                    aria-label="导出价格表达式"
+                    @click="openPricingExport(m)"
+                  >
+                    <Icon name="braces" :size="13" />
+                  </IconButton>
+                  <IconButton
+                    v-if="m.pricing?.tiers?.length"
+                    :active="panel.isActive(`model-cost-recalc:${m.name}`)"
+                    title="重算历史费用"
+                    aria-label="重算历史费用"
+                    @click="openCostRecalc(m)"
+                  >
+                    <Icon name="refresh" :size="13" />
+                  </IconButton>
+                  <IconButton
                     :active="panel.isActive(`model:${m.name}`)"
                     title="编辑"
                     aria-label="编辑"
@@ -320,7 +342,7 @@ function confirmDelete(_event: Event, m: ModelView) {
             <li
               v-for="row in orphanRows"
               :key="row.name"
-              class="group flex items-center gap-2 px-3 py-2 border-b border-line last:border-b-0"
+              class="group flex items-center gap-2 px-3 py-2 border-b border-line last:border-b-0 transition-colors hover:bg-surface-50/75"
             >
               <span class="font-mono text-sm text-ink flex-none">{{ row.name }}</span>
               <TagList class="flex-1 min-w-0">

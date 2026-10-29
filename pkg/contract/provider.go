@@ -32,8 +32,9 @@ type ProviderView struct {
 	Disabled                bool                 `json:"disabled"`
 	ProxyUrl                string               `json:"proxyUrl,omitempty"`
 	ModelsEndpointUrl       string               `json:"modelsEndpointUrl,omitempty"`
-	ModelsEndpointResolver  string               `json:"modelsEndpointResolver,omitempty" enum:"unknown,generalApiKey,bearerToken,xApiKey,searchKey,googApiKey"`
+	ModelsEndpointResolver  string               `json:"modelsEndpointResolver,omitempty" enum:"unknown,followRequest,bearerToken,xApiKey,searchKey,googApiKey"`
 	SupportsNativeWebSearch bool                 `json:"supportsNativeWebSearch"`
+	InsecureTls             bool                 `json:"insecureTls"`
 }
 
 type GetProviderResponse struct {
@@ -50,8 +51,9 @@ type CreateProviderRequest struct {
 		Disabled                bool                 `json:"disabled"`
 		ProxyUrl                string               `json:"proxyUrl,omitempty"`
 		ModelsEndpointUrl       string               `json:"modelsEndpointUrl,omitempty"`
-		ModelsEndpointResolver  string               `json:"modelsEndpointResolver,omitempty" enum:"unknown,generalApiKey,bearerToken,xApiKey,searchKey,googApiKey"`
+		ModelsEndpointResolver  string               `json:"modelsEndpointResolver,omitempty" enum:"unknown,followRequest,bearerToken,xApiKey,searchKey,googApiKey"`
 		SupportsNativeWebSearch bool                 `json:"supportsNativeWebSearch"`
+		InsecureTls             bool                 `json:"insecureTls"`
 	}
 }
 
@@ -70,8 +72,9 @@ type UpsertProviderRequest struct {
 		Disabled                bool                 `json:"disabled"`
 		ProxyUrl                string               `json:"proxyUrl,omitempty"`
 		ModelsEndpointUrl       string               `json:"modelsEndpointUrl,omitempty"`
-		ModelsEndpointResolver  string               `json:"modelsEndpointResolver,omitempty" enum:"unknown,generalApiKey,bearerToken,xApiKey,searchKey,googApiKey"`
+		ModelsEndpointResolver  string               `json:"modelsEndpointResolver,omitempty" enum:"unknown,followRequest,bearerToken,xApiKey,searchKey,googApiKey"`
 		SupportsNativeWebSearch bool                 `json:"supportsNativeWebSearch"`
+		InsecureTls             bool                 `json:"insecureTls"`
 	}
 }
 
@@ -126,6 +129,7 @@ func ToProviderView(provider *db.Provider) (*ProviderView, error) {
 		ModelsEndpointUrl:       provider.ModelsEndpointUrl,
 		ModelsEndpointResolver:  FromCredentialsResolver(provider.ModelsEndpointResolver),
 		SupportsNativeWebSearch: provider.SupportsNativeWebSearch,
+		InsecureTls:             provider.InsecureTls,
 	}, nil
 }
 
@@ -165,6 +169,7 @@ func FromProviderView(providerView *ProviderView) (*db.Provider, error) {
 		ModelsEndpointUrl:       providerView.ModelsEndpointUrl,
 		ModelsEndpointResolver:  ToCredentialsResolver(providerView.ModelsEndpointResolver),
 		SupportsNativeWebSearch: providerView.SupportsNativeWebSearch,
+		InsecureTls:             providerView.InsecureTls,
 	}, nil
 }
 

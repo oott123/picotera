@@ -9,10 +9,13 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"picotera/pkg/contract"
+	"picotera/pkg/db"
 
 	"github.com/rs/xid"
 	"github.com/tidwall/gjson"
@@ -22,10 +25,10 @@ import (
 const webSearchMaxRounds = 10
 
 // webSearchContext tracks the per-request state needed to emulate
-// Anthropic-native web search using Exa when the chosen upstream does not
-// natively support web search. It is created by the unified gateway after the
-// outbound rewrite fires and consumed by both the non-stream and SSE response
-// transformers.
+// Anthropic-native web search through a search endpoint when the chosen
+// upstream does not natively support web search. It is created by the unified
+// gateway after the outbound rewrite fires and consumed by both the non-stream
+// and SSE response transformers.
 type webSearchContext struct {
 	active              bool
 	apiKeyToken         string
@@ -34,6 +37,77 @@ type webSearchContext struct {
 	metaCreatedAt       time.Time
 	originalRequestBody []byte // pre-rewrite client body for sub-call construction
 	rewrittenBody       []byte
+	// backend is picked once per attempt and reused by every round of the
+	// server-side loop, so the tool schema and search wire format stay in step.
+	backend webSearchBackend
+}
+
+// webSearchBackend is the search endpoint web search emulation calls for one
+// request: which wire format to speak and which gateway path to send it to.
+type webSearchBackend struct {
+	endpointType int32  // contract.EndpointType_ExaSearch or EndpointType_DeepSeekSearch
+	endpointPath string // endpoint.path the sub-call is routed to
+}
+
+// webSearchHit is one search result normalized across backends.
+type webSearchHit struct {
+	URL           string
+	Title         string
+	Text          string // plaintext stored in encrypted_content and fed back to the LLM
+	PublishedDate string // raw date string; "" when the backend reported none
+}
+
+// pickWebSearchBackend chooses the search endpoint from the rows of every
+// provider bound to an exaSearch or deepseekSearch endpoint. Rows are ordered
+// the way gateway candidates are (provider priority descending, then higher
+// provider id), with endpoint path ascending as the tie-break when one provider
+// is bound to several search endpoints. Returns false when no row is usable.
+func pickWebSearchBackend(rows []db.GetProvidersByEndpointTypesRow) (webSearchBackend, bool) {
+	valid := make([]db.GetProvidersByEndpointTypesRow, 0, len(rows))
+	for _, row := range rows {
+		if row.UpstreamUrl != "" && row.ProviderCredentials != "" {
+			valid = append(valid, row)
+		}
+	}
+	if len(valid) == 0 {
+		return webSearchBackend{}, false
+	}
+	slices.SortFunc(valid, func(a, b db.GetProvidersByEndpointTypesRow) int {
+		if c := compareCandidateOrder(a.ProviderID, 0, a.ProviderPriority, b.ProviderID, 0, b.ProviderPriority); c != 0 {
+			return c
+		}
+		return strings.Compare(a.EndpointPath, b.EndpointPath)
+	})
+	return webSearchBackend{endpointType: valid[0].EndpointType, endpointPath: valid[0].EndpointPath}, true
+}
+
+// resolveWebSearchBackend picks the search endpoint for one attempt. The pick
+// is an endpoint, not a provider: the sub-call still goes through the
+// path-based gateway, which resolves and retries across that endpoint's
+// providers.
+func resolveWebSearchBackend(ctx context.Context, q *db.Queries) (webSearchBackend, error) {
+	rows, err := q.GetProvidersByEndpointTypes(ctx, []int32{contract.EndpointType_ExaSearch, contract.EndpointType_DeepSeekSearch})
+	if err != nil {
+		return webSearchBackend{}, fmt.Errorf("web search emulation: query search providers: %w", err)
+	}
+	backend, ok := pickWebSearchBackend(rows)
+	if !ok {
+		return webSearchBackend{}, errors.New("web search emulation: no exaSearch or deepseekSearch provider available")
+	}
+	return backend, nil
+}
+
+// toolJSON returns the function tool the LLM sees in place of the Anthropic
+// web search server tool.
+func (b webSearchBackend) toolJSON() json.RawMessage {
+	switch b.endpointType {
+	case contract.EndpointType_ExaSearch:
+		return exaWebSearchToolJSON
+	case contract.EndpointType_DeepSeekSearch:
+		return deepseekWebSearchToolJSON
+	default:
+		panic(fmt.Sprintf("webSearchBackend: unexpected endpoint type %d", b.endpointType))
+	}
 }
 
 // hasWebSearchTool reports whether the Anthropic Messages body declares an
@@ -55,10 +129,11 @@ func hasWebSearchTool(body []byte) bool {
 	return found
 }
 
-// webSearchFunctionToolJSON is the function-tool replacement injected into the
-// outbound `tools` array. The schema mirrors Exa's POST /search body so the
-// LLM can populate them directly; only `query` is required.
-var webSearchFunctionToolJSON = json.RawMessage(`{
+// exaWebSearchToolJSON is the function-tool replacement injected into the
+// outbound `tools` array for the Exa backend. The schema mirrors Exa's
+// POST /search body so the LLM can populate them directly; only `query` is
+// required.
+var exaWebSearchToolJSON = json.RawMessage(`{
   "name": "web_search",
   "description": "Search the web for current information. Returns relevant snippets from web pages.",
   "input_schema": {
@@ -76,10 +151,29 @@ var webSearchFunctionToolJSON = json.RawMessage(`{
   }
 }`)
 
+// deepseekWebSearchToolJSON is the DeepSeek backend's counterpart of
+// exaWebSearchToolJSON, mirroring DeepSeek's POST /v1/tools/search body. Value
+// ranges live in the descriptions rather than in maxLength / minimum, matching
+// the Exa schema and staying clear of keywords llmbridge may not carry over to
+// other formats.
+var deepseekWebSearchToolJSON = json.RawMessage(`{
+  "name": "web_search",
+  "description": "Search the web for current information. Returns relevant summaries from web pages.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "query": {"type": "string", "description": "The search query, at most 128 characters. Supports operators: site:example.com (join several with OR), -site:example.com, -keyword, -\"phrase\", \"exact phrase\", lang:zh,en, after:2025-01-01, before:2025"},
+      "count": {"type": "integer", "description": "Number of results to return (default 10, max 50)"},
+      "ori_question": {"type": "string", "description": "The user's original question that prompted this search, at most 128 characters; helps the search engine understand intent"}
+    },
+    "required": ["query"]
+  }
+}`)
+
 // rewriteWebSearchTools replaces every Anthropic web-search server tool entry
-// in the `tools` array with a function-tool equivalent that exposes Exa's
-// parameters as the input schema. Other tools pass through unchanged.
-func rewriteWebSearchTools(body []byte) ([]byte, error) {
+// in the `tools` array with the backend's function-tool equivalent. Other
+// tools pass through unchanged.
+func rewriteWebSearchTools(body []byte, backend webSearchBackend) ([]byte, error) {
 	tools := gjson.GetBytes(body, "tools")
 	if !tools.IsArray() {
 		return body, nil
@@ -88,7 +182,7 @@ func rewriteWebSearchTools(body []byte) ([]byte, error) {
 	tools.ForEach(func(_, val gjson.Result) bool {
 		t := val.Get("type").Str
 		if t == "web_search_20250305" || t == "web_search_20260209" {
-			out = append(out, webSearchFunctionToolJSON)
+			out = append(out, backend.toolJSON())
 		} else {
 			out = append(out, json.RawMessage(val.Raw))
 		}
@@ -108,7 +202,7 @@ func rewriteWebSearchTools(body []byte) ([]byte, error) {
 //   - server_tool_use(web_search)   → tool_use (ID prefix srvtoolu_ → toolu_)
 //   - web_search_tool_result       → split into a new user message carrying a
 //     single tool_result block; the encoded text is the
-//     human-readable Exa highlight summary.
+//     human-readable search result summary.
 //   - text blocks that follow a web_search_tool_result get split into a new
 //     assistant message; any `web_search_result_location` citations are
 //     stripped because the upstream does not recognize them.
@@ -285,7 +379,7 @@ func mapWebSearchToolUseID(id string) string {
 
 // renderWebSearchResultsAsText produces the prose injected as tool_result
 // content. Plain text format keeps the LLM-facing context compact while still
-// surfacing the URL + title + highlight body for each Exa hit.
+// surfacing the URL + title + result body for each search hit.
 func renderWebSearchResultsAsText(content gjson.Result) string {
 	if !content.IsArray() {
 		return "No results."
@@ -386,37 +480,134 @@ type ExaResult struct {
 	PublishedDate string   `json:"publishedDate"`
 }
 
-// callExa routes a search through the path-based gateway so the request goes
-// through full provider resolution, JS hooks, retry, and logging. The Exa
-// upstream is reached by `httptest.NewRequest` against the first endpoint with
-// endpoint_type == exaSearch. Errors here surface to the caller and are
-// rendered as a web_search_tool_result_error block.
-func (h *gatewayHandler) callExa(ctx context.Context, toolInput json.RawMessage, wsCtx *webSearchContext) (*ExaSearchResponse, error) {
-	if wsCtx == nil || !wsCtx.active {
-		return nil, errors.New("callExa: web search context inactive")
-	}
-	ep, err := h.queries.GetFirstEndpointByType(ctx, contract.EndpointType_ExaSearch)
-	if err != nil {
-		return nil, fmt.Errorf("callExa: no exaSearch endpoint configured: %w", err)
-	}
+// DeepSeekSearchRequest mirrors the DeepSeek POST /v1/tools/search fields the
+// LLM may populate. need_content and localization are never sent.
+type DeepSeekSearchRequest struct {
+	Query       string `json:"query"`
+	Count       int    `json:"count,omitempty"`
+	OriQuestion string `json:"ori_question,omitempty"`
+}
 
+// DeepSeekSearchResponse only decodes the fields the gateway uses to build the
+// Anthropic web_search_tool_result block; everything else is ignored.
+type DeepSeekSearchResponse struct {
+	Results []DeepSeekResult `json:"results"`
+}
+
+// DeepSeekResult.Date is null when DeepSeek knows no date; that decodes to "".
+type DeepSeekResult struct {
+	URL     string `json:"url"`
+	Title   string `json:"title"`
+	Summary string `json:"summary"`
+	Date    string `json:"date"`
+}
+
+// deepseekSearchMaxQueryRunes is DeepSeek's query length limit, counted in
+// Unicode characters.
+const deepseekSearchMaxQueryRunes = 128
+
+// webSearchToolError carries an Anthropic web_search_tool_result_error code
+// for failures that have a more specific code than "unavailable".
+type webSearchToolError struct{ code string }
+
+func (e *webSearchToolError) Error() string {
+	return "web search: " + e.code
+}
+
+// webSearchErrorCode maps a search failure to the error_code of the
+// web_search_tool_result_error block; anything without a specific code is
+// "unavailable".
+func webSearchErrorCode(err error) string {
+	var toolErr *webSearchToolError
+	if errors.As(err, &toolErr) {
+		return toolErr.code
+	}
+	return "unavailable"
+}
+
+func buildExaSearchBody(toolInput json.RawMessage) ([]byte, error) {
 	var exaReq ExaSearchRequest
 	if len(toolInput) > 0 {
 		if err := json.Unmarshal(toolInput, &exaReq); err != nil {
-			return nil, fmt.Errorf("callExa: decode tool input: %w", err)
+			return nil, fmt.Errorf("decode tool input: %w", err)
 		}
 	}
 	if exaReq.Query == "" {
-		return nil, errors.New("callExa: query is empty")
+		return nil, errors.New("query is empty")
 	}
 	exaReq.Contents = ExaContentsReq{Highlights: true}
+	return json.Marshal(exaReq)
+}
 
-	bodyBytes, err := json.Marshal(exaReq)
-	if err != nil {
-		return nil, fmt.Errorf("callExa: marshal request: %w", err)
+func decodeExaSearchHits(body []byte) ([]webSearchHit, error) {
+	var resp ExaSearchResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, err
+	}
+	hits := make([]webSearchHit, 0, len(resp.Results))
+	for _, r := range resp.Results {
+		hits = append(hits, webSearchHit{URL: r.URL, Title: r.Title, Text: strings.Join(r.Highlights, "\n\n"), PublishedDate: r.PublishedDate})
+	}
+	return hits, nil
+}
+
+func buildDeepSeekSearchBody(toolInput json.RawMessage) ([]byte, error) {
+	var dsReq DeepSeekSearchRequest
+	if len(toolInput) > 0 {
+		if err := json.Unmarshal(toolInput, &dsReq); err != nil {
+			return nil, fmt.Errorf("decode tool input: %w", err)
+		}
+	}
+	if dsReq.Query == "" {
+		return nil, errors.New("query is empty")
+	}
+	if utf8.RuneCountInString(dsReq.Query) > deepseekSearchMaxQueryRunes {
+		return nil, &webSearchToolError{code: "query_too_long"}
+	}
+	return json.Marshal(dsReq)
+}
+
+func decodeDeepSeekSearchHits(body []byte) ([]webSearchHit, error) {
+	var resp DeepSeekSearchResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, err
+	}
+	hits := make([]webSearchHit, 0, len(resp.Results))
+	for _, r := range resp.Results {
+		hits = append(hits, webSearchHit{URL: r.URL, Title: r.Title, Text: r.Summary, PublishedDate: r.Date})
+	}
+	return hits, nil
+}
+
+// callWebSearch routes a search through the path-based gateway so the request
+// goes through full provider resolution, JS hooks, retry, and logging. The
+// search upstream is reached by `httptest.NewRequest` against the endpoint
+// path wsCtx.backend picked, and the backend decides the request body and
+// response decoding. Errors here surface to the caller and are rendered as a
+// web_search_tool_result_error block.
+func (h *gatewayHandler) callWebSearch(ctx context.Context, toolInput json.RawMessage, wsCtx *webSearchContext) ([]webSearchHit, error) {
+	if wsCtx == nil || !wsCtx.active {
+		return nil, errors.New("callWebSearch: web search context inactive")
+	}
+	var (
+		buildBody  func(json.RawMessage) ([]byte, error)
+		decodeHits func([]byte) ([]webSearchHit, error)
+	)
+	switch wsCtx.backend.endpointType {
+	case contract.EndpointType_ExaSearch:
+		buildBody, decodeHits = buildExaSearchBody, decodeExaSearchHits
+	case contract.EndpointType_DeepSeekSearch:
+		buildBody, decodeHits = buildDeepSeekSearchBody, decodeDeepSeekSearchHits
+	default:
+		return nil, fmt.Errorf("callWebSearch: unexpected endpoint type %d", wsCtx.backend.endpointType)
 	}
 
-	subReq := httptest.NewRequestWithContext(ctx, http.MethodPost, ep.Path, bytes.NewReader(bodyBytes))
+	bodyBytes, err := buildBody(toolInput)
+	if err != nil {
+		return nil, fmt.Errorf("callWebSearch: %w", err)
+	}
+
+	subReq := httptest.NewRequestWithContext(ctx, http.MethodPost, wsCtx.backend.endpointPath, bytes.NewReader(bodyBytes))
 	subReq.Header.Set("Content-Type", "application/json")
 	if wsCtx.apiKeyToken != "" {
 		subReq.Header.Set("Authorization", "Bearer "+wsCtx.apiKeyToken)
@@ -432,33 +623,33 @@ func (h *gatewayHandler) callExa(ctx context.Context, toolInput json.RawMessage,
 
 	if resp.StatusCode != http.StatusOK {
 		respBytes, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("callExa: upstream status %d: %s", resp.StatusCode, string(respBytes))
+		return nil, fmt.Errorf("callWebSearch: upstream status %d: %s", resp.StatusCode, string(respBytes))
 	}
 	respBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("callExa: read response: %w", err)
+		return nil, fmt.Errorf("callWebSearch: read response: %w", err)
 	}
-	var out ExaSearchResponse
-	if err := json.Unmarshal(respBytes, &out); err != nil {
-		return nil, fmt.Errorf("callExa: decode response: %w", err)
+	hits, err := decodeHits(respBytes)
+	if err != nil {
+		return nil, fmt.Errorf("callWebSearch: decode response: %w", err)
 	}
-	return &out, nil
+	return hits, nil
 }
 
 // buildWebSearchToolResult constructs an Anthropic web_search_tool_result
-// block from an Exa response. Each Exa hit maps to one web_search_result with
-// highlights joined and stored plaintext in encrypted_content.
-func buildWebSearchToolResult(toolUseID string, exaResp *ExaSearchResponse) json.RawMessage {
-	results := make([]map[string]any, 0, len(exaResp.Results))
-	for _, r := range exaResp.Results {
+// block from normalized search hits. Each hit maps to one web_search_result
+// with its text stored plaintext in encrypted_content.
+func buildWebSearchToolResult(toolUseID string, hits []webSearchHit) json.RawMessage {
+	results := make([]map[string]any, 0, len(hits))
+	for _, hit := range hits {
 		entry := map[string]any{
 			"type":              "web_search_result",
-			"url":               r.URL,
-			"title":             r.Title,
-			"encrypted_content": strings.Join(r.Highlights, "\n\n"),
+			"url":               hit.URL,
+			"title":             hit.Title,
+			"encrypted_content": hit.Text,
 		}
-		if r.PublishedDate != "" {
-			if pageAge := formatPageAge(r.PublishedDate); pageAge != "" {
+		if hit.PublishedDate != "" {
+			if pageAge := formatPageAge(hit.PublishedDate); pageAge != "" {
 				entry["page_age"] = pageAge
 			}
 		}
@@ -486,9 +677,9 @@ func buildWebSearchToolResultError(toolUseID, errorCode string) json.RawMessage 
 	return out
 }
 
-// formatPageAge tries common Exa date formats and renders the date as
-// "January 2, 2006". Unrecognized inputs return empty string so the caller
-// drops the field.
+// formatPageAge tries the date formats search backends report and renders the
+// date as "January 2, 2006". Unrecognized inputs return empty string so the
+// caller drops the field.
 func formatPageAge(s string) string {
 	for _, layout := range []string{
 		time.RFC3339,
@@ -520,7 +711,7 @@ func generateToolUseID() string {
 // transformWebSearchResponse rewrites a non-stream Anthropic Messages JSON
 // response in-place: every tool_use(web_search) is converted to
 // server_tool_use and followed by a web_search_tool_result block populated
-// via Exa. stop_reason is downgraded to "pause_turn" only when every tool_use
+// via the search backend. stop_reason is downgraded to "pause_turn" only when every tool_use
 // in the response is a web_search call.
 func (h *gatewayHandler) transformWebSearchResponse(ctx context.Context, body []byte, wsCtx *webSearchContext) ([]byte, error) {
 	content := gjson.GetBytes(body, "content")
@@ -555,12 +746,12 @@ func (h *gatewayHandler) transformWebSearchResponse(ctx context.Context, body []
 		out = append(out, serverToolUse)
 
 		toolInput := block.Get("input").Raw
-		exaResp, err := h.callExa(ctx, json.RawMessage(toolInput), wsCtx)
+		hits, err := h.callWebSearch(ctx, json.RawMessage(toolInput), wsCtx)
 		if err != nil {
-			out = append(out, buildWebSearchToolResultError(serverToolUseID, "unavailable"))
+			out = append(out, buildWebSearchToolResultError(serverToolUseID, webSearchErrorCode(err)))
 			return true
 		}
-		out = append(out, buildWebSearchToolResult(serverToolUseID, exaResp))
+		out = append(out, buildWebSearchToolResult(serverToolUseID, hits))
 		return true
 	})
 	if loopErr != nil {
@@ -589,7 +780,7 @@ func (h *gatewayHandler) transformWebSearchResponse(ctx context.Context, body []
 
 // buildServerToolUseFromToolUse converts an Anthropic tool_use block into the
 // matching server_tool_use block. The whole input object is preserved so the
-// client can replay the same Exa parameters in a follow-up request.
+// client can replay the same search parameters in a follow-up request.
 func buildServerToolUseFromToolUse(block gjson.Result, serverToolUseID string) (json.RawMessage, error) {
 	fields := make(map[string]json.RawMessage)
 	block.ForEach(func(key, val gjson.Result) bool {

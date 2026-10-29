@@ -12,7 +12,7 @@ import (
 )
 
 // buildWebSearchSubBody constructs the body for the next self-call round to
-// /api/picotera/v1/messages. originalBody still carries the original
+// /api/unified/v1/messages. originalBody still carries the original
 // web_search_2025xxxx / web_search_20260209 tools and any server_tool_use /
 // web_search_tool_result history from the client. accumulatedContent is the
 // Anthropic-native content blocks produced so far (including server_tool_use +
@@ -20,11 +20,11 @@ import (
 //
 // The returned body has:
 //   - messages: original messages + an assistant turn with accumulatedContent
-//   - tools: web_search server tools replaced with function-tool form
+//   - tools: web_search server tools replaced with backend's function-tool form
 //   - history: server_tool_use/web_search_tool_result converted to tool_use/tool_result
 //
 // The inner unified handler's hasWebSearchTool check returns false.
-func buildWebSearchSubBody(originalBody []byte, accumulatedContent []json.RawMessage) ([]byte, error) {
+func buildWebSearchSubBody(originalBody []byte, accumulatedContent []json.RawMessage, backend webSearchBackend) ([]byte, error) {
 	body := append([]byte(nil), originalBody...)
 
 	msgs := gjson.GetBytes(body, "messages")
@@ -55,7 +55,7 @@ func buildWebSearchSubBody(originalBody []byte, accumulatedContent []json.RawMes
 		return nil, err
 	}
 
-	body, err = rewriteWebSearchTools(body)
+	body, err = rewriteWebSearchTools(body, backend)
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +154,7 @@ func mergeUsageBytes(outer, sub []byte) []byte {
 }
 
 // loopWebSearchNonStream runs the server-side web search loop for non-streaming
-// responses. Each iteration self-calls /api/picotera/v1/messages and merges the
+// responses. Each iteration self-calls /api/unified/v1/messages and merges the
 // result into accumulated.
 func (h *gatewayHandler) loopWebSearchNonStream(ctx context.Context, accumulated []byte, wsCtx *webSearchContext, fwdHeaders http.Header) []byte {
 	round := 1
@@ -168,12 +168,12 @@ func (h *gatewayHandler) loopWebSearchNonStream(ctx context.Context, accumulated
 		}
 
 		contentArr := gjsonContentToRawSlice(accumulated)
-		subBody, err := buildWebSearchSubBody(wsCtx.originalRequestBody, contentArr)
+		subBody, err := buildWebSearchSubBody(wsCtx.originalRequestBody, contentArr, wsCtx.backend)
 		if err != nil {
 			return accumulated
 		}
 
-		subReq := httptest.NewRequestWithContext(ctx, "POST", "/api/picotera/v1/messages", bytes.NewReader(subBody))
+		subReq := httptest.NewRequestWithContext(ctx, "POST", "/api/unified/v1/messages", bytes.NewReader(subBody))
 		for k, vs := range fwdHeaders {
 			for _, v := range vs {
 				subReq.Header.Add(k, v)

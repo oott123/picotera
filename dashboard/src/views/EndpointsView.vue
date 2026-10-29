@@ -72,15 +72,21 @@ function confirmDeleteEndpoint(_event: Event, path: string) {
             <Th>名称</Th>
             <Th>类型</Th>
             <Th>模型字段</Th>
-            <Th>凭证解析</Th>
+            <Th>凭证发送</Th>
             <Th actions />
           </tr>
         </thead>
         <tbody>
           <Tr v-for="e in endpoints" :key="e.path" :selected="panel.isActive(`endpoint:${e.path}`)">
-            <Td
-              ><span class="font-mono font-medium">{{ e.path }}</span></Td
-            >
+            <Td>
+              <span class="font-mono font-medium">{{ e.path }}</span>
+              <span
+                v-if="e.prefixMatch"
+                class="font-mono text-ink-faint"
+                title="前缀匹配：前缀之后的路径会原样接到上游 URL 后面"
+                >/*</span
+              >
+            </Td>
             <Td>{{ e.name }}</Td>
             <Td>
               <Tag :variant="endpointTypeVariant(e.endpointType)">{{
@@ -91,7 +97,7 @@ function confirmDeleteEndpoint(_event: Event, path: string) {
               ><span class="font-mono text-ink-faint">{{ e.modelPath || '—' }}</span></Td
             >
             <Td>
-              <Tag :variant="e.credentialsResolver === 'generalApiKey' ? 'ok' : 'muted'">
+              <Tag :variant="e.credentialsResolver === 'followRequest' ? 'ok' : 'muted'">
                 {{ e.credentialsResolver }}
               </Tag>
             </Td>

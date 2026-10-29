@@ -1,7 +1,9 @@
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
+import { THEME_VALUES, isDarkTheme } from './themes'
+import type { Theme } from './themes'
 
-export type Theme = 'light' | 'solarized-light' | 'solarized-dark' | 'dark'
+export type { Theme }
 export type PanelMode = 'auto' | 'right' | 'modal'
 export type FontSize = 'tall' | 'grande' | 'venti' | 'trenta'
 export type OverviewCurrencyOverride = 'original' | string | null
@@ -14,9 +16,10 @@ const DEFAULTS = {
   fontSize: 'tall' as FontSize,
   displayCurrency: null as string | null,
   overviewCurrencyOverride: null as OverviewCurrencyOverride,
+  /** Soft wrap in the JSON viewer's tree. */
+  jsonWrap: false,
 }
 
-const THEME_VALUES: Theme[] = ['light', 'solarized-light', 'solarized-dark', 'dark']
 const PANEL_MODE_VALUES: PanelMode[] = ['auto', 'right', 'modal']
 const FONT_SIZE_VALUES: FontSize[] = ['tall', 'grande', 'venti', 'trenta']
 
@@ -51,6 +54,7 @@ function load() {
         parsed.overviewCurrencyOverride.length > 0
           ? parsed.overviewCurrencyOverride
           : DEFAULTS.overviewCurrencyOverride,
+      jsonWrap: typeof parsed.jsonWrap === 'boolean' ? parsed.jsonWrap : DEFAULTS.jsonWrap,
     }
   } catch {
     return { ...DEFAULTS }
@@ -64,12 +68,13 @@ export const usePreferencesStore = defineStore('preferences', () => {
   const fontSize = ref<FontSize>(initial.fontSize)
   const displayCurrency = ref<string | null>(initial.displayCurrency)
   const overviewCurrencyOverride = ref<OverviewCurrencyOverride>(initial.overviewCurrencyOverride)
+  const jsonWrap = ref<boolean>(initial.jsonWrap)
 
   function apply() {
     const root = document.documentElement
     root.dataset.theme = theme.value
     root.dataset.panelMode = panelMode.value
-    root.dataset.dark = String(theme.value === 'dark' || theme.value === 'solarized-dark')
+    root.dataset.dark = String(isDarkTheme(theme.value))
     root.style.fontSize = `${FONT_SIZE_PX[fontSize.value]}px`
   }
 
@@ -83,6 +88,7 @@ export const usePreferencesStore = defineStore('preferences', () => {
           fontSize: fontSize.value,
           displayCurrency: displayCurrency.value,
           overviewCurrencyOverride: overviewCurrencyOverride.value,
+          jsonWrap: jsonWrap.value,
         }),
       )
     } catch {
@@ -90,7 +96,7 @@ export const usePreferencesStore = defineStore('preferences', () => {
     }
   }
 
-  watch([theme, panelMode, fontSize, displayCurrency, overviewCurrencyOverride], () => {
+  watch([theme, panelMode, fontSize, displayCurrency, overviewCurrencyOverride, jsonWrap], () => {
     apply()
     persist()
   })
@@ -99,5 +105,13 @@ export const usePreferencesStore = defineStore('preferences', () => {
     apply()
   }
 
-  return { theme, panelMode, fontSize, displayCurrency, overviewCurrencyOverride, init }
+  return {
+    theme,
+    panelMode,
+    fontSize,
+    displayCurrency,
+    overviewCurrencyOverride,
+    jsonWrap,
+    init,
+  }
 })

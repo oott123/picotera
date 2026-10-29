@@ -1,0 +1,79 @@
+{
+  "planPath": "docs/superpowers/plans/2026-06-06-dashboard-themes.md",
+  "specPath": "docs/superpowers/specs/2026-06-06-dashboard-themes-design.md",
+  "tasks": [
+    {
+      "id": 10,
+      "subject": "Task 1: Prose follows theme tokens (dark-mode bug fix)",
+      "status": "completed",
+      "description": "Map @tailwindcss/typography --tw-prose-* vars to semantic --color-* tokens in dashboard/src/index.css so rendered Markdown (conversation/thinking/response/tool output) follows the active theme. Fixes dark-on-dark text. See plan §Task 1.\n\n```json:metadata\n{\"files\": [\"dashboard/src/index.css\"], \"verifyCommand\": \"pnpm --dir dashboard type-check && pnpm --dir dashboard lint\", \"acceptanceCriteria\": [\".prose rule maps all --tw-prose-* vars to var(--color-*) tokens\", \"no component markup changes\", \"type-check and lint pass\"]}\n```"
+    },
+    {
+      "id": 11,
+      "subject": "Task 2: Centralize theme registry and wire consumers",
+      "status": "completed",
+      "description": "Create dashboard/src/stores/themes.ts (THEMES registry for 4 existing themes + derived Theme/THEME_VALUES/isDarkTheme). Rewire preferences.ts (re-export Theme, data-dark via isDarkTheme), PreferencesMenu.vue (light/dark groups, scroll), CodeEditor.vue (isDark reads data-dark). See plan §Task 2.\n\n```json:metadata\n{\"files\": [\"dashboard/src/stores/themes.ts\", \"dashboard/src/stores/preferences.ts\", \"dashboard/src/components/PreferencesMenu.vue\", \"dashboard/src/ui/CodeEditor.vue\"], \"verifyCommand\": \"pnpm --dir dashboard type-check && pnpm --dir dashboard lint\", \"acceptanceCriteria\": [\"themes.ts exports THEMES + Theme + THEME_VALUES + isDarkTheme\", \"preferences.ts re-exports Theme and uses isDarkTheme for data-dark\", \"PreferencesMenu renders light/dark groups in scroll container\", \"CodeEditor isDark reads data-dark attribute\", \"all 4 existing themes still apply\", \"type-check + lint pass\"]}\n```"
+    },
+    {
+      "id": 12,
+      "subject": "Task 3: Visual Studio themes (Light + Dark)",
+      "status": "completed",
+      "blockedBy": [
+        11
+      ],
+      "description": "Append vs-light + vs-dark :root[data-theme] blocks to index.css and two registry entries to themes.ts. See plan §Task 3.\n\n```json:metadata\n{\"files\": [\"dashboard/src/index.css\", \"dashboard/src/stores/themes.ts\"], \"verifyCommand\": \"pnpm --dir dashboard type-check && pnpm --dir dashboard lint\", \"acceptanceCriteria\": [\"vs-light + vs-dark CSS blocks added with full token set\", \"two registry entries added in correct group positions\", \"type-check + lint pass\"]}\n```"
+    },
+    {
+      "id": 13,
+      "subject": "Task 4: GitHub themes (Light + Dark)",
+      "status": "completed",
+      "blockedBy": [
+        12
+      ],
+      "description": "Append github-light + github-dark blocks to index.css and two registry entries to themes.ts. See plan §Task 4.\n\n```json:metadata\n{\"files\": [\"dashboard/src/index.css\", \"dashboard/src/stores/themes.ts\"], \"verifyCommand\": \"pnpm --dir dashboard type-check && pnpm --dir dashboard lint\", \"acceptanceCriteria\": [\"github-light + github-dark CSS blocks added with full token set\", \"two registry entries added in correct positions\", \"type-check + lint pass\"]}\n```"
+    },
+    {
+      "id": 14,
+      "subject": "Task 5: Dracula + Nord",
+      "status": "completed",
+      "blockedBy": [
+        13
+      ],
+      "description": "Append dracula + nord blocks to index.css and two dark registry entries (after github-dark) to themes.ts. See plan §Task 5.\n\n```json:metadata\n{\"files\": [\"dashboard/src/index.css\", \"dashboard/src/stores/themes.ts\"], \"verifyCommand\": \"pnpm --dir dashboard type-check && pnpm --dir dashboard lint\", \"acceptanceCriteria\": [\"dracula + nord CSS blocks added with full token set\", \"two dark registry entries added after github-dark\", \"type-check + lint pass\"]}\n```"
+    },
+    {
+      "id": 15,
+      "subject": "Task 6: Tokyo Night + One Dark + Monokai",
+      "status": "completed",
+      "blockedBy": [
+        14
+      ],
+      "description": "Append tokyo-night + one-dark + monokai blocks to index.css and three dark registry entries (after nord) to themes.ts. See plan §Task 6.\n\n```json:metadata\n{\"files\": [\"dashboard/src/index.css\", \"dashboard/src/stores/themes.ts\"], \"verifyCommand\": \"pnpm --dir dashboard type-check && pnpm --dir dashboard lint\", \"acceptanceCriteria\": [\"tokyo-night + one-dark + monokai CSS blocks added with full token set\", \"three dark registry entries added after nord\", \"type-check + lint pass\"]}\n```"
+    },
+    {
+      "id": 16,
+      "subject": "Task 7: Catppuccin (Latte+Mocha) + Gruvbox (Light+Dark)",
+      "status": "completed",
+      "blockedBy": [
+        15
+      ],
+      "description": "Append catppuccin-latte/mocha + gruvbox-light/dark blocks to index.css and four registry entries (lights after github-light, darks after monokai) to themes.ts. See plan §Task 7.\n\n```json:metadata\n{\"files\": [\"dashboard/src/index.css\", \"dashboard/src/stores/themes.ts\"], \"verifyCommand\": \"pnpm --dir dashboard type-check && pnpm --dir dashboard lint\", \"acceptanceCriteria\": [\"catppuccin-latte/mocha + gruvbox-light/dark CSS blocks added with full token set\", \"four registry entries in correct light/dark group positions\", \"type-check + lint pass\"]}\n```"
+    },
+    {
+      "id": 17,
+      "subject": "Task 8: Live browser verification across all 17 themes",
+      "status": "completed",
+      "blockedBy": [
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "description": "USER-ORDERED GATE — NON-SKIPPABLE. Bring up full stack (infra + backend from MAIN repo :9898 + dashboard dev from worktree :5173), seed a rich request row (type=0,status=2) with Markdown + tool call, drive a visible WSLg browser through request-detail, cycle all 17 themes confirming conversation/thinking/response/inline-code/code-block/tool-output legibility, screenshot the 11 dark themes, tune off OKLCH, and run pnpm --dir dashboard build. See plan §Task 8.\n\n```json:metadata\n{\"files\": [\"dashboard/src/index.css\", \"dashboard/src/components/JsonArtifactViewer.vue\"], \"verifyCommand\": \"pnpm --dir dashboard build\", \"acceptanceCriteria\": [\"full stack up (infra + backend :9898 + dashboard :5173)\", \"seeded request row with rich Markdown + tool call renders in request-detail\", \"visible browser cycles all 17 themes; conversation/thinking/response/inline-code/code-block/tool-output legible in each\", \"screenshots captured for all 11 dark themes\", \"pnpm --dir dashboard build exits 0\"], \"userGate\": true, \"tags\": [\"user-gate\"], \"requiresUserSpecification\": false, \"gateScope\": \"all 17 themes\"}\n```"
+    }
+  ],
+  "lastUpdated": "2026-06-06T06:30:00Z"
+}

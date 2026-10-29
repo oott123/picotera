@@ -4,7 +4,14 @@ import (
 	"encoding/json"
 	"testing"
 
+	"picotera/pkg/contract"
+
 	"github.com/tidwall/gjson"
+)
+
+var (
+	exaTestBackend      = webSearchBackend{endpointType: contract.EndpointType_ExaSearch, endpointPath: "/exa/search"}
+	deepseekTestBackend = webSearchBackend{endpointType: contract.EndpointType_DeepSeekSearch, endpointPath: "/deepseek/v1/tools/search"}
 )
 
 func TestBuildWebSearchSubBody(t *testing.T) {
@@ -26,7 +33,7 @@ func TestBuildWebSearchSubBody(t *testing.T) {
 		json.RawMessage(`{"type":"web_search_tool_result","tool_use_id":"srvtoolu_abc","content":[{"type":"web_search_result","url":"https://example.com","title":"Example"}]}`),
 	}
 
-	result, err := buildWebSearchSubBody(original, accumulated)
+	result, err := buildWebSearchSubBody(original, accumulated, exaTestBackend)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,19 +92,43 @@ func TestBuildWebSearchSubBody_DoesNotMutateInput(t *testing.T) {
 	snapshot := append([]byte(nil), original...)
 
 	content := []json.RawMessage{json.RawMessage(`{"type":"text","text":"ok"}`)}
-	_, err := buildWebSearchSubBody(original, content)
+	_, err := buildWebSearchSubBody(original, content, exaTestBackend)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Call again to double-check.
-	_, err = buildWebSearchSubBody(original, content)
+	_, err = buildWebSearchSubBody(original, content, exaTestBackend)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	if string(original) != string(snapshot) {
 		t.Error("originalBody was mutated")
+	}
+}
+
+func TestBuildWebSearchSubBody_DeepSeekBackend(t *testing.T) {
+	original := []byte(`{"model":"m","tools":[{"type":"web_search_20260209"}],"messages":[{"role":"user","content":"hi"}]}`)
+	content := []json.RawMessage{json.RawMessage(`{"type":"text","text":"ok"}`)}
+
+	result, err := buildWebSearchSubBody(original, content, deepseekTestBackend)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tool := gjson.GetBytes(result, "tools.0")
+	if tool.Get("name").Str != "web_search" {
+		t.Fatalf("tools[0].name = %q, want web_search", tool.Get("name").Str)
+	}
+	props := tool.Get("input_schema.properties")
+	for _, key := range []string{"query", "count", "ori_question"} {
+		if !props.Get(key).Exists() {
+			t.Errorf("input_schema.properties missing %q", key)
+		}
+	}
+	if props.Get("numResults").Exists() {
+		t.Error("deepseek schema should not carry Exa's numResults")
 	}
 }
 

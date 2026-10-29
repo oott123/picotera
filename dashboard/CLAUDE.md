@@ -16,6 +16,7 @@ Vue 3 (beta, pinned in `pnpm-workspace.yaml` overrides) + Tailwind CSS v4 + Pini
 - `src/views/` — route-level pages. One view per management resource, plus overview and request history.
 - `src/components/` — feature-level components: forms, editors, side panels, chart wrappers, artifact viewers, chrome.
 - `src/composables/` — reusable composition functions.
+- `src/lib/` — plain TypeScript modules with no Vue dependency. `toolFormat.ts` renders tool calls / tool results as one-line Python-style literals (`Bash(command="ls")`, `Bash → "…"`, each value capped at 128 chars) and is meant to be reused wherever a tool call needs a summary; `testBody.ts` / `testStream.ts` back the gateway test view.
 - `src/api/` — `openapi-fetch` client (`plugin.ts`), shared `QueryClient` (`queryClient.ts`), typed `queryKeys` registry (`queryKeys.ts`), async fetcher wrappers + invalidation helpers (`client.ts`), and re-exported schema types (`index.ts`). Generated types live at `src/openapi-types.d.ts` (output of `pnpm --dir dashboard generate-openapi`).
 - `src/ui/` — **local UI primitive library. No third-party UI kit. No variant-authoring libs (cva/tv).** Style with Tailwind classes directly inside each component.
 
@@ -38,8 +39,8 @@ When building new screens, compose these primitives — don't reach for a third-
 - `useConfirm` — global confirm dialog (all destructive actions route through this).
 - `useSidePanel` — global slide-over stack with stable `key` for row selection tracking.
 - `useArtifact` — loads and decompresses request/response artifacts from MinIO.
-- `useSSEParser` — parses SSE event streams, extracts content from multiple LLM providers (OpenAI Chat/Responses, Anthropic, Gemini), renders markdown. Supports timing injection per event.
-- `useRequestDetailUiState` — manages request detail view tab state (overview/request/response/logs), body view mode, header/thinking visibility toggles.
+- `useSSEParser` — parses SSE event streams, extracts content from multiple LLM providers (OpenAI Chat/Responses, Anthropic, Gemini), renders markdown via `@tanstack/markdown` (raw HTML is escaped and shown as literal text; output is no longer passed through DOMPurify). Supports timing injection per event.
+- `useRequestDetailUiState` — manages request detail view tab state (overview/request/response/conversation/logs/usage), body view mode, header/thinking visibility toggles.
 - `useCurrencyContext` — provides inject/provide pattern for currency conversion with exchange rate lookups.
 - `useExchangeRates` — fetches exchange rate data.
 - `useProjectsMap` / `useProvidersMap` — reactive lookup maps for projects and providers by ID.
@@ -58,17 +59,20 @@ When building new screens, compose these primitives — don't reach for a third-
 
 When you add a new route, register the route name in `src/App.vue`'s `pageMeta` map (`title` + `hint`). The shell reads it to render header chrome — without an entry the page renders untitled. The map key must match the route's `name` exactly (defined in `src/router/index.ts`). See `src/views/CLAUDE.md`.
 
-Routes: `/overview` (default), `/providers`, `/models`, `/endpoints`, `/requests`, `/requests/:requestId`, `/projects`, `/scripts`, `/simulate`, `/kv`, `/api-keys`, `/rates`, `/traces`.
+Routes: `/overview` (default), `/providers`, `/models`, `/endpoints`, `/requests`, `/requests/:requestId`, `/projects`, `/scripts`, `/kv`, `/api-keys`, `/rates`, `/traces`.
 
 ## Charts
 
-Chart components live in `src/components/charts/` and use `vue-echarts` (Apache ECharts v6 with modular imports via `echarts.ts`):
+Chart components live in `src/components/charts/` and use `vue-echarts` (Apache ECharts v6 with modular imports via `echarts.ts`).
+
+In `OverviewLineChart`, `OverviewAreaStack` and `OverviewBoxplotSeries`, a (group, bucket) the backend returned no point for is empty data and is filled with ECharts' `'-'`, so lines, areas and median lines break there; a returned point is drawn even when it is 0. Ratio metrics (cache hit rate, success rates, empty-reply rate, finish-reason share) omit the point when the denominator is 0, so they break on idle buckets; count metrics (tokens, cost, requests, traces) return a point for every bucket and never break. All three draw their own `<ul>` legend; hovering an item highlights its series via `dispatchAction`, the same as hovering the series itself (re-applied after a legend click / right-click changes which series exist).
 
 - `OverviewAreaStack` — stacked area chart for request volume over time.
 - `OverviewDonut` — donut chart for distribution breakdowns.
-- `OverviewLineChart` — multi-series line chart with per-series toggle/isolate, used for speed metrics (prefill/decode tokens/sec).
+- `OverviewBoxplotSeries` — per-bucket distribution chart for the speed section (prefill/decode speed, TTFT), with the same per-series toggle/isolate legend as `OverviewLineChart`. Its mode follows the number of *visible* groups: with exactly one it draws that group's boxplot (colors match `OverviewSpeedTimeline`) plus a straight line through the medians; with several it drops the boxes and draws only smoothed median lines with point symbols, like `OverviewLineChart`. The median lines break on buckets without samples, and highlight on hover through `emphasis.focus: 'series'`; legend hover does nothing in box mode, where there is a single group to begin with.
+- `OverviewLineChart` — multi-series line chart with per-series toggle/isolate, used for per-bucket time series such as cache hit rate. Draws a symbol on every point (`showAllSymbol: true`, since the category axis' default `'auto'` would thin out an isolated point between two gaps).
 - `OverviewSankey` — Sankey diagram for model → provider routing flow.
-- `OverviewSpeedTimeline` — horizontal boxplot chart for min-max speed ranges.
+- `OverviewSpeedTimeline` — horizontal boxplot chart for min-max speed ranges; the border is a darker (light themes) / lighter (dark themes) shade of the fill, which is what makes the median line stand out.
 
 Shared color palette in `charts/colors.ts` (reads `--color-chart-0` through `--color-chart-9` CSS variables). ECharts module registration in `charts/echarts.ts`.
 

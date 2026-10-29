@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import type { ProviderView } from '@/api'
+import type { ProviderLabel } from '@/api'
 import { SidePanel } from '@/ui'
 import RequestDetailsContent from './RequestDetailsContent.vue'
 
-defineProps<{ requestId: string; providers?: ProviderView[] }>()
+defineProps<{ requestId: string; providers?: ProviderLabel[] }>()
 const emit = defineEmits<{
   close: []
   selectedRequest: [requestId: string]

@@ -19,11 +19,12 @@ type qjsEngine struct {
 	cfg     Config
 	store   ScriptStore
 	kvStore kv.Store
+	hostAPI HostAPI
 }
 
 // NewEngine returns the in-process QuickJS Engine.
-func NewEngine(cfg Config, store ScriptStore, kvStore kv.Store) Engine {
-	return &qjsEngine{cfg: cfg, store: store, kvStore: kvStore}
+func NewEngine(cfg Config, store ScriptStore, kvStore kv.Store, hostAPI HostAPI) Engine {
+	return &qjsEngine{cfg: cfg, store: store, kvStore: kvStore, hostAPI: hostAPI}
 }
 
 func (e *qjsEngine) Config() Config { return e.cfg }

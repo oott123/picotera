@@ -9,7 +9,7 @@ import (
 
 const (
 	CredentialsResolver_Unknown       int32 = 0
-	CredentialsResolver_GeneralApiKey int32 = 1
+	CredentialsResolver_FollowRequest int32 = 1
 	CredentialsResolver_BearerToken   int32 = 2
 	CredentialsResolver_XApiKey       int32 = 3
 	CredentialsResolver_SearchKey     int32 = 4
@@ -26,7 +26,18 @@ const (
 	EndpointType_GeminiGenerateContent       int32 = 7
 	EndpointType_GeminiStreamGenerateContent int32 = 8
 	EndpointType_ExaSearch                   int32 = 9
-EndpointType_ModelList                   int32 = 10
+	EndpointType_ModelList                   int32 = 10
+	// Deprecated: retired Codex-only types, no longer mapped to or from a wire
+	// string. A Codex upstream is now a single EndpointType_Codex prefix endpoint
+	// whose sub-paths ride on the request path. Kept as placeholders so 11 / 12
+	// are never reused — historical request rows and migration 047 still carry
+	// them.
+	EndpointType_CodexCompact       int32 = 11
+	EndpointType_CodexSearchV1Alpha int32 = 12
+
+	EndpointType_OpenAIEmbedding int32 = 13
+	EndpointType_Codex           int32 = 14
+	EndpointType_DeepSeekSearch  int32 = 15
 )
 
 func ToEndpointType(s string) int32 {
@@ -51,6 +62,12 @@ func ToEndpointType(s string) int32 {
 		return EndpointType_ExaSearch
 	case "modelList":
 		return EndpointType_ModelList
+	case "codex":
+		return EndpointType_Codex
+	case "openaiEmbedding":
+		return EndpointType_OpenAIEmbedding
+	case "deepseekSearch":
+		return EndpointType_DeepSeekSearch
 	default:
 		return EndpointType_Unknown
 	}
@@ -78,6 +95,12 @@ func FromEndpointType(t int32) string {
 		return "exaSearch"
 	case EndpointType_ModelList:
 		return "modelList"
+	case EndpointType_Codex:
+		return "codex"
+	case EndpointType_OpenAIEmbedding:
+		return "openaiEmbedding"
+	case EndpointType_DeepSeekSearch:
+		return "deepseekSearch"
 	default:
 		return "unknown"
 	}
@@ -87,8 +110,8 @@ func ToCredentialsResolver(s string) int32 {
 	switch s {
 	case "unknown":
 		return CredentialsResolver_Unknown
-	case "generalApiKey":
-		return CredentialsResolver_GeneralApiKey
+	case "followRequest":
+		return CredentialsResolver_FollowRequest
 	case "bearerToken":
 		return CredentialsResolver_BearerToken
 	case "xApiKey":
@@ -106,8 +129,8 @@ func FromCredentialsResolver(cr int32) string {
 	switch cr {
 	case CredentialsResolver_Unknown:
 		return "unknown"
-	case CredentialsResolver_GeneralApiKey:
-		return "generalApiKey"
+	case CredentialsResolver_FollowRequest:
+		return "followRequest"
 	case CredentialsResolver_BearerToken:
 		return "bearerToken"
 	case CredentialsResolver_XApiKey:
@@ -125,8 +148,12 @@ type EndpointView struct {
 	Name                string `json:"name"`
 	Path                string `json:"path"`
 	ModelPath           string `json:"modelPath"`
-	CredentialsResolver string `json:"credentialsResolver" enum:"generalApiKey,bearerToken,xApiKey,searchKey,googApiKey,unknown"`
-	EndpointType        string `json:"endpointType" enum:"general,openaiChatCompletions,openaiResponses,anthropicMessages,anthropicCountTokens,geminiGenerateContent,geminiStreamGenerateContent,exaSearch,modelList,unknown"`
+	CredentialsResolver string `json:"credentialsResolver" enum:"followRequest,bearerToken,xApiKey,searchKey,googApiKey,unknown"`
+	EndpointType        string `json:"endpointType" enum:"general,openaiChatCompletions,openaiResponses,anthropicMessages,anthropicCountTokens,geminiGenerateContent,geminiStreamGenerateContent,exaSearch,deepseekSearch,modelList,codex,openaiEmbedding,unknown"`
+	// PrefixMatch turns Path into a prefix: the request path's remainder after
+	// the prefix is appended verbatim to the upstream URL. Mandatory for the
+	// codex type; see handleUpsertEndpoint for the path constraints it implies.
+	PrefixMatch bool `json:"prefixMatch"`
 }
 
 func ToEndpointView(endpoint *db.Endpoint) (*EndpointView, error) {
@@ -136,6 +163,7 @@ func ToEndpointView(endpoint *db.Endpoint) (*EndpointView, error) {
 		ModelPath:           endpoint.ModelPath,
 		CredentialsResolver: FromCredentialsResolver(endpoint.CredentialsResolver),
 		EndpointType:        FromEndpointType(endpoint.EndpointType),
+		PrefixMatch:         endpoint.PrefixMatch,
 	}, nil
 }
 

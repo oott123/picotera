@@ -1,22 +1,23 @@
 packages:
   - dashboard
+# vue-demi's postinstall only re-copies its Vue 3 build, which it already ships as the default.
 allowBuilds:
-  vue-demi: true
+  vue-demi: false
 
 overrides:
-  '@vue/compat': 'beta'
-  '@vue/compiler-core': 'beta'
-  '@vue/compiler-dom': 'beta'
-  '@vue/compiler-sfc': 'beta'
-  '@vue/compiler-ssr': 'beta'
-  '@vue/compiler-vapor': 'beta'
-  '@vue/reactivity': 'beta'
-  '@vue/runtime-core': 'beta'
-  '@vue/runtime-dom': 'beta'
-  '@vue/runtime-vapor': 'beta'
-  '@vue/server-renderer': 'beta'
-  '@vue/shared': 'beta'
-  'vue': 'beta'
+  '@vue/compat': '3.6.0-beta.13'
+  '@vue/compiler-core': '3.6.0-beta.13'
+  '@vue/compiler-dom': '3.6.0-beta.13'
+  '@vue/compiler-sfc': '3.6.0-beta.13'
+  '@vue/compiler-ssr': '3.6.0-beta.13'
+  '@vue/compiler-vapor': '3.6.0-beta.13'
+  '@vue/reactivity': '3.6.0-beta.13'
+  '@vue/runtime-core': '3.6.0-beta.13'
+  '@vue/runtime-dom': '3.6.0-beta.13'
+  '@vue/runtime-vapor': '3.6.0-beta.13'
+  '@vue/server-renderer': '3.6.0-beta.13'
+  '@vue/shared': '3.6.0-beta.13'
+  'vue': '3.6.0-beta.13'
 
 peerDependencyRules:
   allowAny:

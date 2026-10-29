@@ -34,6 +34,7 @@ func (h *gatewayHandler) uploadResponseArtifact(ctx context.Context, id string, 
 	if !h.artifacts.Enabled() {
 		return
 	}
+	header = redactResponseHeaders(header)
 	payload, err := artifacts.BuildResponse(statusCode, header, body, timings)
 	if err != nil {
 		logx.WithContext(ctx).WithError(err).WithField("id", id).Warn("artifact: build response failed")
@@ -46,6 +47,7 @@ func (h *gatewayHandler) uploadResponseArtifactWithAggregation(ctx context.Conte
 	if !h.artifacts.Enabled() {
 		return
 	}
+	header = redactResponseHeaders(header)
 	payload, err := artifacts.BuildResponseWithAggregated(statusCode, header, body, aggregated, timings)
 	if err != nil {
 		logx.WithContext(ctx).WithError(err).WithField("id", id).Warn("artifact: build response failed")
@@ -60,6 +62,7 @@ func (h *gatewayHandler) uploadMetaResponseArtifact(ctx context.Context, id stri
 	if !h.artifacts.Enabled() {
 		return
 	}
+	header = redactResponseHeaders(header)
 	payload, err := artifacts.BuildResponseWithLogs(statusCode, header, body, logs, timings)
 	if err != nil {
 		logx.WithContext(ctx).WithError(err).WithField("id", id).Warn("artifact: build meta response failed")
@@ -72,6 +75,7 @@ func (h *gatewayHandler) uploadMetaResponseArtifactWithAggregation(ctx context.C
 	if !h.artifacts.Enabled() {
 		return
 	}
+	header = redactResponseHeaders(header)
 	payload, err := artifacts.BuildResponseWithLogsAndAggregated(statusCode, header, body, logs, aggregated, timings)
 	if err != nil {
 		logx.WithContext(ctx).WithError(err).WithField("id", id).Warn("artifact: build meta response failed")
@@ -100,7 +104,10 @@ func (h *gatewayHandler) streamSuccess(input successInput) {
 
 func (h *gatewayHandler) markPathHeadersReceived(input successInput) {
 	metaID, metaCreatedAt := input.Flow.meta.ID, input.Flow.meta.CreatedAt
-	endpointPath := input.Flow.config.Endpoint.Path
+	metaEndpointPath := input.Flow.config.RecordedEndpointPath
+	// The upstream row records the candidate's own path, which for a prefix
+	// endpoint already carries this request's suffix.
+	upstreamEndpointPath := input.Sidecar.EndpointPath
 	if input.Entry != nil && input.Entry.progress != nil {
 		input.Entry.progress.markHeaders(input.Response.StatusCode, input.UpstreamStartTime)
 		if metaEntry, ok := h.liveRequests.get(metaID); ok {
@@ -110,31 +117,27 @@ func (h *gatewayHandler) markPathHeadersReceived(input successInput) {
 	bgCtx, cancel := input.Flow.ctxs.Persist()
 	defer cancel()
 	apiKeyID := input.Flow.auth.APIKeyID
-	h.updateRequestOnHeader(bgCtx, db.UpdateRequestOnHeaderParams{
-		ID:            metaID,
-		ProviderID:    pgtype.Int4{Int32: input.ProviderID, Valid: true},
-		Model:         pgtype.Text{String: input.RoutedModel, Valid: input.RoutedModel != ""},
-		UpstreamModel: pgtype.Text{String: input.UpstreamModel, Valid: input.UpstreamModel != ""},
-		EndpointPath:  pgtype.Text{String: endpointPath, Valid: true},
-		ApiKeyID:      apiKeyID,
-		Status:        db.RequestStatusHeaderReceived,
-		CreatedAt:     pgtype.Timestamp{Time: metaCreatedAt, Valid: true},
-	})
-	h.updateRequestOnHeader(bgCtx, db.UpdateRequestOnHeaderParams{
-		ID:            input.UpstreamID,
-		ProviderID:    pgtype.Int4{Int32: input.ProviderID, Valid: true},
-		Model:         pgtype.Text{String: input.RoutedModel, Valid: input.RoutedModel != ""},
-		UpstreamModel: pgtype.Text{String: input.UpstreamModel, Valid: input.UpstreamModel != ""},
-		EndpointPath:  pgtype.Text{String: endpointPath, Valid: true},
-		ApiKeyID:      apiKeyID,
-		Status:        db.RequestStatusHeaderReceived,
-		CreatedAt:     pgtype.Timestamp{Time: input.UpstreamCreatedAt, Valid: true},
-	})
+	// user_id / project_id are intentionally NOT touched here: they were
+	// backfilled post-auth on the meta row and must survive the header update.
+	// The header update only sets provider/model/endpoint/status.
+	input.Flow.updateMeta(bgCtx, newRequestUpdate(metaID, metaCreatedAt).
+		ProviderID(pgtype.Int4{Int32: input.ProviderID, Valid: true}).
+		Model(pgtype.Text{String: input.RoutedModel, Valid: input.RoutedModel != ""}).
+		UpstreamModel(pgtype.Text{String: input.UpstreamModel, Valid: input.UpstreamModel != ""}).
+		EndpointPath(pgtype.Text{String: metaEndpointPath, Valid: true}).
+		ApiKeyID(apiKeyID))
+	h.updateRequest(bgCtx, newRequestUpdate(input.UpstreamID, input.UpstreamCreatedAt).
+		ProviderID(pgtype.Int4{Int32: input.ProviderID, Valid: true}).
+		Model(pgtype.Text{String: input.RoutedModel, Valid: input.RoutedModel != ""}).
+		UpstreamModel(pgtype.Text{String: input.UpstreamModel, Valid: input.UpstreamModel != ""}).
+		EndpointPath(pgtype.Text{String: upstreamEndpointPath, Valid: upstreamEndpointPath != ""}).
+		ApiKeyID(apiKeyID))
 }
 
 func copyPathSuccessHeaders(w http.ResponseWriter, resp *http.Response) {
 	for key, values := range resp.Header {
-		if strings.ToLower(key) == "content-length" {
+		lower := strings.ToLower(key)
+		if lower == "content-length" || shouldStripUpstreamHeader(lower) {
 			continue
 		}
 		for _, value := range values {
@@ -152,25 +155,37 @@ func (h *gatewayHandler) openPathInternalReader(input successInput) (*lockedResp
 		bgCtx, cancel := input.Flow.ctxs.Persist()
 		defer cancel()
 		metaID, metaCreatedAt := input.Flow.meta.ID, input.Flow.meta.CreatedAt
-		h.completeFailedAttemptWithReason(bgCtx, input.UpstreamID, input.UpstreamCreatedAt, input.AttemptStart, int32(resp.StatusCode), "decode upstream response: "+derr.Error(), db.FinishReasonInternal)
+		h.completeFailedAttemptWithReason(bgCtx, input.UpstreamID, input.UpstreamCreatedAt, input.AttemptStart, int32(resp.StatusCode), "decode upstream response: "+derr.Error(), db.FinishReasonInternal, resp.Header)
 		respBody := writeGatewayError(w, http.StatusBadGateway, "decode upstream response: "+derr.Error(), errorx.UpstreamError.Error())
-		h.updateRequestOnComplete(bgCtx, db.UpdateRequestOnCompleteParams{
-			ID:           metaID,
-			StatusCode:   pgtype.Int4{Int32: http.StatusBadGateway, Valid: true},
-			ErrorMessage: pgtype.Text{String: "decode upstream response: " + derr.Error(), Valid: true},
-			TimeSpentMs:  pgtype.Int4{Int32: int32(time.Since(input.Flow.startedAt).Milliseconds()), Valid: true},
-			Status:       db.RequestStatusFailed,
-			FinishReason: pgtype.Int4{Int32: db.FinishReasonInternal, Valid: true},
-			CreatedAt:    pgtype.Timestamp{Time: metaCreatedAt, Valid: true},
-		})
-		h.uploadMetaResponseArtifact(bgCtx, metaID, metaCreatedAt, http.StatusBadGateway, w.Header().Clone(), respBody, input.Flow.collectLogs(), nil)
+		input.Flow.updateMeta(bgCtx, newRequestUpdate(metaID, metaCreatedAt).
+			StatusCode(pgtype.Int4{Int32: http.StatusBadGateway, Valid: true}).
+			ErrorMessage(pgtype.Text{String: "decode upstream response: " + derr.Error(), Valid: true}).
+			TimeSpentMs(pgtype.Int4{Int32: int32(time.Since(input.Flow.startedAt).Milliseconds()), Valid: true}).
+			FinishReason(pgtype.Int4{Int32: db.FinishReasonInternal, Valid: true}).
+			ExternalResponseID(matchExternalIDHeader(resp.Header, h.externalResponseIDHeaders)))
+		h.uploadMetaResponseArtifact(bgCtx, metaID, metaCreatedAt, http.StatusBadGateway, w.Header().Clone(), input.Flow.artifactBody(respBody), input.Flow.collectLogs(), nil)
 		_ = resp.Body.Close()
 		return nil, nil, false
 	}
 	internalBody := internalReader.Body
-	w.WriteHeader(http.StatusOK)
+	// Commit the headers to the wire before the client writer starts: the client
+	// must learn we succeeded now, not when the upstream's first chunk arrives.
+	markSSENoBuffering(w.Header(), w.Header().Get("Content-Type"))
+	commitResponseHeaders(w, http.StatusOK)
 	if err := internalReader.StartClientWrite(); err != nil {
 		input.Cancel()
+		bgCtx, cancel := input.Flow.ctxs.Persist()
+		defer cancel()
+		metaID, metaCreatedAt := input.Flow.meta.ID, input.Flow.meta.CreatedAt
+		errMsg := "start client write: " + err.Error()
+		h.completeFailedAttemptWithReason(bgCtx, input.UpstreamID, input.UpstreamCreatedAt, input.AttemptStart, http.StatusOK, errMsg, db.FinishReasonCancelled, resp.Header)
+		input.Flow.updateMeta(bgCtx, newRequestUpdate(metaID, metaCreatedAt).
+			StatusCode(pgtype.Int4{Int32: http.StatusOK, Valid: true}).
+			ErrorMessage(pgtype.Text{String: errMsg, Valid: true}).
+			TimeSpentMs(pgtype.Int4{Int32: int32(time.Since(input.Flow.startedAt).Milliseconds()), Valid: true}).
+			FinishReason(pgtype.Int4{Int32: db.FinishReasonCancelled, Valid: true}).
+			ExternalResponseID(matchExternalIDHeader(resp.Header, h.externalResponseIDHeaders)))
+		h.uploadMetaResponseArtifact(bgCtx, metaID, metaCreatedAt, http.StatusOK, w.Header().Clone(), input.Flow.artifactBody(nil), input.Flow.collectLogs(), nil)
 		closeDecodedInternalResponseReader(internalBody, resp)
 		return nil, nil, false
 	}
@@ -196,7 +211,7 @@ func (h *gatewayHandler) pipePathResponse(input successInput, responseWriter *lo
 		progress = input.Entry.progress
 	}
 	if progress == nil {
-		progress = newLiveProgressWithOrigin(input.UpstreamStartTime)
+		progress = newLiveProgressWithOrigin(input.UpstreamStartTime, input.Flow.otr.recordBody())
 	}
 	flusher, canFlush := w.(http.Flusher)
 	for {
@@ -221,16 +236,23 @@ func (h *gatewayHandler) pipePathResponse(input successInput, responseWriter *lo
 	}
 	input.Cancel()
 	closeDecodedInternalResponseReader(internalBody, resp)
-	return extractor, progress, classifyStreamFinishReason(finalReadErr, input.Flow.ctxs.Request)
+	return extractor, progress, classifyStreamFinishReason(finalReadErr, input.Flow.ctxs.Request, extractor.StreamCompleted())
 }
 
 func (h *gatewayHandler) aggregatePathResponse(input successInput, metaRespHeader http.Header, respBytes []byte, timings []float64) {
 	pctx, pcancel := input.Flow.ctxs.Persist()
 	defer pcancel()
 	var aggregated *artifacts.AggregatedResponse
-	if format, ok := responseAggregationFormat(input.Flow.config.Endpoint.EndpointType); ok {
-		if profile, ok := defaultAggregationProfile(format); ok {
-			aggregated = buildAggregatedArtifact(pctx, h.llmBridge, format, input.Response.Header.Get("Content-Type"), respBytes, profile)
+	// OTR body modes move bodies + aggregation + timings out of the record;
+	// respBytes/timings are already empty (gated in liveProgress), so we just
+	// skip the aggregation build here.
+	if input.Flow.otr.recordBody() {
+		cfg := input.Flow.config
+		suffix := strings.TrimPrefix(cfg.RecordedEndpointPath, cfg.Endpoint.Path)
+		if format, ok := responseAggregationFormat(cfg.Endpoint.EndpointType, suffix); ok {
+			if profile, ok := defaultAggregationProfile(format); ok {
+				aggregated = buildAggregatedArtifact(pctx, h.llmBridge, format, input.Response.Header.Get("Content-Type"), respBytes, profile)
+			}
 		}
 	}
 	h.uploadResponseArtifactWithAggregation(pctx, input.UpstreamID, input.UpstreamCreatedAt, input.Response.StatusCode, input.Response.Header.Clone(), respBytes, aggregated, timings)
@@ -242,66 +264,83 @@ func (h *gatewayHandler) completeGatewaySuccess(input successInput, m ResponseMe
 	defer cancel()
 	ttftMs, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, cacheWrite1hTokens := metricsToPG(m)
 	modelCost, modelCcy := h.costsFor(bgCtx, input.RoutedModel, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, cacheWrite1hTokens)
+	toolUsage, toolCost, toolCcy := input.Flow.resolveToolUsageCost(m)
 
 	// An in-stream error event (HTTP 200 with an error.message payload) marks
 	// both rows failed while keeping the real upstream status code and metrics.
-	status := int32(db.RequestStatusCompleted)
 	errMsg := pgtype.Text{Valid: false}
 	fr := finishReason
 	if streamErr != "" {
-		status = int32(db.RequestStatusFailed)
 		errMsg = pgtype.Text{String: streamErr, Valid: true}
 		fr = int32(db.FinishReasonStreamError)
+		input.Flow.runStreamErrorHook(input.ProviderID, input.CurrentRetryCount, input.TotalAttemptCount, statusCode, streamErr)
 	}
 
 	upstreamFr := input.Flow.finishReasonFor(input.UpstreamID, fr)
 	metaFr := input.Flow.finishReasonFor(input.Flow.meta.ID, fr)
 	upstreamTimeSpent := int32(time.Since(input.AttemptStart).Milliseconds())
-	h.updateRequestOnComplete(bgCtx, db.UpdateRequestOnCompleteParams{
-		ID:                 input.UpstreamID,
-		StatusCode:         pgtype.Int4{Int32: int32(statusCode), Valid: true},
-		ErrorMessage:       errMsg,
-		TimeSpentMs:        pgtype.Int4{Int32: upstreamTimeSpent, Valid: true},
-		Status:             status,
-		TtftMs:             ttftMs,
-		InputTokens:        inputTokens,
-		OutputTokens:       outputTokens,
-		CacheReadTokens:    cacheReadTokens,
-		CacheWriteTokens:   cacheWriteTokens,
-		CacheWrite1hTokens: cacheWrite1hTokens,
-		ModelCost:          modelCost,
-		ModelCostCurrency:  modelCcy,
-		FinishReason:       pgtype.Int4{Int32: upstreamFr, Valid: true},
-		CreatedAt:          pgtype.Timestamp{Time: input.UpstreamCreatedAt, Valid: true},
-	})
+	h.updateRequest(bgCtx, newRequestUpdate(input.UpstreamID, input.UpstreamCreatedAt).
+		StatusCode(pgtype.Int4{Int32: int32(statusCode), Valid: true}).
+		ErrorMessage(errMsg).
+		TimeSpentMs(pgtype.Int4{Int32: upstreamTimeSpent, Valid: true}).
+		TtftMs(ttftMs).
+		InputTokens(inputTokens).
+		OutputTokens(outputTokens).
+		CacheReadTokens(cacheReadTokens).
+		CacheWriteTokens(cacheWriteTokens).
+		CacheWrite1hTokens(cacheWrite1hTokens).
+		ModelCost(modelCost).
+		ModelCostCurrency(modelCcy).
+		ToolUsage(toolUsage).
+		ToolCost(toolCost).
+		ToolCostCurrency(toolCcy).
+		UsageRaw(m.UsageRaw).
+		ToolUsageRaw(m.ToolUsageRaw).
+		FinishReason(pgtype.Int4{Int32: upstreamFr, Valid: true}).
+		InferredProvider(pgtype.Text{String: m.InferredProvider, Valid: m.InferredProvider != ""}).
+		InferredModel(pgtype.Text{String: m.InferredModel, Valid: m.InferredModel != ""}).
+		InferredModelSource(int16(m.InferredModelSource)).
+		ExternalResponseID(matchExternalIDHeader(input.Response.Header, h.externalResponseIDHeaders)))
 	metaTimeSpent := int32(time.Since(input.Flow.startedAt).Milliseconds())
-	h.updateRequestOnComplete(bgCtx, db.UpdateRequestOnCompleteParams{
-		ID:                 input.Flow.meta.ID,
-		StatusCode:         pgtype.Int4{Int32: int32(statusCode), Valid: true},
-		ErrorMessage:       errMsg,
-		TimeSpentMs:        pgtype.Int4{Int32: metaTimeSpent, Valid: true},
-		Status:             status,
-		TtftMs:             ttftMs,
-		InputTokens:        inputTokens,
-		OutputTokens:       outputTokens,
-		CacheReadTokens:    cacheReadTokens,
-		CacheWriteTokens:   cacheWriteTokens,
-		CacheWrite1hTokens: cacheWrite1hTokens,
-		ModelCost:          modelCost,
-		ModelCostCurrency:  modelCcy,
-		FinishReason:       pgtype.Int4{Int32: metaFr, Valid: true},
-		CreatedAt:          pgtype.Timestamp{Time: input.Flow.meta.CreatedAt, Valid: true},
-	})
+	input.Flow.updateMeta(bgCtx, newRequestUpdate(input.Flow.meta.ID, input.Flow.meta.CreatedAt).
+		StatusCode(pgtype.Int4{Int32: int32(statusCode), Valid: true}).
+		ErrorMessage(errMsg).
+		TimeSpentMs(pgtype.Int4{Int32: metaTimeSpent, Valid: true}).
+		TtftMs(ttftMs).
+		InputTokens(inputTokens).
+		OutputTokens(outputTokens).
+		CacheReadTokens(cacheReadTokens).
+		CacheWriteTokens(cacheWriteTokens).
+		CacheWrite1hTokens(cacheWrite1hTokens).
+		ModelCost(modelCost).
+		ModelCostCurrency(modelCcy).
+		ToolUsage(toolUsage).
+		ToolCost(toolCost).
+		ToolCostCurrency(toolCcy).
+		UsageRaw(m.UsageRaw).
+		ToolUsageRaw(m.ToolUsageRaw).
+		FinishReason(pgtype.Int4{Int32: metaFr, Valid: true}).
+		InferredProvider(pgtype.Text{String: m.InferredProvider, Valid: m.InferredProvider != ""}).
+		InferredModel(pgtype.Text{String: m.InferredModel, Valid: m.InferredModel != ""}).
+		InferredModelSource(int16(m.InferredModelSource)).
+		ExternalResponseID(matchExternalIDHeader(input.Response.Header, h.externalResponseIDHeaders)))
 }
 
-func classifyStreamFinishReason(readErr error, reqCtx context.Context) int32 {
+// classifyStreamFinishReason derives the finish reason from how the upstream
+// read loop ended. streamCompleted (ResponseExtractor.StreamCompleted) reports
+// whether the upstream already emitted the stream's terminating event: many
+// clients close the connection the moment they see it, which cancels the
+// request context — that is a normal EOF, not a cancellation. The idle-timeout
+// check stays ahead of the cancel check, so an upstream that emits the
+// terminating event but never closes the connection is still a read timeout.
+func classifyStreamFinishReason(readErr error, reqCtx context.Context, streamCompleted bool) int32 {
 	if errors.Is(readErr, io.EOF) {
 		return db.FinishReasonEOF
 	}
 	if errors.Is(readErr, errReadIdleTimeout) {
 		return db.FinishReasonReadTimeout
 	}
-	if reqCtx.Err() != nil {
+	if reqCtx.Err() != nil && !streamCompleted {
 		return db.FinishReasonCancelled
 	}
 	return db.FinishReasonEOF

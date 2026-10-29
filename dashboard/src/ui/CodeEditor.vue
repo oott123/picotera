@@ -44,8 +44,7 @@ let view: EditorView | null = null
 const themeComp = new Compartment()
 
 function isDark() {
-  const t = document.documentElement.getAttribute('data-theme') || ''
-  return t.includes('dark')
+  return document.documentElement.dataset.dark === 'true'
 }
 
 const baseTheme = EditorView.theme({
@@ -136,7 +135,7 @@ onMounted(() => {
   })
   themeObserver.observe(document.documentElement, {
     attributes: true,
-    attributeFilter: ['data-theme'],
+    attributeFilter: ['data-dark'],
   })
 })
 

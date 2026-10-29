@@ -1,24 +1,31 @@
-// 模拟 axonhub 的渠道熔断功能
-// 可能缺少一个 error 的 hook，用 beforeRequest 也能实现，就是逻辑稍微有点绕了
-picotera.hooks.beforeRequest.tap('fuse', function ({
-  provider: {
-    id: providerId,
-    name: providerName,
-  },
-  attempt: {
-    currentRetryCount,
-  },
-}, input) {
-  let errCount = picotera.kv.get(`fail:${providerId}`) ?? 0
+// 渠道 x 模型 熔断
+
+// 记录错误次数
+picotera.hooks.afterUpstreamError.tap('circuit-breaking', function (ctx, input) {
+  const provider = ctx.provider
+  const model = ctx.routedModel.name
+
+  const key = `fail:${provider.id}:${model}`
+
+  let errCount = picotera.kv.get(key) ?? 0
+  errCount += 1
+  console.log(`渠道 ${provider.name} 模型 ${model} 累计了 ${errCount} 次错误`)
+  picotera.kv.setex(key, 60, errCount)
+
+  return input
+})
+
+picotera.hooks.beforeRequest.tap('circuit-breaking', function (ctx, input) {
+  const provider = ctx.provider
+  const model = ctx.routedModel.name
+
+  const key = `fail:${provider.id}:${model}`
+
+  const errCount = picotera.kv.get(key) ?? 0
   if (errCount >= 10) {
-    // 60s 内失败 >10 次
-    console.log(`渠道 ${providerName} 错误次数太多，熔断生效中`)
-    return { next: true, delay: 0 } // 尝试下一个
+    console.log(`渠道 ${provider.name} 模型 ${model} 熔断生效中`)
+    return { next: true, delay: 0 }
   }
-  if (currentRetryCount > 0) {
-    errCount += 1
-    console.log(`provider ${providerName} error count ${errCount}`)
-    picotera.kv.setex(`fail:${providerId}`, 60, errCount)
-  }
+
   return input
 })

@@ -28,7 +28,7 @@ function sortUpstreams(list: Upstream[]): Upstream[] {
   return [...list].sort((a, b) => {
     const score = b.priority + b.providerPriority - (a.priority + a.providerPriority)
     if (score !== 0) return score
-    if (a.providerId !== b.providerId) return a.providerId - b.providerId
+    if (a.providerId !== b.providerId) return b.providerId - a.providerId
     return a.upstreamModelName.localeCompare(b.upstreamModelName)
   })
 }
@@ -80,7 +80,8 @@ const mergedUpstreams = computed(() =>
   [...props.upstreams].sort((a, b) => {
     const score = b.priority + b.providerPriority - (a.priority + a.providerPriority)
     if (score !== 0) return score
-    return a.providerId - b.providerId
+    if (a.providerId !== b.providerId) return b.providerId - a.providerId
+    return a.upstreamModelName.localeCompare(b.upstreamModelName)
   }),
 )
 </script>
@@ -106,7 +107,7 @@ const mergedUpstreams = computed(() =>
             <Tag v-if="u.providerDisabled" variant="muted">渠道已禁用</Tag>
             <Icon name="chevron-down" :size="12" class="-rotate-90 text-ink-faint" />
             <Tag variant="accent">{{ u.upstreamModelName }}</Tag>
-            <Tag v-if="u.providerPriority + u.priority > 0" variant="more">
+            <Tag v-if="u.providerPriority + u.priority != 0" variant="more">
               P{{ u.providerPriority + u.priority }}
             </Tag>
             <Tag v-if="u.entryDisabled" variant="muted">上游已禁用</Tag>
@@ -171,7 +172,7 @@ const mergedUpstreams = computed(() =>
                 <Tag v-if="u.providerDisabled" variant="muted">渠道已禁用</Tag>
                 <Icon name="chevron-down" :size="12" class="-rotate-90 text-ink-faint" />
                 <Tag variant="accent">{{ u.upstreamModelName }}</Tag>
-                <Tag v-if="u.providerPriority > 0 || u.priority > 0" variant="more">
+                <Tag v-if="u.providerPriority + u.priority != 0" variant="more">
                   P{{ u.providerPriority + u.priority }}
                 </Tag>
                 <Tag v-if="u.entryDisabled" variant="muted">上游已禁用</Tag>

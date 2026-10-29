@@ -1,35 +1,52 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
-import { getGlobalSetting, upsertGlobalSetting, invalidateGlobalSettings } from '@/api/client'
+import { getUserSetting, upsertUserSetting, invalidateUserSettings } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
-import { useAppTitle } from '@/composables/useAppTitle'
-import { Button, Field, Input, StateText } from '@/ui'
+import { Button, Field, SegmentedControl, StateText } from '@/ui'
 
 const queryClient = useQueryClient()
-const { query } = useAppTitle()
 
-const titleInput = ref('')
+type OtrMode = 'none' | 'body' | 'body-and-message'
+
+const otrOptions: { value: OtrMode; label: string; description: string }[] = [
+  {
+    value: 'none',
+    label: '完整记录',
+    description: '记录请求体、响应体与用户消息梗概。',
+  },
+  {
+    value: 'body',
+    label: '不记录内容',
+    description: '记录各类元数据与用户消息梗概，但不记录请求体与响应体。',
+  },
+  {
+    value: 'body-and-message',
+    label: '不记录内容和梗概',
+    description: '仅记录各类元数据。',
+  },
+]
+
 const autoCreateProjects = ref(false)
+const otr = ref<OtrMode>('none')
 const saved = ref(false)
 
-// Populate input when query resolves.
-watch(
-  () => query.data.value,
-  (data) => {
-    if (data) {
-      const val = data.value
-      titleInput.value = typeof val === 'string' ? val : ''
-    }
-  },
-  { immediate: true },
+const otrDescription = computed(
+  () => otrOptions.find((o) => o.value === otr.value)?.description ?? '',
 )
 
 const autoCreateQuery = useQuery({
-  queryKey: queryKeys.globalSettings.detail('project.autoCreate'),
-  queryFn: () => getGlobalSetting('project.autoCreate'),
+  queryKey: queryKeys.userSettings.detail('project.autoCreate'),
+  queryFn: () => getUserSetting('project.autoCreate'),
   retry: false,
   // If the setting doesn't exist (404), return null instead of throwing.
+  throwOnError: false,
+})
+
+const otrQuery = useQuery({
+  queryKey: queryKeys.userSettings.detail('request.otr'),
+  queryFn: () => getUserSetting('request.otr'),
+  retry: false,
   throwOnError: false,
 })
 
@@ -41,19 +58,28 @@ watch(
   { immediate: true },
 )
 
+watch(
+  () => otrQuery.data.value,
+  (data) => {
+    const value = data?.value
+    otr.value = value === 'body' || value === 'body-and-message' ? value : 'none'
+  },
+  { immediate: true },
+)
+
 const saveMutation = useMutation({
   mutationFn: async () => {
-    await upsertGlobalSetting({
-      key: 'app.title',
-      value: titleInput.value.trim(),
-    })
-    await upsertGlobalSetting({
+    await upsertUserSetting({
       key: 'project.autoCreate',
       value: autoCreateProjects.value,
     })
+    await upsertUserSetting({
+      key: 'request.otr',
+      value: otr.value,
+    })
   },
   onSuccess: () => {
-    invalidateGlobalSettings(queryClient)
+    invalidateUserSettings(queryClient)
     saved.value = true
     setTimeout(() => {
       saved.value = false
@@ -64,14 +90,10 @@ const saveMutation = useMutation({
 
 <template>
   <div class="flex flex-col gap-6 max-w-md">
-    <StateText v-if="query.isLoading.value || autoCreateQuery.isLoading.value">加载中…</StateText>
+    <StateText v-if="autoCreateQuery.isLoading.value || otrQuery.isLoading.value"
+      >加载中…</StateText
+    >
     <template v-else>
-      <Field label="应用标题">
-        <Input v-model="titleInput" placeholder="PicoTera" />
-        <p class="text-xs text-ink-faint mt-1">
-          设置后将替换侧边栏和浏览器标签页中显示的名称。留空则使用默认值「PicoTera」。
-        </p>
-      </Field>
       <Field label="项目自动创建">
         <label class="flex items-center gap-2 text-sm">
           <input
@@ -82,7 +104,14 @@ const saveMutation = useMutation({
           <span>允许自动创建项目</span>
         </label>
         <p class="text-xs text-ink-faint mt-1">
-          启用后，当网关请求的工作目录未匹配到任何项目时，将以该路径自动创建一个项目。
+          当请求的工作目录未匹配到任何项目时，以该路径自动创建一个项目。
+        </p>
+      </Field>
+      <Field label="数据记录" as="div">
+        <SegmentedControl v-model="otr" :options="otrOptions" />
+        <p class="text-xs text-ink-faint mt-1">
+          {{ otrDescription }}在请求头中传入
+          <code>X-PicoTera-OTR: {{ otr }}</code> 可使单个请求覆盖该设置。
         </p>
       </Field>
       <div class="flex items-center gap-3">

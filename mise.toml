@@ -28,3 +28,9 @@ run = "go run ./cmd/picotera/main.go openapi > openapi.yaml"
 run = "mkdir -p dist && go build -o dist/picotera-llmbridge-plugin ./cmd/picotera-llmbridge-plugin"
 sources = [ "cmd/picotera-llmbridge-plugin", "pkg/llmbridge", "pkg/llmbridgeimpl", "third_party/axonhub/llm" ]
 outputs = [ "dist/picotera-llmbridge-plugin" ]
+
+[tasks.bind-identity]
+run = "go run ./cmd/picotera/main.go bind-identity"
+
+[tasks.set-admin]
+run = "go run ./cmd/picotera/main.go set-admin"

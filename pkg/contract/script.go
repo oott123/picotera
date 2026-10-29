@@ -1,13 +1,29 @@
 package contract
 
 import (
+	"errors"
 	"net/http"
+	"regexp"
 	"time"
 
 	"picotera/pkg/db"
 
 	"github.com/danielgtaylor/huma/v2"
 )
+
+var scriptIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+// ValidateScriptID 严格校验脚本 ID（slug）：必须匹配 ^[a-zA-Z0-9_-]+$ 且长度 1–64。
+// 不做任何宽松归一化（不 trim、不 case-fold）。
+func ValidateScriptID(id string) error {
+	if len(id) < 1 || len(id) > 64 {
+		return errors.New("script id must be 1-64 characters")
+	}
+	if !scriptIDPattern.MatchString(id) {
+		return errors.New(`script id must match ^[a-zA-Z0-9_-]+$`)
+	}
+	return nil
+}
 
 type ScriptView struct {
 	ID        string `json:"id"`
@@ -44,6 +60,7 @@ type GetScriptRequest struct {
 type GetScriptResponse struct{ Body ScriptView }
 
 type ScriptMutateBody struct {
+	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Source  string `json:"source"`
 	Enabled bool   `json:"enabled"`

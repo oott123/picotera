@@ -20,35 +20,103 @@ var _ http.Handler = (*gatewayHandler)(nil)
 
 func (h *gatewayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	startedAt := time.Now()
-	endpoint, pathVars, err := h.resolveEndpoint(r.Context(), r.URL.Path)
+	endpoint, pathVars, suffix, err := h.resolveEndpoint(r.Context(), r.URL.Path)
 	if err != nil {
-		if isRouteNotFound(err) && looksLikeBrowserNav(r) {
-			h.staticHandler.ServeHTTP(w, r)
+		if isRouteNotFound(err) {
+			h.serveRouteNotFound(w, r, startedAt)
 			return
 		}
 		handleGatewayErr(w, err)
 		return
 	}
-	if endpoint.EndpointType == contract.EndpointType_ModelList {
-		h.handleModelList(w, r, endpoint)
+	if suffix != "" {
+		// Routing matched the decoded path, but the bytes appended to the
+		// upstream URL must be exactly what the client sent, so re-cut the
+		// suffix off EscapedPath. A client that percent-encoded part of the
+		// prefix itself (`/api/co%64ex/responses`) breaks the offset — reject
+		// rather than silently forwarding a re-encoded path.
+		escaped := r.URL.EscapedPath()
+		if !strings.HasPrefix(escaped, endpoint.Path) {
+			handleGatewayErr(w, newRouteNotFoundError())
+			return
+		}
+		suffix = escaped[len(endpoint.Path):]
+	}
+	// Matched a real gateway endpoint: emit CORS headers and answer preflight.
+	// Done after the static-fallback branch so SPA assets stay header-free.
+	writeCORSHeaders(w, r)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	newGatewayFlow(h, w, r, startedAt, h.newPathGatewayFlowConfig(endpoint, pathVars)).run()
+	// Resolved after the preflight short-circuit: a preflight carries no
+	// credentials and must not cost a key lookup.
+	auth := h.authenticateGatewayClient(r.Context(), r)
+	if endpoint.EndpointType == contract.EndpointType_ModelList {
+		h.handleModelList(w, r, auth)
+		return
+	}
+	newGatewayFlow(h, w, r, startedAt, auth, h.newPathGatewayFlowConfig(endpoint, pathVars, suffix)).run()
 }
 
-func (h *gatewayHandler) newPathGatewayFlowConfig(endpoint db.Endpoint, pathVars map[string]string) gatewayFlowConfig {
+// serveRouteNotFound answers a request that matched no configured endpoint.
+// A client holding a valid API key is an API client by definition: it gets the
+// structured JSON 404 and a recorded meta row, never dashboard HTML, however
+// browser-ish its headers look. Without one there is no user to attribute a row
+// to, so the old split stands — a safe navigation falls through to the SPA,
+// anything else gets the JSON 404 unrecorded.
+func (h *gatewayHandler) serveRouteNotFound(w http.ResponseWriter, r *http.Request, startedAt time.Time) {
+	auth := h.authenticateGatewayClient(r.Context(), r)
+	if routeNotFoundFallsBackToSPA(r, auth.ok()) {
+		// A browser navigating to the dashboard without a session is sent to
+		// the login flow instead of to an SPA that could only 401 on its first
+		// API call. Subresources keep falling through to the static handler.
+		if h.oidc != nil && h.oidc.RedirectUnauthenticatedNav(w, r) {
+			return
+		}
+		h.staticHandler.ServeHTTP(w, r)
+		return
+	}
+	if !auth.ok() {
+		handleGatewayErr(w, newRouteNotFoundError())
+		return
+	}
+	writeCORSHeaders(w, r)
+	newGatewayFlow(h, w, r, startedAt, auth, newNotFoundGatewayFlowConfig(r)).run()
+}
+
+func routeNotFoundFallsBackToSPA(r *http.Request, authenticated bool) bool {
+	return !authenticated && looksLikeBrowserNav(r)
+}
+
+// newNotFoundGatewayFlowConfig configures the record-only flow for an
+// authenticated request to an unmatched path. Endpoint stays the zero value and
+// the callbacks stay nil: run() terminates right after the meta row is written,
+// before anything reads them. endpoint_path records the decoded path the router
+// failed to match.
+func newNotFoundGatewayFlowConfig(r *http.Request) gatewayFlowConfig {
 	return gatewayFlowConfig{
-		Kind:         gatewayRoutePath,
-		Endpoint:     endpoint,
-		PathVars:     pathVars,
-		SourceFormat: sourceEndpointTypeForPath(endpoint.EndpointType),
-		Credentials:  endpoint.CredentialsResolver,
+		Kind:                 gatewayRouteNotFound,
+		RecordedEndpointPath: r.URL.Path,
+	}
+}
+
+func (h *gatewayHandler) newPathGatewayFlowConfig(endpoint db.Endpoint, pathVars map[string]string, suffix string) gatewayFlowConfig {
+	return gatewayFlowConfig{
+		Kind:     gatewayRoutePath,
+		Endpoint: endpoint,
+		// Prefix endpoints route on the prefix but are recorded — and filtered —
+		// at the concrete sub-path the client asked for.
+		RecordedEndpointPath: endpoint.Path + suffix,
+		PathVars:             pathVars,
+		SourceFormat:         upstreamFormatFor(endpoint.EndpointType),
 		ExtractModel: func(_ *http.Request, body []byte, vars map[string]string) (gatewayModelMode, error) {
 			if endpoint.ModelPath == "" {
 				return gatewayModelMode{}, nil
 			}
-			model, err := extractModel(body, endpoint.ModelPath, vars)
-			return gatewayModelMode{OriginalModel: model, HasModel: true}, err
+			// A prefix endpoint's sub-paths are open-ended: a body without the
+			// model field routes as no-model rather than 400.
+			return extractModel(body, endpoint.ModelPath, vars, endpoint.PrefixMatch)
 		},
 		SetBodyModel: func(body []byte, model string) ([]byte, error) {
 			return sjson.SetBytes(body, "model", model)
@@ -58,7 +126,7 @@ func (h *gatewayHandler) newPathGatewayFlowConfig(endpoint db.Endpoint, pathVars
 			if err != nil {
 				return candidateSet{}, err
 			}
-			return buildPathCandidateSet(providers, auth.APIKeyAnno, nil, endpoint)
+			return buildPathCandidateSet(providers, auth.UserAnno, auth.APIKeyAnno, nil, endpoint, suffix)
 		},
 		PrepareAttempt: identityPrepareAttempt,
 		HandleSuccess: func(input successInput) {

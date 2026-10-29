@@ -1,21 +1,18 @@
 package pricing
 
 import (
-	"embed"
-	"encoding/json"
-	"fmt"
 	"sort"
+	"strings"
 
 	"picotera/pkg/contract"
 
 	"github.com/agnivade/levenshtein"
 )
 
-//go:embed pricing.json
-var pricingFS embed.FS
-
 type catalog struct {
-	Providers []provider `json:"providers"`
+	SchemaVersion string     `json:"schema_version"`
+	GeneratedAt   string     `json:"generated_at"`
+	Providers     []provider `json:"providers"`
 }
 
 type provider struct {
@@ -70,25 +67,52 @@ var fieldNames = map[priceField]string{
 	fieldImplicitCacheRead: "implicit_cache_read",
 }
 
-// Match returns the best built-in pricing candidates for target. Matching uses
-// target exactly as provided.
-func Match(target string, limit int) ([]contract.PricingMatchCandidate, error) {
-	cat, err := loadCatalog()
-	if err != nil {
-		return nil, err
+func stripLastSlash(s string) string {
+	if i := strings.LastIndex(s, "/"); i >= 0 && i+1 < len(s) {
+		return s[i+1:]
 	}
+	return s
+}
 
+func minScore(target string, candidates ...string) int {
+	best := -1
+	for _, c := range candidates {
+		d := levenshtein.ComputeDistance(target, c)
+		if best < 0 || d < best {
+			best = d
+		}
+	}
+	return best
+}
+
+// match returns the best pricing candidates in c for target. Matching uses
+// target exactly as provided.
+func (c *catalog) match(target string, limit int) []contract.PricingMatchCandidate {
 	var matches []matchedCandidate
-	for _, p := range cat.Providers {
+	for _, p := range c.Providers {
 		for _, m := range p.Models {
 			pricing, ok := convertModelPricing(m)
 			if !ok {
 				continue
 			}
-			score := levenshtein.ComputeDistance(target, m.ID)
+			score := minScore(target, m.ID, stripLastSlash(m.ID))
 			for _, alias := range m.Aliases {
-				if d := levenshtein.ComputeDistance(target, alias); d < score {
+				d := minScore(target, alias, stripLastSlash(alias))
+				if d < score {
 					score = d
+				}
+			}
+			strippedTarget := stripLastSlash(target)
+			if strippedTarget != target {
+				d := minScore(strippedTarget, m.ID, stripLastSlash(m.ID))
+				if d < score {
+					score = d
+				}
+				for _, alias := range m.Aliases {
+					d := minScore(strippedTarget, alias, stripLastSlash(alias))
+					if d < score {
+						score = d
+					}
 				}
 			}
 			matches = append(matches, matchedCandidate{
@@ -126,19 +150,7 @@ func Match(target string, limit int) ([]contract.PricingMatchCandidate, error) {
 	for i := range matches {
 		out[i] = matches[i].PricingMatchCandidate
 	}
-	return out, nil
-}
-
-func loadCatalog() (*catalog, error) {
-	raw, err := pricingFS.ReadFile("pricing.json")
-	if err != nil {
-		return nil, fmt.Errorf("read pricing catalog: %w", err)
-	}
-	var cat catalog
-	if err := json.Unmarshal(raw, &cat); err != nil {
-		return nil, fmt.Errorf("parse pricing catalog: %w", err)
-	}
-	return &cat, nil
+	return out
 }
 
 func convertModelPricing(m model) (contract.Pricing, bool) {
@@ -270,7 +282,7 @@ func fillTierDefaults(t *contract.PricingTier, inputSet, cacheReadSet, cacheWrit
 		t.CacheWrite = t.Input
 	}
 	if !cacheWriteLongSet {
-		t.CacheWrite1H = t.Input
+		t.CacheWrite1H = t.CacheWrite
 	}
 	if !implicitSet {
 		t.ImplicitCacheRead = t.CacheRead

@@ -6,14 +6,6 @@ const (
 	RequestTypeUpstream = 1
 )
 
-// Request status tracks the lifecycle of a request record.
-const (
-	RequestStatusPending        = 0
-	RequestStatusHeaderReceived = 1
-	RequestStatusCompleted      = 2
-	RequestStatusFailed         = 3
-)
-
 const (
 	FinishReasonInternal       = 1
 	FinishReasonCancelled      = 2
@@ -25,4 +17,11 @@ const (
 	// interrupted from the dashboard, distinct from FinishReasonCancelled
 	// (client disconnect / context cancellation).
 	FinishReasonDashboardCancelled = 7
+)
+
+// InferredModelSource records where a request's inferred_model value came from.
+const (
+	InferredModelSourceUnknown   = 0 // 未推测出模型
+	InferredModelSourceSignature = 1 // 思维链签名（signature protobuf 解码）
+	InferredModelSourceResponse  = 2 // 响应结构（model 字段）
 )

@@ -1,0 +1,79 @@
+{
+  "nodes": {
+    "axonhub": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1791442227,
+        "narHash": "sha256-kvih+ZqyGTttApAdJOnj3bTKURQbo1OGf7mINzVx7Z4=",
+        "owner": "33forks",
+        "repo": "picotera-axonhub",
+        "rev": "ecaf94e66c228f523b6643ad85737d529b60807f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "33forks",
+        "ref": "unstable",
+        "repo": "picotera-axonhub",
+        "type": "github"
+      }
+    },
+    "go-sse": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1780299753,
+        "narHash": "sha256-9sGb5N8BlH+JpO7vPrGdr5KxVqpcCddrPKYUjwyEiZQ=",
+        "owner": "33forks",
+        "repo": "picotera-go-sse",
+        "rev": "8225fd9f3a9daaf10a73c895a32531aba17ef858",
+        "type": "github"
+      },
+      "original": {
+        "owner": "33forks",
+        "repo": "picotera-go-sse",
+        "type": "github"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1789546076,
+        "narHash": "sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "b1b875982b17dabde9b4a37f3e229e74913e6db3",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "quickjs": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1780748666,
+        "narHash": "sha256-+NZzjmcpNVoXxgjo6SIn+LBXteTdCPi4cYeP68OWohc=",
+        "owner": "33forks",
+        "repo": "picotera-quickjs-go",
+        "rev": "bcbdac617014471c87b26f5d63efdd29715d24c1",
+        "type": "github"
+      },
+      "original": {
+        "owner": "33forks",
+        "repo": "picotera-quickjs-go",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "axonhub": "axonhub",
+        "go-sse": "go-sse",
+        "nixpkgs": "nixpkgs",
+        "quickjs": "quickjs"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

@@ -19,18 +19,78 @@ func (f *fakeStore) ListEnabledScripts(_ context.Context) ([]db.Script, error) {
 	return f.scripts, nil
 }
 
+// hostAnnoCall records one setAnnotation call that reached the fake HostAPI.
+// Kind is "request" / "provider" / "apiKey"; only the matching id field is set.
+// Value is nil for a delete.
+type hostAnnoCall struct {
+	Kind      string
+	RequestID string
+	ID        int32
+	Key       string
+	Value     *string
+}
+
+// fakeHostAPI is a recording jsx.HostAPI: it captures every set call and serves
+// configurable get results (nil summary = not found).
+type fakeHostAPI struct {
+	annoCalls []hostAnnoCall
+	setErr    error
+
+	provider    *ProviderSummary
+	apiKey      *ApiKeySummary
+	getErr      error
+	providerIDs []int32
+	apiKeyIDs   []int32
+}
+
+func (h *fakeHostAPI) SetRequestAnnotation(_ context.Context, requestID, key string, value *string) error {
+	h.annoCalls = append(h.annoCalls, hostAnnoCall{Kind: "request", RequestID: requestID, Key: key, Value: value})
+	return h.setErr
+}
+
+func (h *fakeHostAPI) SetProviderAnnotation(_ context.Context, providerID int32, key string, value *string) error {
+	h.annoCalls = append(h.annoCalls, hostAnnoCall{Kind: "provider", ID: providerID, Key: key, Value: value})
+	return h.setErr
+}
+
+func (h *fakeHostAPI) SetApiKeyAnnotation(_ context.Context, apiKeyID int32, key string, value *string) error {
+	h.annoCalls = append(h.annoCalls, hostAnnoCall{Kind: "apiKey", ID: apiKeyID, Key: key, Value: value})
+	return h.setErr
+}
+
+func (h *fakeHostAPI) GetProvider(_ context.Context, providerID int32) (*ProviderSummary, error) {
+	h.providerIDs = append(h.providerIDs, providerID)
+	return h.provider, h.getErr
+}
+
+func (h *fakeHostAPI) GetApiKey(_ context.Context, apiKeyID int32) (*ApiKeySummary, error) {
+	h.apiKeyIDs = append(h.apiKeyIDs, apiKeyID)
+	return h.apiKey, h.getErr
+}
+
 func newTestEngine(t *testing.T, scripts ...db.Script) Engine {
+	t.Helper()
+	return newTestEngineWithHost(t, &fakeHostAPI{}, scripts...)
+}
+
+func newTestEngineWithHost(t *testing.T, host HostAPI, scripts ...db.Script) Engine {
 	t.Helper()
 	return NewEngine(
 		Config{HookTimeout: 500 * time.Millisecond, MemoryLimit: 64 * 1024 * 1024},
 		&fakeStore{scripts: scripts},
 		kv.NewMemoryStore(),
+		host,
 	)
 }
 
 func newTestSession(t *testing.T, scripts ...db.Script) Session {
 	t.Helper()
-	s, err := newTestEngine(t, scripts...).NewSession(context.Background(), "test-req")
+	return newTestSessionWithHost(t, &fakeHostAPI{}, scripts...)
+}
+
+func newTestSessionWithHost(t *testing.T, host HostAPI, scripts ...db.Script) Session {
+	t.Helper()
+	s, err := newTestEngineWithHost(t, host, scripts...).NewSession(context.Background(), "test-req")
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
@@ -48,8 +108,8 @@ func TestEngine_LoadsScripts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunRewriteModel: %v", err)
 	}
-	if out != "base-a-b" {
-		t.Errorf("want priority waterfall base-a-b, got %q", out)
+	if out != "base-b-a" {
+		t.Errorf("want priority waterfall base-b-a, got %q", out)
 	}
 }
 
@@ -275,27 +335,128 @@ func TestSession_BeforeRequest_UpstreamModelNonStringDropped(t *testing.T) {
 	}
 }
 
+func TestSession_AfterUpstreamError_Passthrough(t *testing.T) {
+	// A tap that returns nothing keeps the initial break and carries no
+	// statusCode/message override (follow-upstream semantics).
+	s := newTestSession(t, db.Script{ID: "a", Source: `picotera.hooks.afterUpstreamError.tap("a", function () {});`})
+	dec, err := s.RunAfterUpstreamError(UpstreamErrorView{StatusCode: 429, Message: "rate limited"})
+	if err != nil {
+		t.Fatalf("RunAfterUpstreamError: %v", err)
+	}
+	if dec.Break || dec.StatusCode != 0 || dec.Message != "" {
+		t.Errorf("passthrough should keep break and drop overrides, got %+v", dec)
+	}
+}
+
+func TestSession_AfterUpstreamError_DefaultBreakSeed(t *testing.T) {
+	// A break=true seed (e.g. the gateway's default 400 passthrough) with a
+	// passthrough hook keeps break=true and carries no override, so the caller
+	// faithfully passes through the upstream status/body/Content-Type.
+	s := newTestSession(t, db.Script{ID: "a", Source: `picotera.hooks.afterUpstreamError.tap("a", function () {});`})
+	dec, err := s.RunAfterUpstreamError(UpstreamErrorView{Break: true, StatusCode: 400, Message: "bad"})
+	if err != nil {
+		t.Fatalf("RunAfterUpstreamError: %v", err)
+	}
+	if !dec.Break || dec.StatusCode != 0 || dec.Message != "" {
+		t.Errorf("want {break:true, statusCode:0, message:\"\"}, got %+v", dec)
+	}
+}
+
+func TestSession_AfterUpstreamError_HookOverridesDefaultBreak(t *testing.T) {
+	// A hook can switch off the seeded default break by returning { break: false }.
+	s := newTestSession(t, db.Script{ID: "a", Source: `picotera.hooks.afterUpstreamError.tap("a", function () { return { break: false }; });`})
+	dec, err := s.RunAfterUpstreamError(UpstreamErrorView{Break: true, StatusCode: 400, Message: "bad"})
+	if err != nil {
+		t.Fatalf("RunAfterUpstreamError: %v", err)
+	}
+	if dec.Break {
+		t.Errorf("hook should override default break to false, got %+v", dec)
+	}
+}
+
+func TestSession_AfterUpstreamError_Break(t *testing.T) {
+	s := newTestSession(t, db.Script{ID: "a", Source: `picotera.hooks.afterUpstreamError.tap("a", function () { return { break: true, statusCode: 400, message: "nope" }; });`})
+	dec, err := s.RunAfterUpstreamError(UpstreamErrorView{StatusCode: 500, Message: "boom"})
+	if err != nil {
+		t.Fatalf("RunAfterUpstreamError: %v", err)
+	}
+	if !dec.Break || dec.StatusCode != 400 || dec.Message != "nope" {
+		t.Errorf("want {break:true, statusCode:400, message:nope}, got %+v", dec)
+	}
+}
+
+func TestSession_AfterUpstreamError_BreakFollowsUpstream(t *testing.T) {
+	// break=true with no statusCode/message means "follow upstream": the
+	// decision carries the empty overrides so the caller falls back.
+	s := newTestSession(t, db.Script{ID: "a", Source: `picotera.hooks.afterUpstreamError.tap("a", function () { return { break: true }; });`})
+	dec, err := s.RunAfterUpstreamError(UpstreamErrorView{StatusCode: 503, Message: "unavailable"})
+	if err != nil {
+		t.Fatalf("RunAfterUpstreamError: %v", err)
+	}
+	if !dec.Break || dec.StatusCode != 0 || dec.Message != "" {
+		t.Errorf("want {break:true, statusCode:0, message:\"\"}, got %+v", dec)
+	}
+}
+
+func TestSession_AfterUpstreamError_NonStringMessageDropped(t *testing.T) {
+	// statusCode is integer-cast (|0): a numeric string coerces to its int; a
+	// non-string message is dropped to "".
+	s := newTestSession(t, db.Script{ID: "a", Source: `picotera.hooks.afterUpstreamError.tap("a", function () { return { break: true, statusCode: "418", message: 42 }; });`})
+	dec, err := s.RunAfterUpstreamError(UpstreamErrorView{})
+	if err != nil {
+		t.Fatalf("RunAfterUpstreamError: %v", err)
+	}
+	if !dec.Break || dec.StatusCode != 418 || dec.Message != "" {
+		t.Errorf("statusCode should coerce to 418 and non-string message drop, got %+v", dec)
+	}
+}
+
+func TestSession_AfterUpstreamError_Streamed(t *testing.T) {
+	// The hook observes streamed=true; it can still return break but the caller
+	// is responsible for ignoring it. Here we only verify the input is visible.
+	s := newTestSession(t, db.Script{ID: "a", Source: `picotera.hooks.afterUpstreamError.tap("a", function (ctx, v) { return { break: v.streamed, statusCode: 0, message: "" }; });`})
+	dec, err := s.RunAfterUpstreamError(UpstreamErrorView{StatusCode: 200, Message: "stream error", Streamed: true})
+	if err != nil {
+		t.Fatalf("RunAfterUpstreamError: %v", err)
+	}
+	if !dec.Break {
+		t.Errorf("hook should see streamed=true, got %+v", dec)
+	}
+}
+
+func TestSession_AfterUpstreamError_LastErrorVisible(t *testing.T) {
+	// ctx.attempt.lastError is consumed by the hook (set via PatchContext before
+	// the run). Mirror the server's patch and assert the hook reads it.
+	s := newTestSession(t, db.Script{ID: "a", Source: `picotera.hooks.afterUpstreamError.tap("a", function (ctx) { return { break: true, statusCode: 0, message: ctx.attempt.lastError.message }; });`})
+	if err := s.PatchContext(ContextPatch{Attempt: &AttemptState{LastError: &LastError{ProviderID: 7, StatusCode: 500, Message: "prev"}}}); err != nil {
+		t.Fatalf("PatchContext: %v", err)
+	}
+	dec, err := s.RunAfterUpstreamError(UpstreamErrorView{StatusCode: 500, Message: "prev"})
+	if err != nil {
+		t.Fatalf("RunAfterUpstreamError: %v", err)
+	}
+	if dec.Message != "prev" {
+		t.Errorf("hook should read ctx.attempt.lastError.message, got %q", dec.Message)
+	}
+}
+
 func TestSession_RewriteRequest_Passthrough(t *testing.T) {
 	s := newTestSession(t, db.Script{ID: "a", Source: `picotera.hooks.rewriteRequest.tap("a", function () {});`})
 	in := PendingRequestShape{
 		URL:     "https://x/v1/chat",
 		Method:  "POST",
 		Headers: map[string][]string{"content-type": {"application/json"}},
-		Body:    json.RawMessage(`{"a":1}`),
 	}
-	out, err := s.RunRewriteRequest(in)
+	out, err := s.RunRewriteRequest(in, []byte(`{"a":1}`))
 	if err != nil {
 		t.Fatalf("RunRewriteRequest: %v", err)
 	}
 	if out.URL != in.URL || out.Method != in.Method {
 		t.Errorf("passthrough should preserve URL/Method, got %+v", out)
 	}
-	var inner string
-	if err := json.Unmarshal(out.Body, &inner); err != nil {
-		t.Fatalf("body should be a JSON string token, got %s: %v", string(out.Body), err)
-	}
-	if inner != `{"a":1}` {
-		t.Errorf("body content mismatch: got %q", inner)
+	// Untouched body → nil Body so the caller falls back to its own bytes.
+	if out.Body != nil {
+		t.Errorf("passthrough should leave Body nil, got %s", string(out.Body))
 	}
 }
 
@@ -307,21 +468,69 @@ func TestSession_RewriteRequest_BodyJSONRoundtrip(t *testing.T) {
 		URL:     "https://x",
 		Method:  "POST",
 		Headers: map[string][]string{"content-type": {"application/json"}},
-		Body:    json.RawMessage(`{"a":1}`),
-	})
+	}, []byte(`{"a":1}`))
 	if err != nil {
 		t.Fatalf("RunRewriteRequest: %v", err)
 	}
-	var inner string
-	if err := json.Unmarshal(out.Body, &inner); err != nil {
-		t.Fatalf("body should be JSON string token: %v", err)
-	}
 	var got map[string]int
-	if err := json.Unmarshal([]byte(inner), &got); err != nil {
-		t.Fatalf("inner body should be JSON object: %v (raw=%q)", err, inner)
+	if err := json.Unmarshal(out.Body, &got); err != nil {
+		t.Fatalf("body should be raw JSON object bytes: %v (raw=%q)", err, string(out.Body))
 	}
 	if got["a"] != 1 || got["b"] != 2 {
 		t.Errorf("want {a:1,b:2}, got %+v", got)
+	}
+}
+
+func TestSession_RewriteRequest_NoBody(t *testing.T) {
+	s := newTestSession(t, db.Script{ID: "a", Source: `
+		picotera.hooks.rewriteRequest.tap("a", function (ctx, pending) {
+			pending.url = "https://y/models";
+			pending.headers["x-added"] = ["1"];
+			return pending;
+		});
+	`})
+	out, err := s.RunRewriteRequest(PendingRequestShape{
+		URL:     "https://x/models",
+		Method:  "GET",
+		Headers: map[string][]string{"authorization": {"Bearer t"}},
+	}, nil)
+	if err != nil {
+		t.Fatalf("RunRewriteRequest: %v", err)
+	}
+	if out.URL != "https://y/models" {
+		t.Errorf("URL not rewritten, got %+v", out)
+	}
+	if got := out.Headers["x-added"]; len(got) != 1 || got[0] != "1" {
+		t.Errorf("header not added, got %+v", out.Headers)
+	}
+	if out.Body != nil {
+		t.Errorf("no-body request should leave Body nil, got %s", string(out.Body))
+	}
+}
+
+func TestSession_RewriteRequest_NoBody_ScriptAddsBody(t *testing.T) {
+	s := newTestSession(t, db.Script{ID: "a", Source: `
+		picotera.hooks.rewriteRequest.tap("a", function (ctx, pending) {
+			return { ...pending, method: "POST", body: { scope: "all" } };
+		});
+	`})
+	out, err := s.RunRewriteRequest(PendingRequestShape{
+		URL:     "https://x/models",
+		Method:  "GET",
+		Headers: map[string][]string{},
+	}, nil)
+	if err != nil {
+		t.Fatalf("RunRewriteRequest: %v", err)
+	}
+	if out.Method != "POST" {
+		t.Errorf("method not rewritten, got %q", out.Method)
+	}
+	var got map[string]string
+	if err := json.Unmarshal(out.Body, &got); err != nil {
+		t.Fatalf("body should be raw JSON object bytes: %v (raw=%q)", err, string(out.Body))
+	}
+	if got["scope"] != "all" {
+		t.Errorf("want {scope:all}, got %+v", got)
 	}
 }
 
@@ -460,6 +669,7 @@ func TestSession_MemoryLimit(t *testing.T) {
 			picotera.hooks.sortProviders.tap("a", function () { var x = new Array(5000000).fill(0); return [{provider:{id:x.length}}]; });
 		`}}},
 		kv.NewMemoryStore(),
+		&fakeHostAPI{},
 	)
 	s, err := eng.NewSession(context.Background(), "")
 	if err != nil {

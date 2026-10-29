@@ -9,6 +9,7 @@ import { queryKeys } from '@/api/queryKeys'
 import ProjectForm from '@/components/ProjectForm.vue'
 import MergeProjectForm from '@/components/MergeProjectForm.vue'
 import { Button, IconButton, DataCard, DataTable, Th, Td, Tr, StateText, Tag, Icon } from '@/ui'
+import { formatDuration } from '@/utils/duration'
 
 const panel = useSidePanel()
 const confirm = useConfirm()
@@ -76,6 +77,7 @@ function fmtTimestamp(ts?: string): string {
             <Th>路径数</Th>
             <Th>首次出现</Th>
             <Th>最近出现</Th>
+            <Th>持续时间</Th>
             <Th actions />
           </tr>
         </thead>
@@ -97,6 +99,11 @@ function fmtTimestamp(ts?: string): string {
             <Td>
               <span class="text-2xs text-ink-muted tabular-nums">{{
                 fmtTimestamp(p.lastSeenAt)
+              }}</span>
+            </Td>
+            <Td>
+              <span class="text-2xs text-ink-muted tabular-nums">{{
+                formatDuration(p.firstSeenAt, p.lastSeenAt)
               }}</span>
             </Td>
             <Td actions>

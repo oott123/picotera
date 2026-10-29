@@ -2,7 +2,7 @@
 import { computed, watch, ref } from 'vue'
 import VChart from 'vue-echarts'
 import { usePreferencesStore } from '@/stores/preferences'
-import { groupColor, getThemeAxisStyle } from './colors'
+import { groupColor, groupBorderColor, getThemeAxisStyle } from './colors'
 import type { CallbackDataParams } from 'echarts/types/dist/shared'
 import type { EChartsOption } from './echarts'
 import './echarts'
@@ -77,12 +77,19 @@ function escape(s: string) {
 
 const prefs = usePreferencesStore()
 const themeVersion = ref(0)
-watch(() => prefs.theme, () => { themeVersion.value++ })
+watch(
+  () => prefs.theme,
+  () => {
+    themeVersion.value++
+  },
+)
 
 const option = computed<EChartsOption>(() => {
   void themeVersion.value
   const axis = getThemeAxisStyle()
-  const fmtValue = props.valueFormat ?? ((v: number, skipUnit = false) => `${v.toFixed(0)}${skipUnit ? '' : ' tok/s'}`)
+  const fmtValue =
+    props.valueFormat ??
+    ((v: number, skipUnit = false) => `${v.toFixed(0)}${skipUnit ? '' : ' tok/s'}`)
   const reversed = [...groupStats.value].reverse()
   const labels = reversed.map((s) => s.label)
 
@@ -136,7 +143,7 @@ const option = computed<EChartsOption>(() => {
           _stat: s,
           itemStyle: {
             color: groupColor(s.colorIndex),
-            borderColor: groupColor(s.colorIndex),
+            borderColor: groupBorderColor(s.colorIndex),
           },
         })),
       },
@@ -148,6 +155,11 @@ const option = computed<EChartsOption>(() => {
 <template>
   <div class="flex flex-col gap-2">
     <div v-if="noData" class="text-2xs text-ink-muted">暂无数据</div>
-    <VChart v-else :option="option" :style="{ height: `${height ?? (groupStats.length * 15) + 50}px` }" :autoresize="true" />
+    <VChart
+      v-else
+      :option="option"
+      :style="{ height: `${height ?? groupStats.length * 15 + 50}px` }"
+      :autoresize="true"
+    />
   </div>
 </template>

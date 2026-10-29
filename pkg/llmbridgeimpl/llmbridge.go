@@ -17,6 +17,7 @@ import (
 	openaitrans "github.com/looplj/axonhub/llm/transformer/openai"
 	openairesponses "github.com/looplj/axonhub/llm/transformer/openai/responses"
 	openroutertrans "github.com/looplj/axonhub/llm/transformer/openrouter"
+	zaitrans "github.com/looplj/axonhub/llm/transformer/zai"
 )
 
 const (
@@ -83,6 +84,11 @@ func outboundFor(f llmbridge.Format, profile llmbridge.OutboundProfile) (transfo
 			return nil, fmt.Errorf("llmbridge: outbound type %q is only compatible with %s, got %s", profile.Type, llmbridge.FormatOpenAIChatCompletions, f)
 		}
 		return fireworksOutbound(profile)
+	case "zai":
+		if f != llmbridge.FormatOpenAIChatCompletions {
+			return nil, fmt.Errorf("llmbridge: outbound type %q is only compatible with %s, got %s", profile.Type, llmbridge.FormatOpenAIChatCompletions, f)
+		}
+		return zaiOutbound(profile)
 	default:
 		return nil, fmt.Errorf("llmbridge: unsupported outbound type %q", profile.Type)
 	}
@@ -164,6 +170,16 @@ func fireworksOutbound(profile llmbridge.OutboundProfile) (transformer.Outbound,
 	return fireworkstrans.NewOutboundTransformerWithConfig(cfg)
 }
 
+func zaiOutbound(profile llmbridge.OutboundProfile) (transformer.Outbound, error) {
+	cfg := &zaitrans.Config{}
+	forceZaiConfig(cfg)
+	if err := decodeOutboundConfig(profile.Config, cfg); err != nil {
+		return nil, err
+	}
+	forceZaiConfig(cfg)
+	return zaitrans.NewOutboundTransformerWithConfig(cfg)
+}
+
 func decodeOutboundConfig(config map[string]any, dst any) error {
 	if len(config) == 0 {
 		return nil
@@ -218,6 +234,11 @@ func forceDeepSeekConfig(cfg *deepseektrans.Config) {
 }
 
 func forceFireworksConfig(cfg *fireworkstrans.Config) {
+	cfg.BaseURL = placeholderURL
+	cfg.APIKeyProvider = auth.NewStaticKeyProvider(placeholderKey)
+}
+
+func forceZaiConfig(cfg *zaitrans.Config) {
 	cfg.BaseURL = placeholderURL
 	cfg.APIKeyProvider = auth.NewStaticKeyProvider(placeholderKey)
 }

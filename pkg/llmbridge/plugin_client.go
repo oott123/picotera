@@ -16,11 +16,14 @@ import (
 	"picotera/pkg/logx"
 
 	plugin "github.com/hashicorp/go-plugin"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 const defaultPluginStartTimeout = 10 * time.Second
+
+var errClosed = fmt.Errorf("llmbridge: bridge closed")
 
 type pluginBridge struct {
 	cfg    Config
@@ -29,6 +32,7 @@ type pluginBridge struct {
 	mu     sync.Mutex
 	client *plugin.Client
 	grpc   LLMBridgeClient
+	closed bool
 }
 
 // startPlugin spawns the plugin subprocess and performs the handshake. It is
@@ -49,6 +53,12 @@ func startPlugin(cfg Config, stderr io.Writer) (*plugin.Client, LLMBridgeClient,
 		StartTimeout:     timeout,
 		AllowedProtocols: []plugin.Protocol{plugin.ProtocolGRPC},
 		Stderr:           stderr,
+		GRPCDialOptions: []grpc.DialOption{
+			grpc.WithDefaultCallOptions(
+				grpc.MaxCallRecvMsgSize(MaxGRPCMessageSize),
+				grpc.MaxCallSendMsgSize(MaxGRPCMessageSize),
+			),
+		},
 	})
 	rpcClient, err := client.Client()
 	if err != nil {
@@ -93,6 +103,9 @@ func newPluginBridge(_ context.Context, cfg Config) (Bridge, error) {
 func (b *pluginBridge) acquire() (*plugin.Client, LLMBridgeClient, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.closed {
+		return nil, nil, errClosed
+	}
 	if b.client != nil && b.grpc != nil && !b.client.Exited() {
 		return b.client, b.grpc, nil
 	}
@@ -106,6 +119,9 @@ func (b *pluginBridge) acquire() (*plugin.Client, LLMBridgeClient, error) {
 func (b *pluginBridge) reacquire(stale *plugin.Client) (*plugin.Client, LLMBridgeClient, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.closed {
+		return nil, nil, errClosed
+	}
 	if b.client != stale && b.client != nil && b.grpc != nil && !b.client.Exited() {
 		return b.client, b.grpc, nil
 	}
@@ -113,6 +129,9 @@ func (b *pluginBridge) reacquire(stale *plugin.Client) (*plugin.Client, LLMBridg
 }
 
 func (b *pluginBridge) restartLocked() (*plugin.Client, LLMBridgeClient, error) {
+	if b.closed {
+		return nil, nil, errClosed
+	}
 	if b.client != nil {
 		b.client.Kill()
 	}
@@ -152,8 +171,11 @@ func (b *pluginBridge) Enabled() bool {
 func (b *pluginBridge) Close(context.Context) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.closed = true
 	if b.client != nil {
 		b.client.Kill()
+		b.client = nil
+		b.grpc = nil
 	}
 	return nil
 }

@@ -4,6 +4,91 @@
  */
 
 export interface paths {
+    "/api/picotera/admin/overview/distribution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get global overview distribution for a dimension (admin) */
+        get: operations["getAdminOverviewDistribution"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/admin/overview/series": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get hourly global overview series for a dimension (admin) */
+        get: operations["getAdminOverviewSeries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/admin/overview/speed-boxplot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get global decode speed box plot statistics for a dimension (admin) */
+        get: operations["getAdminOverviewSpeedBoxplot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/admin/overview/speed-series": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get global decode / prefill speed and TTFT distribution series for a dimension (admin) */
+        get: operations["getAdminOverviewSpeedSeries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/admin/overview/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get global overview summary totals (admin) */
+        get: operations["getAdminOverviewSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/picotera/api-keys": {
         parameters: {
             query?: never;
@@ -50,6 +135,23 @@ export interface paths {
         get: operations["getApiKey"];
         /** Update an API key */
         put: operations["updateApiKey"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get runtime application configuration */
+        get: operations["getConfig"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -196,6 +298,108 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/picotera/labels/endpoints": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List endpoint labels (path + name + endpointType) */
+        get: operations["listEndpointLabels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/labels/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List model labels (name) */
+        get: operations["listModelLabels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/labels/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List project labels (id + name) */
+        get: operations["listProjectLabels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/labels/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List provider labels (id + name) */
+        get: operations["listProviderLabels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/labels/upstream-models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List distinct upstream model names across providers */
+        get: operations["listUpstreamModelLabels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get current user */
+        get: operations["getMe"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/picotera/models": {
         parameters: {
             query?: never;
@@ -231,6 +435,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/picotera/models/recalculate-cost": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Recalculate the recorded cost of a model's historical requests */
+        post: operations["recalculateModelCosts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/picotera/models/{name}": {
         parameters: {
             query?: never;
@@ -257,6 +478,23 @@ export interface paths {
         };
         /** Get overview distribution for a dimension */
         get: operations["getOverviewDistribution"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/overview/outcome-series": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get request outcome rate series for a dimension */
+        get: operations["getOverviewOutcomeSeries"];
         put?: never;
         post?: never;
         delete?: never;
@@ -299,6 +537,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/picotera/overview/speed-series": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get decode / prefill speed and TTFT distribution series for a dimension */
+        get: operations["getOverviewSpeedSeries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/picotera/overview/summary": {
         parameters: {
             query?: never;
@@ -325,8 +580,25 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Match built-in pricing candidates for a model */
+        /** Match pricing candidates for a model against the current pricing catalog */
         post: operations["matchPricing"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/pricing/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Fetch the online pricing catalog and replace the in-memory one */
+        post: operations["refreshPricing"];
         delete?: never;
         options?: never;
         head?: never;
@@ -686,10 +958,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List all global settings */
-        get: operations["listGlobalSettings"];
-        /** Create or update a global setting */
-        put: operations["upsertGlobalSetting"];
+        /** List all settings for the current user */
+        get: operations["listUserSettings"];
+        /** Create or update a setting for the current user */
+        put: operations["upsertUserSetting"];
         post?: never;
         delete?: never;
         options?: never;
@@ -704,18 +976,36 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get a global setting by key */
-        get: operations["getGlobalSetting"];
+        /** Get a setting by key for the current user */
+        get: operations["getUserSetting"];
         put?: never;
         post?: never;
-        /** Delete a global setting */
-        delete: operations["deleteGlobalSetting"];
+        /** Delete a setting for the current user */
+        delete: operations["deleteUserSetting"];
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/picotera/simulate/dispatch": {
+    "/api/picotera/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List all users */
+        get: operations["listUsers"];
+        put?: never;
+        /** Create a user */
+        post: operations["createUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/users/delete": {
         parameters: {
             query?: never;
             header?: never;
@@ -724,8 +1014,78 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Simulate dispatch and return ranked candidates */
-        post: operations["simulateDispatch"];
+        /** Delete a user and its identities */
+        post: operations["deleteUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/users/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a user */
+        get: operations["getUser"];
+        /** Update a user */
+        put: operations["updateUser"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/users/{userId}/identities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List a user's identities */
+        get: operations["listUserIdentities"];
+        put?: never;
+        /** Bind an identity to a user */
+        post: operations["createUserIdentity"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/users/{userId}/identities/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Delete a user's identity */
+        post: operations["deleteUserIdentity"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/picotera/users/{userId}/identities/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update a user's identity */
+        put: operations["updateUserIdentity"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -736,6 +1096,35 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AdminOverviewBreakdownRowView: {
+            costs: components["schemas"]["OverviewCostView"][] | null;
+            model: string;
+            /** Format: int32 */
+            providerId: number;
+            /** Format: int64 */
+            totalTokens: number;
+            upstreamModel: string;
+            /** Format: int32 */
+            userId: number;
+        };
+        AdminOverviewSummaryView: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/AdminOverviewSummaryView.json
+             */
+            readonly $schema?: string;
+            breakdown: components["schemas"]["AdminOverviewBreakdownRowView"][] | null;
+            costs: components["schemas"]["OverviewCostView"][] | null;
+            tokenBreakdown: components["schemas"]["OverviewTokenBreakdownView"];
+            /** Format: int64 */
+            totalRequests: number;
+            /** Format: int64 */
+            totalTokens: number;
+            /** Format: int64 */
+            totalTraceCount: number;
+            window: components["schemas"]["OverviewWindowView"];
+        };
         ApiKeyMutateBody: {
             /**
              * Format: uri
@@ -767,6 +1156,19 @@ export interface components {
             key: string;
             name: string;
             updatedAt: string;
+            /** Format: int64 */
+            userId: number;
+        };
+        ConfigView: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/ConfigView.json
+             */
+            readonly $schema?: string;
+            /** @enum {string} */
+            authMode: "single-user-mode" | "http-header" | "oidc";
+            title: string;
         };
         CreateProviderRequestBody: {
             /**
@@ -780,8 +1182,9 @@ export interface components {
             };
             credentials: string;
             disabled: boolean;
+            insecureTls: boolean;
             /** @enum {string} */
-            modelsEndpointResolver?: "unknown" | "generalApiKey" | "bearerToken" | "xApiKey" | "searchKey" | "googApiKey";
+            modelsEndpointResolver?: "unknown" | "followRequest" | "bearerToken" | "xApiKey" | "searchKey" | "googApiKey";
             modelsEndpointUrl?: string;
             name: string;
             /** Format: int32 */
@@ -876,6 +1279,32 @@ export interface components {
             readonly $schema?: string;
             id: string;
         };
+        DeleteUserIdentityRequestBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/DeleteUserIdentityRequestBody.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            id: number;
+        };
+        DeleteUserRequestBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/DeleteUserRequestBody.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            id: number;
+        };
+        EndpointLabel: {
+            /** @enum {string} */
+            endpointType: "general" | "openaiChatCompletions" | "openaiResponses" | "anthropicMessages" | "anthropicCountTokens" | "geminiGenerateContent" | "geminiStreamGenerateContent" | "exaSearch" | "deepseekSearch" | "modelList" | "codex" | "openaiEmbedding" | "unknown";
+            name: string;
+            path: string;
+        };
         EndpointView: {
             /**
              * Format: uri
@@ -884,12 +1313,13 @@ export interface components {
              */
             readonly $schema?: string;
             /** @enum {string} */
-            credentialsResolver: "generalApiKey" | "bearerToken" | "xApiKey" | "searchKey" | "googApiKey" | "unknown";
+            credentialsResolver: "followRequest" | "bearerToken" | "xApiKey" | "searchKey" | "googApiKey" | "unknown";
             /** @enum {string} */
-            endpointType: "general" | "openaiChatCompletions" | "openaiResponses" | "anthropicMessages" | "anthropicCountTokens" | "geminiGenerateContent" | "geminiStreamGenerateContent" | "exaSearch" | "modelList" | "unknown";
+            endpointType: "general" | "openaiChatCompletions" | "openaiResponses" | "anthropicMessages" | "anthropicCountTokens" | "geminiGenerateContent" | "geminiStreamGenerateContent" | "exaSearch" | "deepseekSearch" | "modelList" | "codex" | "openaiEmbedding" | "unknown";
             modelPath: string;
             name: string;
             path: string;
+            prefixMatch: boolean;
         };
         ExchangeRateView: {
             /**
@@ -925,16 +1355,6 @@ export interface components {
             providerId: number;
             providerModels: components["schemas"]["ProviderModelEntry"][] | null;
             removedModels: string[] | null;
-        };
-        GlobalSettingView: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/schemas/GlobalSettingView.json
-             */
-            readonly $schema?: string;
-            key: string;
-            value: unknown;
         };
         InterruptRequestResponseBody: {
             /**
@@ -987,6 +1407,18 @@ export interface components {
             readonly $schema?: string;
             candidates: components["schemas"]["PricingMatchCandidate"][] | null;
         };
+        MeView: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/MeView.json
+             */
+            readonly $schema?: string;
+            displayName: string;
+            /** Format: int64 */
+            id: number;
+            isAdmin: boolean;
+        };
         MergeProjectRequestBody: {
             /**
              * Format: uri
@@ -998,6 +1430,9 @@ export interface components {
             sourceId: number;
             /** Format: int32 */
             targetId: number;
+        };
+        ModelLabel: {
+            name: string;
         };
         ModelView: {
             /**
@@ -1053,6 +1488,33 @@ export interface components {
             rows: components["schemas"]["OverviewDistributionRowView"][] | null;
             window: components["schemas"]["OverviewWindowView"];
         };
+        OverviewOutcomePointView: {
+            bucketAt: string;
+            category: string;
+            /** Format: int64 */
+            count: number;
+            groupKey: string;
+            metric: string;
+            /** Format: int64 */
+            total: number;
+            /** Format: double */
+            value: number;
+        };
+        OverviewOutcomeSeriesView: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/OverviewOutcomeSeriesView.json
+             */
+            readonly $schema?: string;
+            buckets: string[] | null;
+            dimension: string;
+            downstreamGroups: components["schemas"]["OverviewSeriesGroupView"][] | null;
+            finishReasons: number[] | null;
+            points: components["schemas"]["OverviewOutcomePointView"][] | null;
+            upstreamGroups: components["schemas"]["OverviewSeriesGroupView"][] | null;
+            window: components["schemas"]["OverviewWindowView"];
+        };
         OverviewSeriesGroupView: {
             key: string;
             label: string;
@@ -1105,6 +1567,44 @@ export interface components {
             items: components["schemas"]["OverviewSpeedBoxplotItemView"][] | null;
             window: components["schemas"]["OverviewWindowView"];
         };
+        OverviewSpeedSeriesPointView: {
+            bucketAt: string;
+            /** Format: int64 */
+            count: number;
+            groupKey: string;
+            /** Format: double */
+            max: number;
+            /** Format: double */
+            median: number;
+            metric: string;
+            /** Format: double */
+            min: number;
+            /** Format: double */
+            p25: number;
+            /** Format: double */
+            p95: number;
+        };
+        OverviewSpeedSeriesView: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/OverviewSpeedSeriesView.json
+             */
+            readonly $schema?: string;
+            buckets: string[] | null;
+            dimension: string;
+            groups: components["schemas"]["OverviewSeriesGroupView"][] | null;
+            points: components["schemas"]["OverviewSpeedSeriesPointView"][] | null;
+            window: components["schemas"]["OverviewWindowView"];
+        };
+        OverviewSuccessRateView: {
+            /** Format: double */
+            rate: number;
+            /** Format: int64 */
+            successful: number;
+            /** Format: int64 */
+            total: number;
+        };
         OverviewSummaryView: {
             /**
              * Format: uri
@@ -1121,6 +1621,7 @@ export interface components {
             totalTokens: number;
             /** Format: int64 */
             totalTraceCount: number;
+            upstreamSuccess: components["schemas"]["OverviewSuccessRateView"];
             window: components["schemas"]["OverviewWindowView"];
         };
         OverviewTokenBreakdownView: {
@@ -1222,6 +1723,11 @@ export interface components {
             /** Format: double */
             output: number;
         };
+        ProjectLabel: {
+            /** Format: int32 */
+            id: number;
+            name: string;
+        };
         ProjectView: {
             /**
              * Format: uri
@@ -1247,11 +1753,16 @@ export interface components {
              */
             readonly $schema?: string;
             /** @enum {string} */
-            credentialsResolver?: "unknown" | "generalApiKey" | "bearerToken" | "xApiKey" | "searchKey" | "googApiKey";
+            credentialsResolver?: "unknown" | "followRequest" | "bearerToken" | "xApiKey" | "searchKey" | "googApiKey";
             endpointPath: string;
             /** Format: int32 */
             providerId: number;
             upstreamUrl: string;
+        };
+        ProviderLabel: {
+            /** Format: int32 */
+            id: number;
+            name: string;
         };
         ProviderModelEntry: {
             annotations?: {
@@ -1278,8 +1789,9 @@ export interface components {
             disabled: boolean;
             /** Format: int32 */
             id: number;
+            insecureTls: boolean;
             /** @enum {string} */
-            modelsEndpointResolver?: "unknown" | "generalApiKey" | "bearerToken" | "xApiKey" | "searchKey" | "googApiKey";
+            modelsEndpointResolver?: "unknown" | "followRequest" | "bearerToken" | "xApiKey" | "searchKey" | "googApiKey";
             modelsEndpointUrl?: string;
             name: string;
             /** Format: int32 */
@@ -1287,6 +1799,57 @@ export interface components {
             providerModels: components["schemas"]["ProviderModelEntry"][] | null;
             proxyUrl?: string;
             supportsNativeWebSearch: boolean;
+        };
+        RecalculateModelCostsRequestBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/RecalculateModelCostsRequestBody.json
+             */
+            readonly $schema?: string;
+            /** @example gpt-5.6-luna */
+            name: string;
+            /**
+             * @description Go duration parsed by time.ParseDuration; empty means the whole history
+             * @example 168h
+             */
+            range?: string;
+        };
+        RecalculateModelCostsResponseBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/RecalculateModelCostsResponseBody.json
+             */
+            readonly $schema?: string;
+            /** @example 2026-09-19T07:57:27Z */
+            endAt: string;
+            model: string;
+            range: string;
+            /** @example 2026-09-12T07:57:27Z */
+            startAt?: string;
+            /**
+             * Format: int64
+             * @example 812
+             */
+            tookMs: number;
+            /**
+             * Format: int64
+             * @example 1234
+             */
+            updated: number;
+        };
+        RefreshPricingResponseBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/RefreshPricingResponseBody.json
+             */
+            readonly $schema?: string;
+            /** @example 2026-10-08T07:54:49.447687Z */
+            generatedAt: string;
+            /** @example https://raw.githubusercontent.com/oott123/picotera/refs/heads/master/pkg/pricing/pricing.json */
+            sourceUrl: string;
         };
         RequestLiveView: {
             /**
@@ -1341,6 +1904,9 @@ export interface components {
              * @example https://example.com/schemas/RequestView.json
              */
             readonly $schema?: string;
+            annotations?: {
+                [key: string]: string;
+            };
             /** Format: int32 */
             apiKeyId?: number;
             /** Format: int32 */
@@ -1352,9 +1918,15 @@ export interface components {
             createdAt?: string;
             endpointPath?: string;
             errorMessage?: string;
+            externalRequestId?: string;
+            externalResponseId?: string;
             /** Format: int32 */
             finishReason?: number;
             id: string;
+            inferredModel?: string;
+            /** Format: int32 */
+            inferredModelSource?: number;
+            inferredProvider?: string;
             /** Format: int32 */
             inputTokens?: number;
             model?: string;
@@ -1372,16 +1944,27 @@ export interface components {
             responseArtifactUrl?: string;
             spanId?: string;
             /** Format: int32 */
-            status: number;
-            /** Format: int32 */
             statusCode?: number;
             /** Format: int32 */
             timeSpentMs?: number;
+            /** Format: double */
+            toolCost?: number;
+            toolCostCurrency?: string;
+            toolUsage?: components["schemas"]["ToolUsageEntryView"][] | null;
+            toolUsageRaw?: {
+                [key: string]: unknown;
+            };
+            traceId?: string;
             /** Format: int32 */
             ttftMs?: number;
             /** Format: int32 */
             type: number;
             upstreamModel?: string;
+            usageRaw?: {
+                [key: string]: unknown;
+            };
+            /** Format: int64 */
+            userId?: number;
             userMessagePreview?: string;
         };
         ScriptMutateBody: {
@@ -1392,6 +1975,7 @@ export interface components {
              */
             readonly $schema?: string;
             enabled: boolean;
+            id: string;
             name: string;
             source: string;
         };
@@ -1409,93 +1993,17 @@ export interface components {
             source: string;
             updatedAt: string;
         };
-        SimulateCandidate: {
-            bridged: boolean;
-            mergedAnnotations: {
-                [key: string]: string;
-            };
-            outboundProfile?: components["schemas"]["SimulateOutboundProfile"];
-            provider: components["schemas"]["SimulateProviderSummary"];
-            providerModel: components["schemas"]["SimulateProviderModel"];
-            upstreamFormat: string;
-        };
-        SimulateDispatchRequestBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/schemas/SimulateDispatchRequestBody.json
-             */
-            readonly $schema?: string;
-            /** Format: int32 */
-            apiKeyId: number;
-            /** @description Raw JSON request body string. Empty allowed (body omitted from hook context). */
-            body: string;
-            endpoint: components["schemas"]["SimulateEndpointSelector"];
-            model: string;
-            /** @description Optional path variable map (used when the endpoint path contains {name} tokens). */
-            pathVars?: {
-                [key: string]: string;
-            };
-        };
-        SimulateDispatchResponseBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/schemas/SimulateDispatchResponseBody.json
-             */
-            readonly $schema?: string;
-            candidates: components["schemas"]["SimulateCandidate"][] | null;
-            logs: components["schemas"]["SimulateLogEntry"][] | null;
-            originalModel: string;
-            resolvedModel: string;
-            sourceFormat: string;
-            stream: boolean;
-        };
-        SimulateEndpointSelector: {
-            /**
-             * @description Unified source format; required when kind==unified.
-             * @enum {string}
-             */
-            format?: "anthropicMessages" | "openaiChatCompletions" | "openaiResponses" | "geminiGenerateContent" | "geminiStreamGenerateContent";
-            /**
-             * @description "path" picks a configured endpoint row; "unified" picks one of the five unified routes.
-             * @enum {string}
-             */
-            kind: "path" | "unified";
-            /** @description Endpoint path; required when kind==path. */
-            path?: string;
-        };
-        SimulateLogEntry: {
-            level: string;
-            message: string;
-            ts: string;
-        };
-        SimulateOutboundProfile: {
-            config: {
-                [key: string]: unknown;
-            };
-            type: string;
-        };
-        SimulateProviderModel: {
-            annotations: {
-                [key: string]: string;
-            };
-            endpoint: string;
+        ToolUsageEntryView: {
+            /** Format: int64 */
+            inputTokens?: number;
+            model?: string;
             name: string;
-            /** Format: int32 */
-            priority: number;
-            upstreamModelName: string;
-        };
-        SimulateProviderSummary: {
-            annotations: {
-                [key: string]: string;
-            };
-            disabled: boolean;
-            /** Format: int32 */
-            id: number;
-            name: string;
-            /** Format: int32 */
-            priority: number;
+            /** Format: int64 */
+            numImages?: number;
+            /** Format: int64 */
+            numRequests?: number;
+            /** Format: int64 */
+            outputTokens?: number;
         };
         TraceCostView: {
             /** Format: double */
@@ -1510,16 +2018,6 @@ export interface components {
              */
             readonly $schema?: string;
             providerModels: components["schemas"]["ProviderModelEntry"][] | null;
-        };
-        UpsertGlobalSettingRequestBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/schemas/UpsertGlobalSettingRequestBody.json
-             */
-            readonly $schema?: string;
-            key: string;
-            value: unknown;
         };
         UpsertProjectRequestBody: {
             /**
@@ -1547,8 +2045,9 @@ export interface components {
             disabled: boolean;
             /** Format: int32 */
             id?: number;
+            insecureTls: boolean;
             /** @enum {string} */
-            modelsEndpointResolver?: "unknown" | "generalApiKey" | "bearerToken" | "xApiKey" | "searchKey" | "googApiKey";
+            modelsEndpointResolver?: "unknown" | "followRequest" | "bearerToken" | "xApiKey" | "searchKey" | "googApiKey";
             modelsEndpointUrl?: string;
             name: string;
             /** Format: int32 */
@@ -1556,6 +2055,83 @@ export interface components {
             providerModels: components["schemas"]["ProviderModelEntry"][] | null;
             proxyUrl?: string;
             supportsNativeWebSearch: boolean;
+        };
+        UpsertUserSettingRequestBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/UpsertUserSettingRequestBody.json
+             */
+            readonly $schema?: string;
+            key: string;
+            value: unknown;
+        };
+        UserIdentityMutateBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/UserIdentityMutateBody.json
+             */
+            readonly $schema?: string;
+            identity: string;
+            provider: string;
+        };
+        UserIdentityView: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/UserIdentityView.json
+             */
+            readonly $schema?: string;
+            createdAt: string;
+            /** Format: int64 */
+            id: number;
+            identity: string;
+            provider: string;
+            /** Format: int64 */
+            userId: number;
+        };
+        UserMutateBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/UserMutateBody.json
+             */
+            readonly $schema?: string;
+            annotations?: {
+                [key: string]: string;
+            };
+            disabled?: boolean;
+            displayName: string;
+            isAdmin?: boolean;
+        };
+        UserSettingView: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/UserSettingView.json
+             */
+            readonly $schema?: string;
+            key: string;
+            value: unknown;
+        };
+        UserView: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/UserView.json
+             */
+            readonly $schema?: string;
+            annotations: {
+                [key: string]: string;
+            };
+            createdAt: string;
+            disabled: boolean;
+            displayName: string;
+            /** Format: int64 */
+            id: number;
+            isAdmin: boolean;
+            updatedAt: string;
         };
     };
     responses: never;
@@ -1566,6 +2142,197 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    getAdminOverviewDistribution: {
+        parameters: {
+            query: {
+                range: "1d" | "7d" | "1m" | "custom";
+                startAt?: string;
+                endAt?: string;
+                userId?: number;
+                model?: string;
+                upstreamModel?: string;
+                providerId?: number;
+                dimension: "user" | "model" | "upstreamModel" | "provider";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OverviewDistributionView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    getAdminOverviewSeries: {
+        parameters: {
+            query: {
+                range: "1d" | "7d" | "1m" | "custom";
+                startAt?: string;
+                endAt?: string;
+                userId?: number;
+                model?: string;
+                upstreamModel?: string;
+                providerId?: number;
+                dimension: "none" | "user" | "model" | "upstreamModel" | "provider";
+                bucket?: "auto" | "10m" | "1h" | "6h" | "12h" | "24h";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OverviewSeriesView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    getAdminOverviewSpeedBoxplot: {
+        parameters: {
+            query: {
+                range: "1d" | "7d" | "1m" | "custom";
+                startAt?: string;
+                endAt?: string;
+                userId?: number;
+                model?: string;
+                upstreamModel?: string;
+                providerId?: number;
+                dimension: "none" | "user" | "model" | "upstreamModel" | "provider";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OverviewSpeedBoxplotView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    getAdminOverviewSpeedSeries: {
+        parameters: {
+            query: {
+                range: "1d" | "7d" | "1m" | "custom";
+                startAt?: string;
+                endAt?: string;
+                userId?: number;
+                model?: string;
+                upstreamModel?: string;
+                providerId?: number;
+                dimension: "none" | "user" | "model" | "upstreamModel" | "provider";
+                bucket?: "auto" | "10m" | "1h" | "6h" | "12h" | "24h";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OverviewSpeedSeriesView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    getAdminOverviewSummary: {
+        parameters: {
+            query: {
+                range: "1d" | "7d" | "1m" | "custom";
+                startAt?: string;
+                endAt?: string;
+                userId?: number;
+                model?: string;
+                upstreamModel?: string;
+                providerId?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOverviewSummaryView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
     listApiKeys: {
         parameters: {
             query?: never;
@@ -1712,6 +2479,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiKeyView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    getConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigView"];
                 };
             };
             /** @description Error */
@@ -2071,6 +2867,180 @@ export interface operations {
             };
         };
     };
+    listEndpointLabels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EndpointLabel"][] | null;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    listModelLabels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelLabel"][] | null;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    listProjectLabels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectLabel"][] | null;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    listProviderLabels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderLabel"][] | null;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    listUpstreamModelLabels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[] | null;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    getMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
     listModels: {
         parameters: {
             query?: never;
@@ -2164,6 +3134,39 @@ export interface operations {
             };
         };
     };
+    recalculateModelCosts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecalculateModelCostsRequestBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecalculateModelCostsResponseBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
     getModel: {
         parameters: {
             query?: never;
@@ -2198,7 +3201,9 @@ export interface operations {
     getOverviewDistribution: {
         parameters: {
             query: {
-                range: "1d" | "7d" | "1m";
+                range: "1d" | "7d" | "1m" | "custom";
+                startAt?: string;
+                endAt?: string;
                 apiKeyId?: number;
                 model?: string;
                 upstreamModel?: string;
@@ -2232,16 +3237,59 @@ export interface operations {
             };
         };
     };
-    getOverviewSeries: {
+    getOverviewOutcomeSeries: {
         parameters: {
             query: {
-                range: "1d" | "7d" | "1m";
+                range: "1d" | "7d" | "1m" | "custom";
+                startAt?: string;
+                endAt?: string;
                 apiKeyId?: number;
                 model?: string;
                 upstreamModel?: string;
                 providerId?: number;
                 projectId?: number;
                 dimension: "none" | "apiKey" | "model" | "upstreamModel" | "provider" | "project";
+                bucket?: "auto" | "10m" | "1h" | "6h" | "12h" | "24h";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OverviewOutcomeSeriesView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    getOverviewSeries: {
+        parameters: {
+            query: {
+                range: "1d" | "7d" | "1m" | "custom";
+                startAt?: string;
+                endAt?: string;
+                apiKeyId?: number;
+                model?: string;
+                upstreamModel?: string;
+                providerId?: number;
+                projectId?: number;
+                dimension: "none" | "apiKey" | "model" | "upstreamModel" | "provider" | "project";
+                bucket?: "auto" | "10m" | "1h" | "6h" | "12h" | "24h";
             };
             header?: never;
             path?: never;
@@ -2272,7 +3320,9 @@ export interface operations {
     getOverviewSpeedBoxplot: {
         parameters: {
             query: {
-                range: "1d" | "7d" | "1m";
+                range: "1d" | "7d" | "1m" | "custom";
+                startAt?: string;
+                endAt?: string;
                 apiKeyId?: number;
                 model?: string;
                 upstreamModel?: string;
@@ -2306,10 +3356,52 @@ export interface operations {
             };
         };
     };
+    getOverviewSpeedSeries: {
+        parameters: {
+            query: {
+                range: "1d" | "7d" | "1m" | "custom";
+                startAt?: string;
+                endAt?: string;
+                apiKeyId?: number;
+                model?: string;
+                upstreamModel?: string;
+                providerId?: number;
+                projectId?: number;
+                dimension: "none" | "apiKey" | "model" | "upstreamModel" | "provider" | "project";
+                bucket?: "auto" | "10m" | "1h" | "6h" | "12h" | "24h";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OverviewSpeedSeriesView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
     getOverviewSummary: {
         parameters: {
             query: {
-                range: "1d" | "7d" | "1m";
+                range: "1d" | "7d" | "1m" | "custom";
+                startAt?: string;
+                endAt?: string;
                 apiKeyId?: number;
                 model?: string;
                 upstreamModel?: string;
@@ -2362,6 +3454,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MatchPricingResponseBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    refreshPricing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefreshPricingResponseBody"];
                 };
             };
             /** @description Error */
@@ -2857,6 +3978,8 @@ export interface operations {
             query?: {
                 limit?: number;
                 cursor?: string;
+                startAt?: string;
+                endAt?: string;
             };
             header?: never;
             path?: never;
@@ -2895,7 +4018,14 @@ export interface operations {
                 model?: string;
                 upstreamModel?: string;
                 traceId?: string;
+                requestId?: string;
                 projectId?: number;
+                startAt?: string;
+                endAt?: string;
+                emptyResponse?: boolean;
+                finishReason?: number;
+                routing?: "detected" | "undetected";
+                annotations?: string;
             };
             header?: never;
             path?: never;
@@ -3206,7 +4336,7 @@ export interface operations {
             };
         };
     };
-    listGlobalSettings: {
+    listUserSettings: {
         parameters: {
             query?: never;
             header?: never;
@@ -3221,7 +4351,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["GlobalSettingView"][] | null;
+                    "application/json": components["schemas"]["UserSettingView"][] | null;
                 };
             };
             /** @description Error */
@@ -3235,7 +4365,7 @@ export interface operations {
             };
         };
     };
-    upsertGlobalSetting: {
+    upsertUserSetting: {
         parameters: {
             query?: never;
             header?: never;
@@ -3244,7 +4374,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["UpsertGlobalSettingRequestBody"];
+                "application/json": components["schemas"]["UpsertUserSettingRequestBody"];
             };
         };
         responses: {
@@ -3254,7 +4384,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["GlobalSettingView"];
+                    "application/json": components["schemas"]["UserSettingView"];
                 };
             };
             /** @description Error */
@@ -3268,7 +4398,7 @@ export interface operations {
             };
         };
     };
-    getGlobalSetting: {
+    getUserSetting: {
         parameters: {
             query?: never;
             header?: never;
@@ -3285,7 +4415,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["GlobalSettingView"];
+                    "application/json": components["schemas"]["UserSettingView"];
                 };
             };
             /** @description Error */
@@ -3299,7 +4429,7 @@ export interface operations {
             };
         };
     };
-    deleteGlobalSetting: {
+    deleteUserSetting: {
         parameters: {
             query?: never;
             header?: never;
@@ -3328,7 +4458,36 @@ export interface operations {
             };
         };
     };
-    simulateDispatch: {
+    listUsers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserView"][] | null;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    createUser: {
         parameters: {
             query?: never;
             header?: never;
@@ -3337,7 +4496,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SimulateDispatchRequestBody"];
+                "application/json": components["schemas"]["UserMutateBody"];
             };
         };
         responses: {
@@ -3347,7 +4506,239 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SimulateDispatchResponseBody"];
+                    "application/json": components["schemas"]["UserView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    deleteUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteUserRequestBody"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    getUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    updateUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserMutateBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    listUserIdentities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserIdentityView"][] | null;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    createUserIdentity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserIdentityMutateBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserIdentityView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    deleteUserIdentity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteUserIdentityRequestBody"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    updateUserIdentity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: number;
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserIdentityMutateBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserIdentityView"];
                 };
             };
             /** @description Error */

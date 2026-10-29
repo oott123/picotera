@@ -11,6 +11,7 @@ const queryClient = useQueryClient()
 
 const isEdit = !!props.script
 const form = ref({
+  id: props.script?.id ?? '',
   name: props.script?.name ?? '',
   source: props.script?.source ?? '',
   enabled: props.script?.enabled ?? true,
@@ -18,7 +19,7 @@ const form = ref({
 const saving = ref(false)
 const error = ref('')
 const saveMutation = useMutation({
-  mutationFn: (body: { name: string; source: string; enabled: boolean }) =>
+  mutationFn: (body: { id: string; name: string; source: string; enabled: boolean }) =>
     isEdit ? updateScript(props.script!.id, body) : createScript(body),
   onSuccess: () => invalidateScripts(queryClient),
 })
@@ -28,6 +29,7 @@ async function submit() {
   error.value = ''
   try {
     await saveMutation.mutateAsync({
+      id: form.value.id,
       name: form.value.name,
       source: form.value.source,
       enabled: form.value.enabled,
@@ -48,8 +50,8 @@ async function submit() {
     @close="emit('close')"
   >
     <form id="script-form" class="flex flex-col gap-4" @submit.prevent="submit">
-      <Field v-if="isEdit" label="ID">
-        <Input :model-value="props.script!.id" readonly />
+      <Field label="ID">
+        <Input v-model="form.id" :placeholder="isEdit ? '' : '留空自动生成'" />
       </Field>
       <Field label="名称">
         <Input v-model="form.name" required placeholder="例如 reverse-providers" />

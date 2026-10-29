@@ -33,30 +33,34 @@ func (s *Server) fetchModelAnnotations(ctx context.Context, modelName string) ma
 	return out
 }
 
-// candidateAnnotationsBuilder pins the request-scoped layers (model and
+// candidateAnnotationsBuilder pins the request-scoped layers (model, user, and
 // apiKey) so the per-candidate loop only needs to feed in the (provider,
 // mpe entry) pair. apiKey is the highest-priority layer and applies to
 // every candidate produced under this request. Order: model < provider <
-// entry < apiKey.
+// entry < user < apiKey.
 type candidateAnnotationsBuilder struct {
 	modelAnno  map[string]string
+	userAnno   map[string]string
 	apiKeyAnno map[string]string
 }
 
 // newCandidateAnnotationsBuilder decodes modelAnnoRaw (JSONB bytes — may be
-// nil/empty for "{}"-equivalent) and stashes the api-key layer. The returned
-// builder is safe to reuse across every candidate produced under this
+// nil/empty for "{}"-equivalent) and stashes the user + api-key layers. The
+// returned builder is safe to reuse across every candidate produced under this
 // request; callers must not mutate the returned model map directly because
 // it's reused as the seed of every merge result.
-func newCandidateAnnotationsBuilder(modelAnnoRaw []byte, apiKeyAnno map[string]string) (*candidateAnnotationsBuilder, error) {
+func newCandidateAnnotationsBuilder(modelAnnoRaw []byte, userAnno, apiKeyAnno map[string]string) (*candidateAnnotationsBuilder, error) {
 	model, err := annotations.Decode(modelAnnoRaw)
 	if err != nil {
 		return nil, err
 	}
+	if userAnno == nil {
+		userAnno = map[string]string{}
+	}
 	if apiKeyAnno == nil {
 		apiKeyAnno = map[string]string{}
 	}
-	return &candidateAnnotationsBuilder{modelAnno: model, apiKeyAnno: apiKeyAnno}, nil
+	return &candidateAnnotationsBuilder{modelAnno: model, userAnno: userAnno, apiKeyAnno: apiKeyAnno}, nil
 }
 
 // modelLayer returns the decoded model-layer annotation map. The returned
@@ -72,8 +76,8 @@ func (b *candidateAnnotationsBuilder) apiKeyLayer() map[string]string {
 }
 
 // merge returns the per-candidate merged annotations for the given (provider,
-// entry) layers in addition to the pinned model + apiKey layers. Order:
-// model < provider < entry < apiKey, later wins.
+// entry) layers in addition to the pinned model + user + apiKey layers. Order:
+// model < provider < entry < user < apiKey, later wins.
 //
 // providerAnnoRaw is JSONB bytes (decoded once here so callers don't double
 // decode); entryAnno is already decoded because the route SQL hands provider
@@ -85,6 +89,6 @@ func (b *candidateAnnotationsBuilder) merge(providerAnnoRaw []byte, entryAnno ma
 	if err != nil {
 		provider = map[string]string{}
 	}
-	merged = annotations.Merge(b.modelAnno, provider, entryAnno, b.apiKeyAnno)
+	merged = annotations.Merge(b.modelAnno, provider, entryAnno, b.userAnno, b.apiKeyAnno)
 	return merged, provider
 }

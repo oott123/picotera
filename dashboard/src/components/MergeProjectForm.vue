@@ -18,6 +18,11 @@ const candidates = computed(() =>
   (projectsQuery.data.value ?? []).filter((p) => p.id !== props.source.id),
 )
 
+const targetOptions = computed(() => [
+  { value: 0, label: '请选择目标项目', disabled: true },
+  ...candidates.value.map((c) => ({ value: c.id, label: c.name })),
+])
+
 const targetId = ref(0)
 const saving = ref(false)
 const error = ref('')
@@ -53,24 +58,9 @@ async function submit() {
   >
     <StateText v-if="projectsQuery.isLoading.value">加载中…</StateText>
     <StateText v-else-if="candidates.length === 0">没有其他项目可合并</StateText>
-    <form
-      v-else
-      id="merge-project-form"
-      class="flex flex-col gap-4"
-      @submit.prevent="submit"
-    >
+    <form v-else id="merge-project-form" class="flex flex-col gap-4" @submit.prevent="submit">
       <Field label="目标项目">
-        <Select
-          v-model="targetId"
-          :model-modifiers="{ number: true }"
-          required
-          class="w-full"
-        >
-          <option :value="0" disabled>请选择目标项目</option>
-          <option v-for="c in candidates" :key="c.id" :value="c.id">
-            {{ c.name }}
-          </option>
-        </Select>
+        <Select v-model="targetId" required class="w-full" :options="targetOptions" />
       </Field>
     </form>
 
@@ -78,11 +68,7 @@ async function submit() {
 
     <template #footer>
       <Button variant="ghost" @click="emit('close')">取消</Button>
-      <Button
-        type="submit"
-        form="merge-project-form"
-        :disabled="saving || targetId === 0"
-      >
+      <Button type="submit" form="merge-project-form" :disabled="saving || targetId === 0">
         {{ saving ? '合并中…' : '合并' }}
       </Button>
     </template>

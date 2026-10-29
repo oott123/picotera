@@ -40,13 +40,22 @@ func (s *Server) handleCreateScript(ctx context.Context, in *contract.CreateScri
 	if err := jsx.ValidateSyntax(in.Body.Source); err != nil {
 		return nil, huma.Error400BadRequest("invalid script syntax", err)
 	}
+	id := in.Body.ID
+	if id == "" {
+		id = xid.New().String()
+	} else if err := contract.ValidateScriptID(id); err != nil {
+		return nil, huma.Error400BadRequest("invalid script id", err)
+	}
 	r, err := s.queries.InsertScript(ctx, db.InsertScriptParams{
-		ID:      xid.New().String(),
+		ID:      id,
 		Name:    in.Body.Name,
 		Source:  in.Body.Source,
 		Enabled: in.Body.Enabled,
 	})
 	if err != nil {
+		if isUniqueViolation(err) {
+			return nil, huma.Error409Conflict("script id already exists")
+		}
 		return nil, huma.Error500InternalServerError("failed to create script", err)
 	}
 	return &contract.CreateScriptResponse{Body: *contract.ToScriptView(&r)}, nil
@@ -56,8 +65,12 @@ func (s *Server) handleUpdateScript(ctx context.Context, in *contract.UpdateScri
 	if err := jsx.ValidateSyntax(in.Body.Source); err != nil {
 		return nil, huma.Error400BadRequest("invalid script syntax", err)
 	}
+	if err := contract.ValidateScriptID(in.Body.ID); err != nil {
+		return nil, huma.Error400BadRequest("invalid script id", err)
+	}
 	r, err := s.queries.UpdateScript(ctx, db.UpdateScriptParams{
 		ID:      in.ID,
+		ID_2:    in.Body.ID,
 		Name:    in.Body.Name,
 		Source:  in.Body.Source,
 		Enabled: in.Body.Enabled,
@@ -65,6 +78,9 @@ func (s *Server) handleUpdateScript(ctx context.Context, in *contract.UpdateScri
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, huma.Error404NotFound("script not found")
+		}
+		if isUniqueViolation(err) {
+			return nil, huma.Error409Conflict("script id already exists")
 		}
 		return nil, huma.Error500InternalServerError("failed to update script", err)
 	}

@@ -36,6 +36,14 @@ type OverviewBreakdownRowView struct {
 	Costs         []OverviewCostView `json:"costs"`
 }
 
+// OverviewSuccessRateView is the window-wide upstream success rate: a request
+// succeeded when finish_reason = 正常结束 and output tokens are non-zero.
+type OverviewSuccessRateView struct {
+	Rate       float64 `json:"rate"` // 0..1; 0 when Total is 0
+	Successful int64   `json:"successful"`
+	Total      int64   `json:"total"`
+}
+
 type OverviewSummaryView struct {
 	Window          OverviewWindowView         `json:"window"`
 	TotalTokens     int64                      `json:"totalTokens"`
@@ -44,6 +52,7 @@ type OverviewSummaryView struct {
 	Costs           []OverviewCostView         `json:"costs"`
 	TokenBreakdown  OverviewTokenBreakdownView `json:"tokenBreakdown"`
 	Breakdown       []OverviewBreakdownRowView `json:"breakdown"`
+	UpstreamSuccess OverviewSuccessRateView    `json:"upstreamSuccess"`
 }
 
 type OverviewDistributionRowView struct {
@@ -82,6 +91,35 @@ type OverviewSeriesView struct {
 	Points    []OverviewSeriesPointView `json:"points"`
 }
 
+// OverviewOutcomePointView is one ratio sample. Value is the ratio in 0..1,
+// Count / Total the numerator / denominator it was derived from. Buckets whose
+// denominator is 0 produce no point at all, so lines break instead of dropping
+// to zero.
+type OverviewOutcomePointView struct {
+	Metric   string  `json:"metric"`
+	BucketAt string  `json:"bucketAt"`
+	GroupKey string  `json:"groupKey"`
+	Category string  `json:"category"`
+	Value    float64 `json:"value"`
+	Count    int64   `json:"count"`
+	Total    int64   `json:"total"`
+}
+
+type OverviewOutcomeSeriesView struct {
+	Window    OverviewWindowView `json:"window"`
+	Dimension string             `json:"dimension"`
+	// Upstream (type=1) and meta (type=0) rows carry different group keys under
+	// the same dimension — meta rows have no provider / upstream model — so the
+	// two group sets are returned separately.
+	UpstreamGroups   []OverviewSeriesGroupView `json:"upstreamGroups"`
+	DownstreamGroups []OverviewSeriesGroupView `json:"downstreamGroups"`
+	// FinishReasons are the finish-reason values seen in the window, ascending
+	// (0 = in flight / not recorded). Empty unless dimension = none.
+	FinishReasons []int32                    `json:"finishReasons"`
+	Buckets       []string                   `json:"buckets"`
+	Points        []OverviewOutcomePointView `json:"points"`
+}
+
 type OverviewSpeedBoxplotItemView struct {
 	Key    string  `json:"key"`
 	Label  string  `json:"label"`
@@ -99,8 +137,34 @@ type OverviewSpeedBoxplotView struct {
 	Items     []OverviewSpeedBoxplotItemView `json:"items"`
 }
 
+// OverviewSpeedSeriesPointView is the five-number summary of one metric's
+// samples within one (bucket, group). Combinations without samples produce no
+// point.
+type OverviewSpeedSeriesPointView struct {
+	// prefillSpeed (tok/s) | decodeSpeed (tok/s) | ttft (ms)
+	Metric   string  `json:"metric"`
+	BucketAt string  `json:"bucketAt"`
+	GroupKey string  `json:"groupKey"`
+	Min      float64 `json:"min"`
+	P25      float64 `json:"p25"`
+	Median   float64 `json:"median"`
+	P95      float64 `json:"p95"`
+	Max      float64 `json:"max"`
+	Count    int64   `json:"count"`
+}
+
+type OverviewSpeedSeriesView struct {
+	Window    OverviewWindowView             `json:"window"`
+	Dimension string                         `json:"dimension"`
+	Groups    []OverviewSeriesGroupView      `json:"groups"`
+	Buckets   []string                       `json:"buckets"`
+	Points    []OverviewSpeedSeriesPointView `json:"points"`
+}
+
 type OverviewCommonRequest struct {
-	Range         string `query:"range" enum:"1d,7d,1m" required:"true"`
+	Range         string `query:"range" enum:"1d,7d,1m,custom" required:"true"`
+	StartAt       string `query:"startAt,omitempty"`
+	EndAt         string `query:"endAt,omitempty"`
 	ApiKeyID      int32  `query:"apiKeyId,omitempty" minimum:"1"`
 	Model         string `query:"model,omitempty" minLength:"1"`
 	UpstreamModel string `query:"upstreamModel,omitempty" minLength:"1"`
@@ -128,10 +192,21 @@ type GetOverviewDistributionResponse struct {
 type GetOverviewSeriesRequest struct {
 	OverviewCommonRequest
 	Dimension string `query:"dimension" enum:"none,apiKey,model,upstreamModel,provider,project" required:"true"`
+	Bucket    string `query:"bucket,omitempty" enum:"auto,10m,1h,6h,12h,24h" default:"auto"`
 }
 
 type GetOverviewSeriesResponse struct {
 	Body OverviewSeriesView
+}
+
+type GetOverviewOutcomeSeriesRequest struct {
+	OverviewCommonRequest
+	Dimension string `query:"dimension" enum:"none,apiKey,model,upstreamModel,provider,project" required:"true"`
+	Bucket    string `query:"bucket,omitempty" enum:"auto,10m,1h,6h,12h,24h" default:"auto"`
+}
+
+type GetOverviewOutcomeSeriesResponse struct {
+	Body OverviewOutcomeSeriesView
 }
 
 type GetOverviewSpeedBoxplotRequest struct {
@@ -141,6 +216,16 @@ type GetOverviewSpeedBoxplotRequest struct {
 
 type GetOverviewSpeedBoxplotResponse struct {
 	Body OverviewSpeedBoxplotView
+}
+
+type GetOverviewSpeedSeriesRequest struct {
+	OverviewCommonRequest
+	Dimension string `query:"dimension" enum:"none,apiKey,model,upstreamModel,provider,project" required:"true"`
+	Bucket    string `query:"bucket,omitempty" enum:"auto,10m,1h,6h,12h,24h" default:"auto"`
+}
+
+type GetOverviewSpeedSeriesResponse struct {
+	Body OverviewSpeedSeriesView
 }
 
 var OperationGetOverviewSummary = huma.Operation{
@@ -164,9 +249,23 @@ var OperationGetOverviewSeries = huma.Operation{
 	Summary:     "Get hourly overview series for a dimension",
 }
 
+var OperationGetOverviewOutcomeSeries = huma.Operation{
+	OperationID: "getOverviewOutcomeSeries",
+	Method:      http.MethodGet,
+	Path:        "/overview/outcome-series",
+	Summary:     "Get request outcome rate series for a dimension",
+}
+
 var OperationGetOverviewSpeedBoxplot = huma.Operation{
 	OperationID: "getOverviewSpeedBoxplot",
 	Method:      http.MethodGet,
 	Path:        "/overview/speed-boxplot",
 	Summary:     "Get decode speed box plot statistics for a dimension",
+}
+
+var OperationGetOverviewSpeedSeries = huma.Operation{
+	OperationID: "getOverviewSpeedSeries",
+	Method:      http.MethodGet,
+	Path:        "/overview/speed-series",
+	Summary:     "Get decode / prefill speed and TTFT distribution series for a dimension",
 }

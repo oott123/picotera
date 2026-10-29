@@ -4,13 +4,20 @@ import { DataTable, Th, Td, Tr, Field, SegmentedControl, StateText, IconButton, 
 import {
   extractContentFromAggregated,
   formatAggregatedLabel,
-  isSSEContentType,
   parseSSEEventsForDisplay,
+  sseContentTypeState,
   renderMarkdown,
 } from '@/composables/useSSEParser'
 import { isJsonContentType, parseJsonBody, rawBodyText } from './artifactBody'
 import type { ArtifactPayload } from './artifactTypes'
-import JsonArtifactViewer from './JsonArtifactViewer.vue'
+import {
+  collectConversationImages,
+  extractSearchResults,
+  parseResponseConversation,
+} from '@/composables/conversation'
+import ImageAttachment from './ImageAttachment.vue'
+import JsonViewer from './json-viewer/JsonViewer.vue'
+import SearchResultsView from './SearchResultsView.vue'
 import SSEEventsVirtualList from './SSEEventsVirtualList.vue'
 import TimedRawView from './TimedRawView.vue'
 import { useRequestDetailUiState } from '@/composables/useRequestDetailUiState'
@@ -22,15 +29,29 @@ const subView = defineModel<SubView>('subView', { required: true })
 const headersOpen = defineModel<boolean>('headersOpen', { required: true })
 const thinkingOpen = defineModel<boolean>('thinkingOpen', { required: true })
 
-const {responseRawShowTimings: showTimings} = useRequestDetailUiState()
-const isSSE = computed(() => isSSEContentType(props.payload.headers))
+const { responseRawShowTimings: showTimings } = useRequestDetailUiState()
+const ctState = computed(() => sseContentTypeState(props.payload.headers))
 const isBinary = computed(() => props.payload.bodyEncoding === 'base64')
+// The OTR body modes strip bodies before upload, which lands as an empty
+// string — indistinguishable from a payload that never carried one.
+const hasBody = computed(() => !!props.payload.body)
 const jsonBody = computed(() => {
   if (isBinary.value || !isJsonContentType(props.payload.headers)) {
     return { ok: false, value: null, error: '' }
   }
   return parseJsonBody(props.payload.body, props.payload.bodyEncoding)
 })
+
+// Parsed independently of isSSE: when the response carries no Content-Type we
+// decide it is SSE precisely because parsing produced events.
+const sseEvents = computed(() => {
+  if (isBinary.value || !props.payload.body || ctState.value === 'other') return []
+  return parseSSEEventsForDisplay(props.payload.body, props.payload.timings)
+})
+
+const isSSE = computed(
+  () => ctState.value === 'sse' || (ctState.value === 'absent' && sseEvents.value.length > 0),
+)
 
 const subViewOptions = computed(() => {
   const opts: Array<{ value: string; label: string }> = [{ value: 'raw', label: 'Raw' }]
@@ -48,13 +69,13 @@ const subViewOptions = computed(() => {
   return opts
 })
 
-const sseEvents = computed(() => {
-  if (!isSSE.value || !props.payload.body) return []
-  return parseSSEEventsForDisplay(props.payload.body, props.payload.timings)
-})
-
 const content = computed(() => {
   return extractContentFromAggregated(props.payload.aggregated)
+})
+
+const searchResults = computed(() => {
+  if (!jsonBody.value.ok) return []
+  return extractSearchResults(jsonBody.value.value)
 })
 
 const replyHtml = computed(() => {
@@ -67,21 +88,29 @@ const thinkingHtml = computed(() => {
   return renderMarkdown(content.value.thinking)
 })
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return null
-  return value as Record<string, unknown>
-}
-
-const openAIImageGeneration = computed(() => {
-  if (!jsonBody.value.ok) return null
-  const root = asRecord(jsonBody.value.value)
-  const firstItem = Array.isArray(root?.data) ? asRecord(root.data[0]) : null
-  const b64Json = firstItem?.b64_json
-  if (typeof b64Json !== 'string' || b64Json === '') return null
-  return {
-    src: `data:image/png;base64,${b64Json}`,
+// Same source order as the conversation tab: the backend aggregate first (the
+// only place a streamed response's images live), then a parsable JSON body.
+const renderSource = computed(() => {
+  const aggregated = props.payload.aggregated
+  if (aggregated?.body !== undefined && !aggregated.error) {
+    return { json: aggregated.body, format: aggregated.format }
   }
+  if (jsonBody.value.ok) return { json: jsonBody.value.value, format: undefined }
+  return null
 })
+
+const responseImages = computed(() => {
+  const source = renderSource.value
+  if (!source) return []
+  return collectConversationImages(parseResponseConversation(source.json, source.format) ?? [])
+})
+
+function imageFilename(index: number, image: { mediaType: string }): string {
+  const subtype = image.mediaType.slice(image.mediaType.indexOf('/') + 1)
+  const ext = subtype === 'jpeg' ? 'jpg' : subtype
+  const base = `${props.requestId ?? 'response'}-image-${index + 1}`
+  return ext ? `${base}.${ext}` : base
+}
 
 function headerEntries(headers: Record<string, string[]> | undefined) {
   if (!headers) return []
@@ -171,13 +200,8 @@ watch(
     <section class="flex flex-col gap-2">
       <div class="flex items-center justify-between gap-3">
         <span class="text-2xs font-medium text-ink-muted uppercase tracking-[0.04em]">Body</span>
-        <div v-if="!isBinary" class="flex items-center gap-1">
-          <IconButton
-            v-if="!isBinary && payload.body"
-            title="下载原始响应"
-            aria-label="下载原始响应"
-            @click="downloadRawResponse"
-          >
+        <div v-if="!isBinary && hasBody" class="flex items-center gap-1">
+          <IconButton title="下载原始响应" aria-label="下载原始响应" @click="downloadRawResponse">
             <Icon name="cloud-download" :size="13" />
           </IconButton>
           <SegmentedControl v-model="subView" :options="subViewOptions" />
@@ -191,6 +215,8 @@ watch(
         >
       </div>
 
+      <StateText v-else-if="!hasBody" :dashed="false" compact>响应体不存在或未记录</StateText>
+
       <!-- Raw -->
       <template v-else-if="subView === 'raw'">
         <StateText
@@ -201,7 +227,10 @@ watch(
         >
           {{ jsonBody.error }}
         </StateText>
-        <label v-if="payload.timings?.length" class="flex items-center gap-1.5 text-2xs text-ink-muted select-none">
+        <label
+          v-if="payload.timings?.length"
+          class="flex items-center gap-1.5 text-2xs text-ink-muted select-none"
+        >
           <input type="checkbox" v-model="showTimings" class="accent-accent-ink" />
           显示到达时间
         </label>
@@ -219,7 +248,7 @@ watch(
 
       <!-- JSON -->
       <template v-else-if="subView === 'json'">
-        <JsonArtifactViewer v-if="jsonBody.ok" :value="jsonBody.value" />
+        <JsonViewer v-if="jsonBody.ok" :value="jsonBody.value" />
         <StateText v-else :dashed="false" compact>{{ jsonBody.error }}</StateText>
       </template>
 
@@ -232,7 +261,7 @@ watch(
           >
             后端格式: {{ formatAggregatedLabel(payload.aggregated.format) }}
           </span>
-          <JsonArtifactViewer :value="payload.aggregated.body" />
+          <JsonViewer :value="payload.aggregated.body" />
         </div>
         <StateText v-else-if="payload.aggregated?.error" :dashed="false" compact>
           {{ payload.aggregated.error }}
@@ -249,16 +278,13 @@ watch(
       <!-- Rendered -->
       <template v-else-if="subView === 'rendered'">
         <div class="flex flex-col gap-3">
-          <figure
-            v-if="openAIImageGeneration"
-            class="m-0 overflow-hidden rounded-md border border-line-soft bg-surface-50"
-          >
-            <img
-              :src="openAIImageGeneration.src"
-              alt="OpenAI image generation result"
-              class="block max-h-[640px] w-full object-contain"
-            />
-          </figure>
+          <ImageAttachment
+            v-for="(image, index) in responseImages"
+            :key="index"
+            :image="image"
+            :alt="`响应图片 ${index + 1}`"
+            :filename="imageFilename(index, image)"
+          />
           <details
             v-if="content.thinking"
             :open="thinkingOpen"
@@ -283,7 +309,13 @@ watch(
             />
           </details>
           <div v-if="content.reply" class="prose prose-sm max-w-none" v-html="replyHtml" />
-          <StateText v-else-if="!content.thinking && !openAIImageGeneration" :dashed="false" compact
+          <SearchResultsView v-if="searchResults.length" :results="searchResults" />
+          <StateText
+            v-if="
+              !content.thinking && !content.reply && !responseImages.length && !searchResults.length
+            "
+            :dashed="false"
+            compact
             >无可渲染内容</StateText
           >
         </div>

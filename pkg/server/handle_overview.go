@@ -16,34 +16,137 @@ import (
 
 const overviewBucket = "hour"
 
-func overviewSeriesBucketInterval(rangeKey string) (time.Duration, error) {
+// overviewPresetLookback returns the fixed lookback duration for a preset range key.
+func overviewPresetLookback(rangeKey string) (time.Duration, error) {
 	switch rangeKey {
 	case "1d":
-		return time.Hour, nil
+		return 24 * time.Hour, nil
 	case "7d":
-		return 4 * time.Hour, nil
+		return 7 * 24 * time.Hour, nil
 	case "1m":
-		return 8 * time.Hour, nil
+		return 30 * 24 * time.Hour, nil
 	default:
 		return 0, fmt.Errorf("invalid range %q", rangeKey)
 	}
 }
 
-func overviewWindow(rangeKey string, now time.Time) (start, end time.Time, err error) {
-	var lookback time.Duration
-	switch rangeKey {
-	case "1d":
-		lookback = 24 * time.Hour
-	case "7d":
-		lookback = 7 * 24 * time.Hour
-	case "1m":
-		lookback = 30 * 24 * time.Hour
+// overviewAutoBucket selects the automatic bucket width based on the window
+// span, mirroring the prior preset defaults: <=36h -> 1h, <=8d -> 4h, else 8h.
+func overviewAutoBucket(span time.Duration) time.Duration {
+	switch {
+	case span <= 36*time.Hour:
+		return time.Hour
+	case span <= 8*24*time.Hour:
+		return 4 * time.Hour
 	default:
-		return time.Time{}, time.Time{}, fmt.Errorf("invalid range %q", rangeKey)
+		return 8 * time.Hour
 	}
-	end = now.UTC().Truncate(time.Hour).Add(time.Hour)
+}
+
+// overviewSeriesBucketIntervalFor selects the bucket interval for a bucket key
+// given the window span. "10m" is rejected when span exceeds 7 days.
+func overviewSeriesBucketIntervalFor(bucketKey string, span time.Duration) (time.Duration, error) {
+	switch bucketKey {
+	case "", "auto":
+		return overviewAutoBucket(span), nil
+	case "10m":
+		if span > 7*24*time.Hour {
+			return 0, fmt.Errorf("bucket 10m is not allowed for windows exceeding 7 days")
+		}
+		return 10 * time.Minute, nil
+	case "1h":
+		return time.Hour, nil
+	case "6h":
+		return 6 * time.Hour, nil
+	case "12h":
+		return 12 * time.Hour, nil
+	case "24h":
+		return 24 * time.Hour, nil
+	default:
+		return 0, fmt.Errorf("invalid bucket %q", bucketKey)
+	}
+}
+
+// overviewBucketWidthPG renders a bucket interval as a Postgres interval
+// literal (seconds) for the time_bucket() call in the traces series query.
+func overviewBucketWidthPG(interval time.Duration) string {
+	return fmt.Sprintf("%d seconds", int64(interval.Seconds()))
+}
+
+// parseOverviewCustomWindow parses the startAt/endAt pair for range=custom.
+// Both endpoints are required and must be strict RFC3339Nano; start must be
+// strictly before end. No trimming, timezone guessing, or format fallback.
+func parseOverviewCustomWindow(startAt, endAt string) (start, end time.Time, err error) {
+	if startAt == "" || endAt == "" {
+		return time.Time{}, time.Time{}, fmt.Errorf("startAt and endAt are required for range=custom")
+	}
+	start, err = time.Parse(time.RFC3339Nano, startAt)
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("invalid startAt: %w", err)
+	}
+	end, err = time.Parse(time.RFC3339Nano, endAt)
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("invalid endAt: %w", err)
+	}
+	if !start.Before(end) {
+		return time.Time{}, time.Time{}, fmt.Errorf("startAt must be strictly before endAt")
+	}
+	return start.UTC(), end.UTC(), nil
+}
+
+// overviewWindow resolves the analytics window [start, end).
+// Preset ranges align the exclusive end to align (>= 1h) and look back the
+// fixed preset duration. Custom ranges use the caller-supplied boundaries verbatim.
+func overviewWindow(rangeKey, startAt, endAt string, now time.Time, align time.Duration) (start, end time.Time, err error) {
+	if rangeKey == "custom" {
+		return parseOverviewCustomWindow(startAt, endAt)
+	}
+	lookback, err := overviewPresetLookback(rangeKey)
+	if err != nil {
+		return time.Time{}, time.Time{}, err
+	}
+	if align < time.Hour {
+		align = time.Hour
+	}
+	end = now.UTC().Truncate(align).Add(align)
 	start = end.Add(-lookback)
 	return start, end, nil
+}
+
+// resolveOverviewSeriesWindow resolves the series handler's window and bucket
+// interval in one pass. For preset ranges the bucket width decides the sub-hour
+// alignment (preserving prior behavior); for custom ranges alignment is moot
+// since the caller supplies exact boundaries (bucket_origin = start).
+func resolveOverviewSeriesWindow(rangeKey, startAt, endAt, bucketKey string, now time.Time) (start, end time.Time, bucketInterval time.Duration, err error) {
+	var span time.Duration
+	if rangeKey == "custom" {
+		start, end, err = parseOverviewCustomWindow(startAt, endAt)
+		if err != nil {
+			return time.Time{}, time.Time{}, 0, err
+		}
+		span = end.Sub(start)
+		bucketInterval, err = overviewSeriesBucketIntervalFor(bucketKey, span)
+		if err != nil {
+			return time.Time{}, time.Time{}, 0, err
+		}
+		return start, end, bucketInterval, nil
+	}
+	lookback, err := overviewPresetLookback(rangeKey)
+	if err != nil {
+		return time.Time{}, time.Time{}, 0, err
+	}
+	span = lookback
+	bucketInterval, err = overviewSeriesBucketIntervalFor(bucketKey, span)
+	if err != nil {
+		return time.Time{}, time.Time{}, 0, err
+	}
+	align := bucketInterval
+	if align > time.Hour {
+		align = time.Hour
+	}
+	end = now.UTC().Truncate(align).Add(align)
+	start = end.Add(-lookback)
+	return start, end, bucketInterval, nil
 }
 
 func overviewBuckets(start, end time.Time, interval time.Duration) []time.Time {
@@ -104,7 +207,11 @@ func hasFilters(in contract.OverviewCommonRequest) bool {
 }
 
 func (s *Server) handleGetOverviewSummary(ctx context.Context, in *contract.GetOverviewSummaryRequest) (*contract.GetOverviewSummaryResponse, error) {
-	start, end, err := overviewWindow(in.Range, time.Now())
+	u, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	start, end, err := overviewWindow(in.Range, in.StartAt, in.EndAt, time.Now(), time.Hour)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
@@ -114,6 +221,7 @@ func (s *Server) handleGetOverviewSummary(ctx context.Context, in *contract.GetO
 	totals, err := s.queries.GetOverviewTotals(ctx, db.GetOverviewTotalsParams{
 		StartAt:       startTS,
 		EndAt:         endTS,
+		UserID:        u.ID,
 		ApiKeyID:      toPgInt4(in.ApiKeyID),
 		Model:         toPgText(in.Model),
 		UpstreamModel: toPgText(in.UpstreamModel),
@@ -132,6 +240,7 @@ func (s *Server) handleGetOverviewSummary(ctx context.Context, in *contract.GetO
 	tokenBreakdownRow, err := s.queries.GetOverviewTokenBreakdown(ctx, db.GetOverviewTokenBreakdownParams{
 		StartAt:       startTS,
 		EndAt:         endTS,
+		UserID:        u.ID,
 		ApiKeyID:      toPgInt4(in.ApiKeyID),
 		Model:         toPgText(in.Model),
 		UpstreamModel: toPgText(in.UpstreamModel),
@@ -145,6 +254,7 @@ func (s *Server) handleGetOverviewSummary(ctx context.Context, in *contract.GetO
 	breakdownTokenRows, err := s.queries.ListOverviewBreakdownTokens(ctx, db.ListOverviewBreakdownTokensParams{
 		StartAt:       startTS,
 		EndAt:         endTS,
+		UserID:        u.ID,
 		ApiKeyID:      toPgInt4(in.ApiKeyID),
 		Model:         toPgText(in.Model),
 		UpstreamModel: toPgText(in.UpstreamModel),
@@ -158,6 +268,7 @@ func (s *Server) handleGetOverviewSummary(ctx context.Context, in *contract.GetO
 	breakdownCostRows, err := s.queries.ListOverviewBreakdownCosts(ctx, db.ListOverviewBreakdownCostsParams{
 		StartAt:       startTS,
 		EndAt:         endTS,
+		UserID:        u.ID,
 		ApiKeyID:      toPgInt4(in.ApiKeyID),
 		Model:         toPgText(in.Model),
 		UpstreamModel: toPgText(in.UpstreamModel),
@@ -168,11 +279,33 @@ func (s *Server) handleGetOverviewSummary(ctx context.Context, in *contract.GetO
 		return nil, huma.Error500InternalServerError("failed to query breakdown costs", err)
 	}
 
+	successTotals, err := s.queries.GetOverviewUpstreamSuccessTotals(ctx, db.GetOverviewUpstreamSuccessTotalsParams{
+		StartAt:       startTS,
+		EndAt:         endTS,
+		UserID:        u.ID,
+		ApiKeyID:      toPgInt4(in.ApiKeyID),
+		Model:         toPgText(in.Model),
+		UpstreamModel: toPgText(in.UpstreamModel),
+		ProviderID:    toPgInt4(in.ProviderID),
+		ProjectID:     toPgInt4(in.ProjectID),
+	})
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to query success totals", err)
+	}
+	successRate := contract.OverviewSuccessRateView{
+		Successful: successTotals.Successful,
+		Total:      successTotals.Total,
+	}
+	if successTotals.Total > 0 {
+		successRate.Rate = float64(successTotals.Successful) / float64(successTotals.Total)
+	}
+
 	var traceCount int64
 	if hasFilters(in.OverviewCommonRequest) {
 		traceCount, err = s.queries.CountTracesFiltered(ctx, db.CountTracesFilteredParams{
 			StartAt:       startTS,
 			EndAt:         endTS,
+			UserID:        u.ID,
 			ApiKeyID:      toPgInt4(in.ApiKeyID),
 			Model:         toPgText(in.Model),
 			UpstreamModel: toPgText(in.UpstreamModel),
@@ -183,6 +316,7 @@ func (s *Server) handleGetOverviewSummary(ctx context.Context, in *contract.GetO
 		traceCount, err = s.queries.CountTraces(ctx, db.CountTracesParams{
 			StartAt: startTS,
 			EndAt:   endTS,
+			UserID:  u.ID,
 		})
 	}
 	if err != nil {
@@ -203,13 +337,18 @@ func (s *Server) handleGetOverviewSummary(ctx context.Context, in *contract.GetO
 				CacheWrite1h: tokenBreakdownRow.CacheWrite1hTokens,
 				Output:       tokenBreakdownRow.OutputTokens,
 			},
-			Breakdown: mergeBreakdown(breakdownTokenRows, breakdownCostRows),
+			Breakdown:       mergeBreakdown(breakdownTokenRows, breakdownCostRows),
+			UpstreamSuccess: successRate,
 		},
 	}, nil
 }
 
 func (s *Server) handleGetOverviewDistribution(ctx context.Context, in *contract.GetOverviewDistributionRequest) (*contract.GetOverviewDistributionResponse, error) {
-	start, end, err := overviewWindow(in.Range, time.Now())
+	u, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	start, end, err := overviewWindow(in.Range, in.StartAt, in.EndAt, time.Now(), time.Hour)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
@@ -220,6 +359,7 @@ func (s *Server) handleGetOverviewDistribution(ctx context.Context, in *contract
 		Dimension:     in.Dimension,
 		StartAt:       startTS,
 		EndAt:         endTS,
+		UserID:        u.ID,
 		ApiKeyID:      toPgInt4(in.ApiKeyID),
 		Model:         toPgText(in.Model),
 		UpstreamModel: toPgText(in.UpstreamModel),
@@ -234,6 +374,7 @@ func (s *Server) handleGetOverviewDistribution(ctx context.Context, in *contract
 		Dimension:     in.Dimension,
 		StartAt:       startTS,
 		EndAt:         endTS,
+		UserID:        u.ID,
 		ApiKeyID:      toPgInt4(in.ApiKeyID),
 		Model:         toPgText(in.Model),
 		UpstreamModel: toPgText(in.UpstreamModel),
@@ -248,6 +389,7 @@ func (s *Server) handleGetOverviewDistribution(ctx context.Context, in *contract
 		Dimension:     in.Dimension,
 		StartAt:       startTS,
 		EndAt:         endTS,
+		UserID:        u.ID,
 		ApiKeyID:      toPgInt4(in.ApiKeyID),
 		Model:         toPgText(in.Model),
 		UpstreamModel: toPgText(in.UpstreamModel),
@@ -299,11 +441,11 @@ func emptyIfNil(in []contract.OverviewCostView) []contract.OverviewCostView {
 }
 
 func (s *Server) handleGetOverviewSeries(ctx context.Context, in *contract.GetOverviewSeriesRequest) (*contract.GetOverviewSeriesResponse, error) {
-	start, end, err := overviewWindow(in.Range, time.Now())
+	u, err := requireUser(ctx)
 	if err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, err
 	}
-	bucketInterval, err := overviewSeriesBucketInterval(in.Range)
+	start, end, bucketInterval, err := resolveOverviewSeriesWindow(in.Range, in.StartAt, in.EndAt, in.Bucket, time.Now())
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
@@ -314,6 +456,7 @@ func (s *Server) handleGetOverviewSeries(ctx context.Context, in *contract.GetOv
 		Dimension:     in.Dimension,
 		StartAt:       startTS,
 		EndAt:         endTS,
+		UserID:        u.ID,
 		ApiKeyID:      toPgInt4(in.ApiKeyID),
 		Model:         toPgText(in.Model),
 		UpstreamModel: toPgText(in.UpstreamModel),
@@ -323,23 +466,13 @@ func (s *Server) handleGetOverviewSeries(ctx context.Context, in *contract.GetOv
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to query series metrics", err)
 	}
-	speedRows, err := s.queries.ListOverviewSpeedSeries(ctx, db.ListOverviewSpeedSeriesParams{
-		Dimension:     in.Dimension,
-		StartAt:       startTS,
-		EndAt:         endTS,
-		ApiKeyID:      toPgInt4(in.ApiKeyID),
-		Model:         toPgText(in.Model),
-		UpstreamModel: toPgText(in.UpstreamModel),
-		ProviderID:    toPgInt4(in.ProviderID),
-		ProjectID:     toPgInt4(in.ProjectID),
-	})
-	if err != nil {
-		return nil, huma.Error500InternalServerError("failed to query speed series", err)
-	}
 	traceRows, err := s.queries.ListOverviewSeriesTraces(ctx, db.ListOverviewSeriesTracesParams{
+		BucketWidth:   overviewBucketWidthPG(bucketInterval),
+		BucketOrigin:  startTS,
 		Dimension:     in.Dimension,
 		StartAt:       startTS,
 		EndAt:         endTS,
+		UserID:        u.ID,
 		ApiKeyID:      toPgInt4(in.ApiKeyID),
 		Model:         toPgText(in.Model),
 		UpstreamModel: toPgText(in.UpstreamModel),
@@ -353,6 +486,7 @@ func (s *Server) handleGetOverviewSeries(ctx context.Context, in *contract.GetOv
 		Dimension:     in.Dimension,
 		StartAt:       startTS,
 		EndAt:         endTS,
+		UserID:        u.ID,
 		ApiKeyID:      toPgInt4(in.ApiKeyID),
 		Model:         toPgText(in.Model),
 		UpstreamModel: toPgText(in.UpstreamModel),
@@ -426,37 +560,20 @@ func (s *Server) handleGetOverviewSeries(ctx context.Context, in *contract.GetOv
 		tracesByBG[tokensReqsKey{bucket: bucket, group: group}] += t.TraceCount
 	}
 
-	prefillSpeedByBG := make(map[tokensReqsKey]float64)
-	decodeSpeedByBG := make(map[tokensReqsKey]float64)
-	avgTtftByBG := make(map[tokensReqsKey]float64)
-	for _, s := range speedRows {
-		if !s.BucketAt.Valid {
-			continue
-		}
-		bucket := overviewBucketAt(start, s.BucketAt.Time, bucketInterval).Format(time.RFC3339Nano)
-		group := s.GroupKey
-		addGroup(group)
-		bg := tokensReqsKey{bucket: bucket, group: group}
-		if s.PrefillSpeed != 0 {
-			prefillSpeedByBG[bg] = s.PrefillSpeed
-		}
-		if s.DecodeSpeed != 0 {
-			decodeSpeedByBG[bg] = s.DecodeSpeed
-		}
-		if s.AvgTtft != 0 {
-			avgTtftByBG[bg] = s.AvgTtft
-		}
-	}
-
-	cacheHitRateByBG := make(map[tokensReqsKey]float64)
+	// Cache hit rate is likewise non-additive: accumulate read/input sums and
+	// divide once below.
+	cacheReadByBG := make(map[tokensReqsKey]float64)
+	cacheInputByBG := make(map[tokensReqsKey]float64)
 	for _, r := range cacheHitRateRows {
-		if !r.BucketAt.Valid || r.InputTokenSum <= 0 {
+		if !r.BucketAt.Valid {
 			continue
 		}
 		bucket := overviewBucketAt(start, r.BucketAt.Time, bucketInterval).Format(time.RFC3339Nano)
 		group := r.GroupKey
 		addGroup(group)
-		cacheHitRateByBG[tokensReqsKey{bucket: bucket, group: group}] = r.CacheReadTokenSum / r.InputTokenSum
+		bg := tokensReqsKey{bucket: bucket, group: group}
+		cacheReadByBG[bg] += r.CacheReadTokenSum
+		cacheInputByBG[bg] += r.InputTokenSum
 	}
 
 	if len(groupKeys) == 0 {
@@ -503,39 +620,12 @@ func (s *Server) handleGetOverviewSeries(ctx context.Context, in *contract.GetOv
 				Value:    float64(tracesByBG[bg]),
 				Currency: "",
 			})
-			if v, ok := prefillSpeedByBG[bg]; ok {
-				points = append(points, contract.OverviewSeriesPointView{
-					Metric:   "prefillSpeed",
-					BucketAt: bucket,
-					GroupKey: group,
-					Value:    v,
-					Currency: "",
-				})
-			}
-			if v, ok := decodeSpeedByBG[bg]; ok {
-				points = append(points, contract.OverviewSeriesPointView{
-					Metric:   "decodeSpeed",
-					BucketAt: bucket,
-					GroupKey: group,
-					Value:    v,
-					Currency: "",
-				})
-			}
-			if v, ok := avgTtftByBG[bg]; ok {
-				points = append(points, contract.OverviewSeriesPointView{
-					Metric:   "avgTtft",
-					BucketAt: bucket,
-					GroupKey: group,
-					Value:    v,
-					Currency: "",
-				})
-			}
-			if v, ok := cacheHitRateByBG[bg]; ok {
+			if in := cacheInputByBG[bg]; in > 0 {
 				points = append(points, contract.OverviewSeriesPointView{
 					Metric:   "cacheHitRate",
 					BucketAt: bucket,
 					GroupKey: group,
-					Value:    v,
+					Value:    cacheReadByBG[bg] / in,
 					Currency: "",
 				})
 			}
@@ -551,9 +641,12 @@ func (s *Server) handleGetOverviewSeries(ctx context.Context, in *contract.GetOv
 		}
 	}
 
+	window := windowView(in.Range, start, end)
+	window.Bucket = overviewBucketLabel(bucketInterval)
+
 	return &contract.GetOverviewSeriesResponse{
 		Body: contract.OverviewSeriesView{
-			Window:    windowView(in.Range, start, end),
+			Window:    window,
 			Dimension: in.Dimension,
 			Groups:    groups,
 			Buckets:   bucketStrs,
@@ -562,8 +655,21 @@ func (s *Server) handleGetOverviewSeries(ctx context.Context, in *contract.GetOv
 	}, nil
 }
 
+// overviewBucketLabel renders the effective bucket width as a short label
+// (e.g. "10m", "1h", "6h") for the series window response.
+func overviewBucketLabel(interval time.Duration) string {
+	if interval < time.Hour {
+		return fmt.Sprintf("%dm", int64(interval.Minutes()))
+	}
+	return fmt.Sprintf("%dh", int64(interval.Hours()))
+}
+
 func (s *Server) handleGetOverviewSpeedBoxplot(ctx context.Context, in *contract.GetOverviewSpeedBoxplotRequest) (*contract.GetOverviewSpeedBoxplotResponse, error) {
-	start, end, err := overviewWindow(in.Range, time.Now())
+	u, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	start, end, err := overviewWindow(in.Range, in.StartAt, in.EndAt, time.Now(), time.Hour)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
@@ -574,6 +680,7 @@ func (s *Server) handleGetOverviewSpeedBoxplot(ctx context.Context, in *contract
 		Dimension:     in.Dimension,
 		StartAt:       startTS,
 		EndAt:         endTS,
+		UserID:        u.ID,
 		ApiKeyID:      toPgInt4(in.ApiKeyID),
 		Model:         toPgText(in.Model),
 		UpstreamModel: toPgText(in.UpstreamModel),

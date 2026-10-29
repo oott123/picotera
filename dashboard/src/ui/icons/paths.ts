@@ -5,27 +5,35 @@ import {
   IconArrowLeft,
   IconBolt,
   IconBraces,
-  IconBrush,
   IconChartPie,
   IconCheck,
   IconChevronDown,
+  IconChevronRight,
+  IconChevronsDown,
+  IconChevronsUp,
   IconCloudDollar,
   IconCloudDownload,
+  IconFilter,
+  IconFilterPlus,
   IconCloudUpload,
   IconCpu,
   IconCurrencyDollar,
   IconDatabase,
+  IconDownload,
   IconEdit,
-  IconEye,
-  IconEyeOff,
+  IconExternalLink,
   IconFolder,
   IconGitBranch,
   IconGitMerge,
   IconKey,
   IconCopy,
+  IconPalette,
   IconLink,
   IconList,
   IconLoader2,
+  IconLogout,
+  IconMask,
+  IconMaximize,
   IconPlug,
   IconPlus,
   IconPuzzle,
@@ -34,16 +42,22 @@ import {
   IconRoute,
   IconSearch,
   IconSettings,
+  IconTextWrap,
   IconTrash,
   IconX,
   IconCloudFog,
   IconGeometry,
+  IconFlask,
+  IconUsers,
+  IconShieldCheck,
+  IconTool,
+  IconCornerDownRight,
 } from '@tabler/icons-vue'
 
 export type IconName =
   | 'plus'
   | 'arrow-left'
-  | 'brush'
+  | 'palette'
   | 'edit'
   | 'trash'
   | 'close'
@@ -62,14 +76,15 @@ export type IconName =
   | 'refresh'
   | 'route'
   | 'chevron-down'
+  | 'chevron-right'
+  | 'chevrons-down'
+  | 'chevrons-up'
   | 'search'
   | 'cloud-dollar'
   | 'cloud-download'
   | 'cloud-upload'
   | 'loader'
   | 'check'
-  | 'eye'
-  | 'eye-off'
   | 'puzzle'
   | 'puzzle-off'
   | 'currency-dollar'
@@ -80,11 +95,24 @@ export type IconName =
   | 'bolt'
   | 'geometry'
   | 'cloud-fog'
+  | 'flask'
+  | 'users'
+  | 'shield-check'
+  | 'filter'
+  | 'filter-plus'
+  | 'mask'
+  | 'logout'
+  | 'maximize'
+  | 'download'
+  | 'external-link'
+  | 'text-wrap'
+  | 'tool'
+  | 'corner-down-right'
 
 export const iconComponents: Record<IconName, Component> = {
   plus: IconPlus,
   'arrow-left': IconArrowLeft,
-  brush: IconBrush,
+  palette: IconPalette,
   edit: IconEdit,
   trash: IconTrash,
   close: IconX,
@@ -103,14 +131,15 @@ export const iconComponents: Record<IconName, Component> = {
   refresh: IconRefresh,
   route: IconRoute,
   'chevron-down': IconChevronDown,
+  'chevron-right': IconChevronRight,
+  'chevrons-down': IconChevronsDown,
+  'chevrons-up': IconChevronsUp,
   search: IconSearch,
   'cloud-dollar': IconCloudDollar,
   'cloud-download': IconCloudDownload,
   'cloud-upload': IconCloudUpload,
   loader: IconLoader2,
   check: IconCheck,
-  eye: IconEye,
-  'eye-off': IconEyeOff,
   puzzle: IconPuzzle,
   'puzzle-off': IconPuzzleOff,
   'currency-dollar': IconCurrencyDollar,
@@ -121,4 +150,17 @@ export const iconComponents: Record<IconName, Component> = {
   bolt: IconBolt,
   'cloud-fog': IconCloudFog,
   geometry: IconGeometry,
+  flask: IconFlask,
+  users: IconUsers,
+  'shield-check': IconShieldCheck,
+  mask: IconMask,
+  filter: IconFilter,
+  'filter-plus': IconFilterPlus,
+  logout: IconLogout,
+  maximize: IconMaximize,
+  download: IconDownload,
+  'external-link': IconExternalLink,
+  'text-wrap': IconTextWrap,
+  tool: IconTool,
+  'corner-down-right': IconCornerDownRight,
 }

@@ -35,19 +35,19 @@ data: {"type":"message_stop"}`,
 	upstream := makeSSEStream(events...)
 	wsCtx := &webSearchContext{active: true}
 
-	// We pass nil for gatewayHandler since Exa won't actually be called
-	// (the transformer buffers the tool_use and tries to flush via callExa,
+	// We pass nil for gatewayHandler since the search backend won't actually be
+	// called (the transformer buffers the tool_use and tries to flush via callWebSearch,
 	// which will fail — but holdPauseTurn behavior should still work).
-	// Actually, flushBufferedWebSearch will call callExa which needs h.
+	// Actually, flushBufferedWebSearch will call callWebSearch which needs h.
 	// For this test we need to verify holdPauseTurn behavior only.
-	// Since the transformer calls callExa in flushBufferedWebSearch which
+	// Since the transformer calls callWebSearch in flushBufferedWebSearch which
 	// will panic with nil h, we need a different approach.
 	//
-	// Let's test with a non-web-search tool_use to avoid callExa, and
+	// Let's test with a non-web-search tool_use to avoid callWebSearch, and
 	// verify that holdPauseTurn=true suppresses message_delta/stop when
 	// webSearchCalls > 0 && otherToolCalls == 0.
 	//
-	// For a proper web_search test we'd need to mock callExa.
+	// For a proper web_search test we'd need to mock callWebSearch.
 	_ = upstream
 	_ = wsCtx
 

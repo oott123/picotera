@@ -22,11 +22,24 @@ type gatewayCandidateSidecar struct {
 	Credentials             string
 	SendResolver            int32
 	ProxyURL                string
+	InsecureTLS             bool
 	EndpointPath            string
 	EndpointType            int32
 	UpstreamFormat          llmbridge.Format
 	Annotations             map[string]string
 	SupportsNativeWebSearch bool
+	// AppendPath is this request's prefix suffix, appended to UpstreamURL when
+	// the attempt is sent. It follows the candidate, not the request: only a
+	// candidate whose endpoint row has prefix_match = true carries one, so a
+	// non-prefix candidate serving the same request (possible on the unified
+	// codex mount) keeps its URL untouched. EndpointPath already includes it.
+	AppendPath string
+}
+
+// transport is the connection-level profile the candidate's upstream requests
+// must use — proxy and TLS verification policy both come from the provider row.
+func (s gatewayCandidateSidecar) transport() transportProfile {
+	return transportProfile{ProxyURL: s.ProxyURL, InsecureTLS: s.InsecureTLS}
 }
 
 type candidateSet struct {
@@ -34,17 +47,31 @@ type candidateSet struct {
 	ModelAnno map[string]string
 }
 
-func buildPathCandidateSet(providers []providerCandidateRow, apiKeyAnno map[string]string, modelAnno map[string]string, endpoint db.Endpoint) (candidateSet, error) {
+func buildPathCandidateSet(providers []providerCandidateRow, userAnno map[string]string, apiKeyAnno map[string]string, modelAnno map[string]string, endpoint db.Endpoint, suffix string) (candidateSet, error) {
 	if len(providers) > 0 {
 		if m, err := annotations.Decode(providers[0].ModelAnnotations); err == nil {
 			modelAnno = m
 		}
 	}
-	annoBuilder, err := newCandidateAnnotationsBuilder(nil, apiKeyAnno)
+	annoBuilder, err := newCandidateAnnotationsBuilder(nil, userAnno, apiKeyAnno)
 	if err != nil {
 		return candidateSet{}, err
 	}
 	annoBuilder.modelAnno = modelAnno
+	// Path-route candidates all share the route's single endpoint, so the
+	// upstream format is loop-invariant.
+	upstreamFormat := upstreamFormatFor(endpoint.EndpointType)
+	// The JS-visible upstreamFormat is the endpoint type's own string rather
+	// than the bridge format's: identical for the five generation types, but
+	// meaningful ("codexCompact", "exaSearch", …) for types llmbridge has no
+	// format for, which would otherwise all read as "unknown".
+	jsUpstreamFormat := contract.FromEndpointType(endpoint.EndpointType)
+	// Every path-route candidate shares the route's single endpoint row, so the
+	// suffix either applies to all of them or to none.
+	appendPath := ""
+	if endpoint.PrefixMatch {
+		appendPath = suffix
+	}
 	out := candidateSet{Items: make([]gatewayCandidate, 0, len(providers)), ModelAnno: modelAnno}
 	for _, row := range providers {
 		entryAnno, _ := annotations.Decode(row.EntryAnnotations)
@@ -55,35 +82,45 @@ func buildPathCandidateSet(providers []providerCandidateRow, apiKeyAnno map[stri
 		}
 		cand := jsx.CandidateView{
 			Provider:      buildJSProviderSummary(row.ProviderID, row.ProviderName, row.ProviderPriority, providerAnno),
-			ProviderModel: buildProviderModel(row.ModelName, row.EndpointPath, row.UpstreamModelName, row.EntryPriority, entryAnno, ""),
+			ProviderModel: buildProviderModel(row.ModelName, row.EndpointPath, row.UpstreamModelName, row.EntryPriority, entryAnno, jsUpstreamFormat),
 			Annotations:   merged,
 		}
 		key := fmt.Sprintf("%d", row.ProviderID)
 		out.Items = append(out.Items, gatewayCandidate{
 			Candidate: cand,
 			Sidecar: gatewayCandidateSidecar{
-				Key:          key,
-				ProviderID:   row.ProviderID,
-				UpstreamURL:  row.UpstreamURL,
-				Credentials:  row.ProviderCredentials,
-				SendResolver: effectiveSendResolver(endpoint.CredentialsResolver, row.SendCredentialsResolver),
-				ProxyURL:     proxyURL,
-				EndpointPath: endpoint.Path,
-				EndpointType: endpoint.EndpointType,
-				Annotations:  merged,
+				Key:            key,
+				ProviderID:     row.ProviderID,
+				UpstreamURL:    row.UpstreamURL,
+				Credentials:    row.ProviderCredentials,
+				SendResolver:   effectiveSendResolver(endpoint.CredentialsResolver, row.SendCredentialsResolver),
+				ProxyURL:       proxyURL,
+				InsecureTLS:    row.InsecureTLS,
+				EndpointPath:   endpoint.Path + appendPath,
+				EndpointType:   endpoint.EndpointType,
+				UpstreamFormat: upstreamFormat,
+				Annotations:    merged,
+				AppendPath:     appendPath,
 			},
 		})
 	}
 	return out, nil
 }
 
-func buildUnifiedCandidateSet(providers []db.GetProvidersByEndpointTypesAndModelRow, apiKeyAnno map[string]string, modelAnno map[string]string, virtualEndpoint db.Endpoint) (candidateSet, error) {
+// buildUnifiedCandidateSet turns the type-set query result into candidates.
+// suffix is this request's prefix suffix — applied only to rows whose endpoint
+// has prefix_match set, so a codex candidate gets `upstream_url + suffix` while
+// a bridged openaiResponses candidate serving the same request does not.
+// upstreamFormat resolves a row's endpoint type to its bridge format; the
+// unified config passes a closure so codex rows can report the route's own
+// source format (i.e. identity, no bridging) instead of FormatUnknown.
+func buildUnifiedCandidateSet(providers []db.GetProvidersByEndpointTypesAndModelRow, userAnno map[string]string, apiKeyAnno map[string]string, modelAnno map[string]string, suffix string, upstreamFormat func(int32) llmbridge.Format) (candidateSet, error) {
 	if len(providers) > 0 {
 		if m, err := annotations.Decode(providers[0].ModelAnnotations); err == nil {
 			modelAnno = m
 		}
 	}
-	annoBuilder, err := newCandidateAnnotationsBuilder(nil, apiKeyAnno)
+	annoBuilder, err := newCandidateAnnotationsBuilder(nil, userAnno, apiKeyAnno)
 	if err != nil {
 		return candidateSet{}, err
 	}
@@ -97,10 +134,19 @@ func buildUnifiedCandidateSet(providers []db.GetProvidersByEndpointTypesAndModel
 			proxyURL = row.ProxyUrl.String
 		}
 		cand := jsx.CandidateView{
-			Provider:      buildJSProviderSummary(row.ProviderID, row.ProviderName, row.ProviderPriority, providerAnno),
-			ProviderModel: buildProviderModel(row.ModelName, row.EndpointPath, row.UpstreamModelName, row.Priority, entryAnno, upstreamFormatFor(row.EndpointType).String()),
+			Provider: buildJSProviderSummary(row.ProviderID, row.ProviderName, row.ProviderPriority, providerAnno),
+			// See buildPathCandidateSet: the JS-visible upstreamFormat is the
+			// endpoint type's string, not the bridge format's.
+			ProviderModel: buildProviderModel(row.ModelName, row.EndpointPath, row.UpstreamModelName, row.Priority, entryAnno, contract.FromEndpointType(row.EndpointType)),
 			Annotations:   merged,
 		}
+		appendPath := ""
+		if row.PrefixMatch {
+			appendPath = suffix
+		}
+		// The candidate key stays the endpoint row's own path — it must agree
+		// with candidateKey, which reconstructs it from the JS-visible
+		// providerModel.endpoint (the configured endpoint, not the request path).
 		key := fmt.Sprintf("%d|%s", row.ProviderID, row.EndpointPath)
 		out.Items = append(out.Items, gatewayCandidate{
 			Candidate: cand,
@@ -109,13 +155,15 @@ func buildUnifiedCandidateSet(providers []db.GetProvidersByEndpointTypesAndModel
 				ProviderID:              row.ProviderID,
 				UpstreamURL:             row.UpstreamUrl,
 				Credentials:             row.ProviderCredentials,
-				SendResolver:            effectiveSendResolver(virtualEndpoint.CredentialsResolver, row.SendCredentialsResolver),
+				SendResolver:            effectiveSendResolver(row.EndpointCredentialsResolver, row.SendCredentialsResolver),
 				ProxyURL:                proxyURL,
-				EndpointPath:            row.EndpointPath,
+				InsecureTLS:             row.InsecureTls,
+				EndpointPath:            row.EndpointPath + appendPath,
 				EndpointType:            row.EndpointType,
-				UpstreamFormat:          upstreamFormatFor(row.EndpointType),
+				UpstreamFormat:          upstreamFormat(row.EndpointType),
 				Annotations:             merged,
 				SupportsNativeWebSearch: row.SupportsNativeWebSearch,
+				AppendPath:              appendPath,
 			},
 		})
 	}
@@ -159,21 +207,4 @@ func candidateEndpointPath(c jsx.CandidateView) string {
 func lookupCandidateSidecar(kind gatewayRouteKind, sidecars map[string]gatewayCandidateSidecar, cand jsx.CandidateView) (gatewayCandidateSidecar, bool) {
 	side, ok := sidecars[candidateKey(kind, cand)]
 	return side, ok
-}
-
-func sourceEndpointTypeForPath(endpointType int32) llmbridge.Format {
-	switch endpointType {
-	case contract.EndpointType_AnthropicMessages:
-		return llmbridge.FormatAnthropicMessages
-	case contract.EndpointType_OpenAIChatCompletions:
-		return llmbridge.FormatOpenAIChatCompletions
-	case contract.EndpointType_OpenAIResponses:
-		return llmbridge.FormatOpenAIResponses
-	case contract.EndpointType_GeminiGenerateContent:
-		return llmbridge.FormatGeminiGenerateContent
-	case contract.EndpointType_GeminiStreamGenerateContent:
-		return llmbridge.FormatGeminiStreamGenerateContent
-	default:
-		return llmbridge.FormatUnknown
-	}
 }

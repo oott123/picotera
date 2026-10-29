@@ -1,17 +1,17 @@
 import { computed } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
-import { listProviders } from '@/api/client'
+import { listProviderLabels } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
-import type { ProviderView } from '@/api'
+import type { ProviderLabel } from '@/api'
 
 export function useProvidersMap() {
   const query = useQuery({
-    queryKey: queryKeys.providers.all,
-    queryFn: listProviders,
+    queryKey: queryKeys.labels.providers,
+    queryFn: listProviderLabels,
   })
   const providers = computed(() => query.data.value ?? [])
   const providersMap = computed(() => {
-    const m = new Map<number, ProviderView>()
+    const m = new Map<number, ProviderLabel>()
     for (const p of providers.value) m.set(p.id, p)
     return m
   })

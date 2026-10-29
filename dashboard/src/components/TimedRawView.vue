@@ -17,7 +17,7 @@ const virtualItemEls = shallowRef([])
 
 function measureAll() {
   rowVirtualizer.value.measureElement(null)
-  virtualItemEls.value.forEach(el => {
+  virtualItemEls.value.forEach((el) => {
     // console.log(el)
     if (el) rowVirtualizer.value.measureElement(el)
   })
@@ -51,25 +51,27 @@ function formatTime(ms: number | undefined): string {
     style="contain: content"
   >
     <div class="relative w-full" :style="{ height: `${totalSize}px` }">
-      <div class="absolute left-0 top-0"
-        :style="{ transform: `translateY(${virtualRows[0]?.start ?? 0}px)` }">
       <div
-        v-for="row in virtualRows"
-        :key="row.index"
-        class="flex w-full"
-        :class="{'bg-surface-100': row.index % 2}"
-        :data-index="row.index"
-        ref="virtualItemEls"
+        class="absolute left-0 top-0"
+        :style="{ transform: `translateY(${virtualRows[0]?.start ?? 0}px)` }"
       >
-        <span
-          class="shrink-0 w-20 pr-2 text-right font-mono text-xs tabular text-ink-faint select-none border-r border-line-soft"
+        <div
+          v-for="row in virtualRows"
+          :key="row.index"
+          class="flex w-full"
+          :class="{ 'bg-surface-100': row.index % 2 }"
+          :data-index="row.index"
+          ref="virtualItemEls"
         >
-          {{ formatTime(lines[row.index]?.timeMs) }}
-        </span>
-        <span class="flex-1 pl-2 font-mono text-xs whitespace-pre-wrap break-all text-ink">{{
-          lines[row.index]?.text
-        }}</span>
-      </div>
+          <span
+            class="shrink-0 w-20 pr-2 text-right font-mono text-xs tabular text-ink-faint select-none border-r border-line-soft"
+          >
+            {{ formatTime(lines[row.index]?.timeMs) }}
+          </span>
+          <span class="flex-1 pl-2 font-mono text-xs whitespace-pre-wrap break-all text-ink">{{
+            lines[row.index]?.text
+          }}</span>
+        </div>
       </div>
     </div>
   </div>

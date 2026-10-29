@@ -1,8 +1,8 @@
 # PicoTera
 
-一款偏好明确的个人 LLM 网关。vibe coding 产物，包含 99% 以上的 AI 生成代码。
+一款偏好明确的个人 LLM 网关。主要功能已可用，在小规模的生产环境已经得到一定验证。
 
-项目尚在开发过程中，但主要功能已可用。
+本项目为 vibe coding 产物，包含大量 AI 生成代码。尽管如此，系统功能均由人类设计，文档/UI/UX 也已由人类精心调整。
 
 ## 功能特点
 
@@ -10,7 +10,9 @@
 * 默认透传；可集成 AxonHub 转换库并自由配置转换参数，供不时之需
 * 基于工作目录自动识别项目，并分别统计成本
 * 多币种费用统计
-* 完整的请求/响应日志
+* 完整的请求/响应日志（记录原始响应体和每行响应到达的时间）
+* 基于反向代理认证或 OIDC 的多用户系统
+* 支持 Anthropic 接口[使用 Exa / DeepSeek 模拟原生搜索](./docs/server-search.md)
 
 ## 界面展示
 
@@ -23,6 +25,10 @@
 各类堆叠图、饼图
 
 ![](./docs/screenshots/overview2.webp)
+
+科学的各类速度统计图
+
+![](./docs/screenshots/overview3.webp)
 
 ### 端点页
 
@@ -45,7 +51,7 @@
 ## 安装
 
 > [!CAUTION]
-> 本项目的管理 API 目前没有鉴权，因此请勿将其暴露到公网使用！
+> 本项目的认证需要额外配置，请确保仔细、完整查看本文档。
 
 ### Docker
 
@@ -81,13 +87,22 @@ PICOTERA_S3_ACCESS_KEY=picotera
 PICOTERA_S3_SECRET_KEY=picotera-dev
 PICOTERA_S3_USE_SSL=false
 PICOTERA_S3_BUCKET=picotera-artifacts
-PICOTERA_S3_FORCE_PATH_STYLE=true
+PICOTERA_S3_PATH_STYLE=true
 PICOTERA_S3_PUBLIC_URL=http://localhost:34050
 ```
 
-### 请求转换组件
+### 路径参考
 
-请求转换组件使用 AxonHub 的 LGPL 代码，因而需要单独编译，通过 go-plugin 作为独立进程使用：
+* `/api/unified` 为 LLM 统一访问端点
+* `/api/picotera` 为 PicoTera 管理端点
+* 若用户配置了自定义端点，则这些端点直接挂载在根路由下
+* 其它端点将被转发至前端 SPA
+
+### 请求转换插件
+
+请求转换插件使用 AxonHub 的 LGPL 代码。
+
+如果自行编译运行 PicoTera ，需要单独编译请求转换插件，通过 go-plugin 作为独立进程使用：
 
 ```bash
 mise run llmbridge-plugin
@@ -100,6 +115,95 @@ mise run llmbridge-plugin
 ```bash
 docker compose exec -it postgres timescaledb-tune --yes -cpus 1 -memory 512MB
 ```
+
+## 认证
+
+你可以选择三种方法之一，为 PicoTera 的管理 API 配置认证。请注意，网关 API 始终仅被密钥保护，不受认证方式影响。
+
+### 单用户
+
+提供如下环境变量，启动单用户模式：
+
+```env
+PICOTERA_AUTH_SINGLE_USER_MODE=true
+```
+
+单用户模式下，所有管理接口、控制台不做鉴权，默认归属于自动创建的、名为 root 的用户下。
+
+### 前向认证
+
+为 PicoTera 提供多用户访问方法之一是部署一层反向代理进行前向认证，常见的有 oauth2-proxy 或 traefik 的 forward auth。
+
+提供如下变量以开启前向认证模式：
+
+```env
+PICOTERA_AUTH_HEADER_ENABLED=true
+PICOTERA_AUTH_HEADER_NAME=X-User-Identity # 用户唯一识别符的 Header
+PICOTERA_AUTH_AUTO_CREATE_USER=true # 自动创建没有见过的用户
+```
+
+### OIDC (OpenID Connect)
+
+你可以使用 OIDC IdP 为 PicoTera 提供认证。提供以下环境变量以开启 oidc 模式：
+
+```env
+PICOTERA_AUTH_OIDC_ENABLED=true
+PICOTERA_BASE_URL=http://picotera.local
+PICOTERA_AUTH_OIDC_ISSUER=https://github.com/login/oauth # 必填，必须和 idp 的 issuer 保持一致
+PICOTERA_AUTH_OIDC_CLIENT_ID= # idp 提供的 client id
+PICOTERA_AUTH_OIDC_CLIENT_SECRET= # idp 提供的 client secret，请将 PicoTera 注册为机密 RP / 机密客户端
+PICOTERA_AUTH_OIDC_SESSION_SECRET= # 随机生成一段字符串
+PICOTERA_AUTH_OIDC_SESSION_TTL=12h
+PICOTERA_AUTH_OIDC_SCOPES="openid profile email"
+
+# 如果 oidc 自动发现工作异常，提供以下变量以覆盖自动发现
+PICOTERA_AUTH_OIDC_AUTH_ENDPOINT=
+PICOTERA_AUTH_OIDC_TOKEN_ENDPOINT=
+PICOTERA_AUTH_OIDC_USERINFO_ENDPOINT=
+PICOTERA_AUTH_OIDC_PKCE=true
+PICOTERA_AUTH_OIDC_CLIENT_AUTH_METHOD=client_secret_basic
+```
+
+### 通过命令行绑定用户
+
+如果没有使用自动创建用户，你应运行如下命令以绑定提供商到现存用户：
+
+```bash
+mise bind-identity -- <identity_provider> <identity> <user_id>
+# 例如
+mise bind-identity -- http-header root 1
+# 在 docker 中
+docker exec picotera -- /app/picotera bind-identity http-header root 1
+```
+
+其中 `identity_provider` 为 `http-header` 或 `oidc`。
+
+### 通过命令行将用户设为管理员
+
+PicoTera 提供二元的管理员/用户角色之区分。默认所有用户均不是管理员，你可以通过命令行将特定用户提升为管理员。
+此外，管理员也可以在用户界面上将用户提升为管理员或将管理员降级为普通用户。
+
+```bash
+mise set-admin -- <user_id>
+# 例如
+mise set-admin -- 1
+# 在 docker 中
+docker exec picotera -- /app/picotera set-admin 1
+```
+
+## 初次使用
+
+1. 创建各类端点。可以参考文档开头的端点界面截图。
+2. 创建一个渠道。
+3. 点击渠道右侧的模型按钮，拉取模型。
+4. 点击渠道右侧的链接按钮，将上游绑定到支持的端点。
+5. 在模型页面，展开未注册上游模型，将模型添加到支持列表。可以先不填写价格。
+6. 在模型界面点击“匹配价格”，匹配一个合适的价格。
+7. 在密钥界面创建一个新的密钥。
+8. 在设置界面允许项目自动创建。
+9. 设置你的 harness，将 `https://picotera/api/unified` 作为 Base URL，将刚才创建的密钥作为密钥。
+   如果不需要请求转换（透传），则将 `https://picotera` 作为 Base URL。
+10. 探索 [docs/example-scripts](./docs/example-scripts/) 目录，检查是否有需要的脚本。
 
 ## 协议
 

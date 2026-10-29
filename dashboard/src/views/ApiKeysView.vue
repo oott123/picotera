@@ -98,7 +98,7 @@ async function copyKey(k: ApiKeyView) {
             v-for="k in apiKeys"
             :key="k.id"
             :selected="panel.isActive(`apiKey:${k.id}`)"
-            :class="k.disabled ? 'opacity-55' : ''"
+            :dimmed="k.disabled"
           >
             <Td>
               <span class="font-medium">{{ k.name }}</span>
@@ -123,7 +123,7 @@ async function copyKey(k: ApiKeyView) {
                   :aria-label="k.disabled ? '启用' : '禁用'"
                   @click="toggle(k)"
                 >
-                  <Icon :name="k.disabled ? 'eye-off' : 'eye'" :size="13" />
+                  <Icon :name="k.disabled ? 'puzzle-off' : 'puzzle'" :size="13" />
                 </IconButton>
                 <IconButton
                   :active="panel.isActive(`apiKey:${k.id}`)"

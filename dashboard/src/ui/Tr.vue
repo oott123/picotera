@@ -1,12 +1,24 @@
 <script setup lang="ts">
-defineProps<{ selected?: boolean; hoverable?: boolean; isNew?: boolean }>()
+import { computed, provide } from 'vue'
+import { trDimmedKey } from './table-keys'
+
+const props = defineProps<{
+  selected?: boolean
+  isNew?: boolean
+  dimmed?: boolean
+}>()
+
+provide(
+  trDimmedKey,
+  computed(() => props.dimmed ?? false),
+)
 </script>
 
 <template>
   <tr
     class="group transition-colors"
     :class="[
-      hoverable !== false ? 'hover:bg-surface-50' : '',
+      'hover:bg-surface-50/75',
       selected
         ? 'bg-surface-50 shadow-[inset_2px_0_0_var(--color-accent)] hover:bg-surface-100'
         : '',

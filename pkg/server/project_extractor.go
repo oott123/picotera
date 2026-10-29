@@ -3,10 +3,10 @@
 // Pulls candidate workspace paths out of a gateway request body using a fixed
 // set of regexes, JSON-unescapes each capture, expands every path into its
 // separator-aligned ancestors, and matches them to a project id with a single
-// SQL query. When no project matches and the `project.autoCreate` global
-// setting is enabled, a project is created on the fly so subsequent requests
-// match it. Hooked from handle_gateway.go and handle_unified_gateway.go between
-// body read and meta-row insert.
+// SQL query. Matching is scoped to the requesting user. When no project matches
+// and the requesting user's `project.autoCreate` setting is enabled, a project
+// is created on the fly so subsequent requests match it. Hooked from the gateway
+// flow after authentication, once the user is known.
 package server
 
 import (
@@ -24,7 +24,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// autoCreateSettingKey is the global_setting key gating project auto-creation.
+// autoCreateSettingKey is the per-user setting key gating project auto-creation.
 const autoCreateSettingKey = "project.autoCreate"
 
 // autoCreateMinPathLen is the minimum decoded path length required before a
@@ -43,10 +43,12 @@ const autoCreateMaxRetries = 5
 // (defensive — for the rare non-JSON body).
 var projectExtractRegexps = []*regexp.Regexp{
 	regexp.MustCompile(`Workspace root folder: (.*?)(?:\\n|\n|$|")`),
-	regexp.MustCompile(`Primary working directory: (.*?)(?:\\n|\n|$|")`),
+	regexp.MustCompile(`Primary working directory: (.*?)(?:\\n|\n|$|")`), // claude code
 	regexp.MustCompile(`Current working directory: (.*?)(?:\\n|\n|$|")`),
-	regexp.MustCompile(`<cwd>(.*?)</cwd>`),
+	regexp.MustCompile(`<cwd>(.*?)</cwd>`), // codex
 	regexp.MustCompile(`<env>(?:\\n|\n)Working directory: (.*?)(?:\\n|\n|$|")`),
+	regexp.MustCompile(`Today is [0-9-]+, and the current working directory is '(.*?)'.(?:\\n|\n|$|")`), // omp
+	regexp.MustCompile(`current working directory: '(.*?)'.`),                                           // omp (18.1.14)
 }
 
 type projectExtractor struct {
@@ -58,10 +60,11 @@ func newProjectExtractor(queries *db.Queries) *projectExtractor {
 }
 
 // Extract scans body, decodes capture groups, expands them into ancestor
-// candidates, and asks the database for the longest matching project path. On
-// a miss it may auto-create a project (subject to the global setting). Returns
-// (0, false, nil) when no candidates parse or nothing matches.
-func (e *projectExtractor) Extract(ctx context.Context, body []byte) (int32, bool, error) {
+// candidates, and asks the database for the longest matching project path owned
+// by userID. On a miss it may auto-create a project for that user (subject to
+// their setting). Returns (0, false, nil) when no candidates parse or nothing
+// matches.
+func (e *projectExtractor) Extract(ctx context.Context, body []byte, userID int64) (int32, bool, error) {
 	if len(body) == 0 {
 		return 0, false, nil
 	}
@@ -83,21 +86,24 @@ func (e *projectExtractor) Extract(ctx context.Context, body []byte) (int32, boo
 		}
 	}
 
-	id, err := e.queries.MatchProjectByPaths(ctx, candidates)
+	id, err := e.queries.MatchProjectByPaths(ctx, db.MatchProjectByPathsParams{
+		UserID:         userID,
+		CandidatePaths: candidates,
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return e.maybeAutoCreate(ctx, paths)
+			return e.maybeAutoCreate(ctx, paths, userID)
 		}
 		return 0, false, err
 	}
 	return id, true, nil
 }
 
-// maybeAutoCreate creates a project seeded with the longest eligible path when
-// the `project.autoCreate` global setting is enabled. Returns (0, false, nil)
-// when disabled or no path qualifies.
-func (e *projectExtractor) maybeAutoCreate(ctx context.Context, paths []string) (int32, bool, error) {
-	if !e.autoCreateEnabled(ctx) {
+// maybeAutoCreate creates a project for userID seeded with the longest eligible
+// path when that user's `project.autoCreate` setting is enabled. Returns
+// (0, false, nil) when disabled or no path qualifies.
+func (e *projectExtractor) maybeAutoCreate(ctx context.Context, paths []string, userID int64) (int32, bool, error) {
+	if !e.autoCreateEnabled(ctx, userID) {
 		return 0, false, nil
 	}
 
@@ -124,8 +130,9 @@ func (e *projectExtractor) maybeAutoCreate(ctx context.Context, paths []string) 
 	name := base
 	for attempt := 0; attempt < autoCreateMaxRetries; attempt++ {
 		row, err := e.queries.InsertAutoCreatedProject(ctx, db.InsertAutoCreatedProjectParams{
-			Name:  name,
-			Paths: pathsJSON,
+			Name:   name,
+			Paths:  pathsJSON,
+			UserID: userID,
 		})
 		if err == nil {
 			logx.WithContext(ctx).WithField("project_id", row.ID).WithField("path", source).Info("project extractor: auto-created project")
@@ -139,8 +146,11 @@ func (e *projectExtractor) maybeAutoCreate(ctx context.Context, paths []string) 
 	return 0, false, nil
 }
 
-func (e *projectExtractor) autoCreateEnabled(ctx context.Context) bool {
-	setting, err := e.queries.GetGlobalSetting(ctx, autoCreateSettingKey)
+func (e *projectExtractor) autoCreateEnabled(ctx context.Context, userID int64) bool {
+	setting, err := e.queries.GetUserSetting(ctx, db.GetUserSettingParams{
+		UserID: userID,
+		Key:    autoCreateSettingKey,
+	})
 	if err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
 			logx.WithContext(ctx).WithError(err).Warn("project extractor: failed to read autoCreate setting")

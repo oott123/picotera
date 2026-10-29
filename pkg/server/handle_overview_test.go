@@ -20,7 +20,7 @@ func TestOverviewWindow(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.rangeKey, func(t *testing.T) {
-			start, end, err := overviewWindow(tc.rangeKey, now)
+			start, end, err := overviewWindow(tc.rangeKey, "", "", now, time.Hour)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -38,9 +38,47 @@ func TestOverviewWindow(t *testing.T) {
 }
 
 func TestOverviewWindowInvalid(t *testing.T) {
-	_, _, err := overviewWindow("bogus", time.Now())
+	_, _, err := overviewWindow("bogus", "", "", time.Now(), time.Hour)
 	if err == nil {
 		t.Fatal("expected error for invalid range")
+	}
+}
+
+func TestOverviewCustomWindow(t *testing.T) {
+	cases := []struct {
+		name    string
+		startAt string
+		endAt   string
+		wantErr bool
+	}{
+		{"valid", "2026-07-01T00:00:00Z", "2026-07-03T08:00:00Z", false},
+		{"missing start", "", "2026-07-03T08:00:00Z", true},
+		{"missing end", "2026-07-01T00:00:00Z", "", true},
+		{"reversed", "2026-07-03T08:00:00Z", "2026-07-01T00:00:00Z", true},
+		{"equal", "2026-07-01T00:00:00Z", "2026-07-01T00:00:00Z", true},
+		{"invalid format", "2026-07-01 00:00:00", "2026-07-03T08:00:00Z", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			start, end, err := overviewWindow("custom", tc.startAt, tc.endAt, time.Now(), time.Hour)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got start=%v end=%v", start, end)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			wantStart, _ := time.Parse(time.RFC3339Nano, tc.startAt)
+			wantEnd, _ := time.Parse(time.RFC3339Nano, tc.endAt)
+			if !start.Equal(wantStart) {
+				t.Errorf("start = %v, want %v", start, wantStart)
+			}
+			if !end.Equal(wantEnd) {
+				t.Errorf("end = %v, want %v", end, wantEnd)
+			}
+		})
 	}
 }
 
@@ -59,28 +97,63 @@ func TestOverviewBuckets(t *testing.T) {
 	}
 }
 
-func TestOverviewSeriesBucketInterval(t *testing.T) {
+func TestOverviewAutoBucket(t *testing.T) {
 	cases := []struct {
-		rangeKey string
-		want     time.Duration
+		span time.Duration
+		want time.Duration
 	}{
-		{"1d", time.Hour},
-		{"7d", 4 * time.Hour},
-		{"1m", 8 * time.Hour},
+		{24 * time.Hour, time.Hour},        // 1d preset
+		{36 * time.Hour, time.Hour},        // boundary
+		{36*time.Hour + 1, 4 * time.Hour},  // just over 36h
+		{7 * 24 * time.Hour, 4 * time.Hour}, // 7d preset
+		{8 * 24 * time.Hour, 4 * time.Hour}, // boundary
+		{8*24*time.Hour + 1, 8 * time.Hour}, // just over 8d
+		{30 * 24 * time.Hour, 8 * time.Hour}, // 1m preset
 	}
 	for _, tc := range cases {
-		t.Run(tc.rangeKey, func(t *testing.T) {
-			got, err := overviewSeriesBucketInterval(tc.rangeKey)
+		got := overviewAutoBucket(tc.span)
+		if got != tc.want {
+			t.Errorf("overviewAutoBucket(%v) = %v, want %v", tc.span, got, tc.want)
+		}
+	}
+}
+
+func TestOverviewSeriesBucketIntervalFor(t *testing.T) {
+	cases := []struct {
+		bucket string
+		span   time.Duration
+		want   time.Duration
+		wantErr bool
+	}{
+		{"auto", 24 * time.Hour, time.Hour, false},
+		{"auto", 7 * 24 * time.Hour, 4 * time.Hour, false},
+		{"auto", 30 * 24 * time.Hour, 8 * time.Hour, false},
+		{"10m", 24 * time.Hour, 10 * time.Minute, false},
+		{"10m", 7 * 24 * time.Hour, 10 * time.Minute, false},      // exactly 7d allowed
+		{"10m", 30 * 24 * time.Hour, 0, true},                     // 1m span rejected
+		{"10m", 7*24*time.Hour + 1, 0, true},                      // just over 7d rejected
+		{"1h", 30 * 24 * time.Hour, time.Hour, false},
+		{"6h", 30 * 24 * time.Hour, 6 * time.Hour, false},
+		{"12h", 30 * 24 * time.Hour, 12 * time.Hour, false},
+		{"24h", 30 * 24 * time.Hour, 24 * time.Hour, false},
+		{"bogus", 24 * time.Hour, 0, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.bucket+"_"+tc.span.String(), func(t *testing.T) {
+			got, err := overviewSeriesBucketIntervalFor(tc.bucket, tc.span)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got %v", got)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			if got != tc.want {
-				t.Errorf("interval = %s, want %s", got, tc.want)
+				t.Errorf("interval = %v, want %v", got, tc.want)
 			}
 		})
-	}
-	if _, err := overviewSeriesBucketInterval("bogus"); err == nil {
-		t.Fatal("expected error for invalid range")
 	}
 }
 
@@ -96,15 +169,11 @@ func TestOverviewSeriesBucketCounts(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.rangeKey, func(t *testing.T) {
-			start, end, err := overviewWindow(tc.rangeKey, now)
+			start, end, bucketInterval, err := resolveOverviewSeriesWindow(tc.rangeKey, "", "", "auto", now)
 			if err != nil {
-				t.Fatalf("overviewWindow error: %v", err)
+				t.Fatalf("resolveOverviewSeriesWindow error: %v", err)
 			}
-			interval, err := overviewSeriesBucketInterval(tc.rangeKey)
-			if err != nil {
-				t.Fatalf("overviewSeriesBucketInterval error: %v", err)
-			}
-			got := overviewBuckets(start, end, interval)
+			got := overviewBuckets(start, end, bucketInterval)
 			if len(got) != tc.want {
 				t.Fatalf("len = %d, want %d", len(got), tc.want)
 			}

@@ -17,6 +17,10 @@ const (
 	pluginABI  = 1
 )
 
+// MaxGRPCMessageSize 是插件 gRPC 单条消息的尺寸上限。聚合超长流式响应时整条
+// 拼接后的 body 通过单个 unary 调用跨进程传输，远超 gRPC 默认的 4 MiB。
+const MaxGRPCMessageSize = 256 << 20 // 256 MiB
+
 var pluginHandshake = plugin.HandshakeConfig{
 	ProtocolVersion:  1,
 	MagicCookieKey:   "PICOTERA_LLMBRIDGE_PLUGIN",

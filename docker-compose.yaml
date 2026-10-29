@@ -5,7 +5,7 @@ services:
       - 34051:6379
 
   postgres:
-    image: timescale/timescaledb:2.26.4-pg17
+    image: timescale/timescaledb:2.29.1-pg17
     ports:
       - 34052:5432
     environment:

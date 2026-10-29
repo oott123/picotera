@@ -4,8 +4,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
 import { useProvidersMap } from '@/composables/useProvidersMap'
 import { useProjectsMap } from '@/composables/useProjectsMap'
-import type { RequestView, EndpointView, ModelView } from '@/api'
-import { listEndpoints, listModels, listRequests } from '@/api/client'
+import type { RequestView, EndpointLabel, ModelLabel } from '@/api'
+import {
+  listEndpointLabels,
+  listModelLabels,
+  listRequests,
+  listUpstreamModelLabels,
+} from '@/api/client'
 import { queryKeys, type RequestsFilters } from '@/api/queryKeys'
 import RequestDetailsPanel from '@/components/RequestDetailsPanel.vue'
 import { useSidePanel } from '@/composables/useSidePanel'
@@ -16,16 +21,24 @@ import {
   DataCard,
   AutoDataTable,
   Tag,
+  DynamicFilterBar,
   Field,
   Icon,
   SegmentedControl,
   Select,
   ColumnFilter,
+  TimeRangeFilter,
   MoneyDisplay,
   type AutoDataTableColumn,
   type ColumnFilterOption,
 } from '@/ui'
-import { finishReasonLabel } from '@/utils/requestLabels'
+import {
+  finishReasonLabel,
+  inferredModelSourceLabel,
+  isUnifiedEndpoint,
+  longestPrefixName,
+  unifiedEndpointName,
+} from '@/utils/requestLabels'
 
 const panel = useSidePanel()
 const route = useRoute()
@@ -48,8 +61,40 @@ const filters = reactive({
   model: '',
   upstreamModel: '',
   traceId: typeof route.query.traceId === 'string' ? route.query.traceId : '',
+  requestId: typeof route.query.requestId === 'string' ? route.query.requestId : '',
   projectId: typeof route.query.projectId === 'string' ? Number(route.query.projectId) || 0 : 0,
+  startAt: typeof route.query.startAt === 'string' ? route.query.startAt : '',
+  endAt: typeof route.query.endAt === 'string' ? route.query.endAt : '',
+  emptyResponse: 0,
+  finishReason: 0,
+  routing: '' as '' | 'detected' | 'undetected',
+  annotationKey: '',
+  annotationValue: '',
 })
+
+const visibleFilters = ref<string[]>([])
+
+const availableFilters = [
+  { key: 'timeRange', label: '时间范围' },
+  { key: 'requestId', label: 'ID' },
+  { key: 'annotation', label: '标注' },
+]
+
+function onRemoveFilter(key: string) {
+  switch (key) {
+    case 'timeRange':
+      filters.startAt = ''
+      filters.endAt = ''
+      break
+    case 'requestId':
+      filters.requestId = ''
+      break
+    case 'annotation':
+      filters.annotationKey = ''
+      filters.annotationValue = ''
+      break
+  }
+}
 
 const typeOptions: { value: RequestKind; label: string }[] = [
   { value: 'meta', label: '元请求' },
@@ -64,15 +109,20 @@ const pageCursors = ref<string[]>(initialCursor ? ['', initialCursor] : [''])
 const hasPaginationHistory = ref(!initialCursor)
 
 const endpointsQuery = useQuery({
-  queryKey: queryKeys.endpoints.all,
-  queryFn: listEndpoints,
+  queryKey: queryKeys.labels.endpoints,
+  queryFn: listEndpointLabels,
 })
 const modelsQuery = useQuery({
-  queryKey: queryKeys.models.all,
-  queryFn: listModels,
+  queryKey: queryKeys.labels.models,
+  queryFn: listModelLabels,
 })
-const endpoints = computed<EndpointView[]>(() => endpointsQuery.data.value ?? [])
-const models = computed<ModelView[]>(() => modelsQuery.data.value ?? [])
+const upstreamModelsQuery = useQuery({
+  queryKey: queryKeys.labels.upstreamModels,
+  queryFn: listUpstreamModelLabels,
+})
+const endpoints = computed<EndpointLabel[]>(() => endpointsQuery.data.value ?? [])
+const models = computed<ModelLabel[]>(() => modelsQuery.data.value ?? [])
+const upstreamModels = computed<string[]>(() => upstreamModelsQuery.data.value ?? [])
 
 const requestFilters = computed<RequestsFilters>(() => {
   const out: {
@@ -82,7 +132,14 @@ const requestFilters = computed<RequestsFilters>(() => {
     model?: string
     upstreamModel?: string
     traceId?: string
+    requestId?: string
     projectId?: number
+    startAt?: string
+    endAt?: string
+    emptyResponse?: boolean
+    finishReason?: number
+    routing?: 'detected' | 'undetected'
+    annotations?: string
   } = {}
   if (filters.type === 'meta') out.type = 0
   else if (filters.type === 'upstream') out.type = 1
@@ -91,7 +148,16 @@ const requestFilters = computed<RequestsFilters>(() => {
   if (filters.model) out.model = filters.model
   if (filters.upstreamModel) out.upstreamModel = filters.upstreamModel
   if (filters.traceId) out.traceId = filters.traceId
+  if (filters.requestId) out.requestId = filters.requestId
   if (filters.projectId) out.projectId = filters.projectId
+  if (filters.startAt) out.startAt = filters.startAt
+  if (filters.endAt) out.endAt = filters.endAt
+  if (filters.emptyResponse) out.emptyResponse = true
+  if (filters.finishReason) out.finishReason = filters.finishReason
+  if (filters.routing) out.routing = filters.routing
+  if (filters.annotationKey) {
+    out.annotations = JSON.stringify({ [filters.annotationKey]: filters.annotationValue })
+  }
   return out
 })
 
@@ -166,7 +232,15 @@ watch(
     filters.model,
     filters.upstreamModel,
     filters.traceId,
+    filters.requestId,
     filters.projectId,
+    filters.startAt,
+    filters.endAt,
+    filters.emptyResponse,
+    filters.finishReason,
+    filters.routing,
+    filters.annotationKey,
+    filters.annotationValue,
   ],
   () => {
     resetPaginationMemory()
@@ -194,11 +268,64 @@ watch(
 )
 
 watch(
+  () => route.query.requestId,
+  (value) => {
+    const next = typeof value === 'string' ? value : ''
+    if (filters.requestId !== next) {
+      filters.requestId = next
+    }
+  },
+)
+
+watch(
+  () => filters.requestId,
+  (next, prev) => {
+    if (!prev && next) {
+      filters.type = 'all'
+      filters.providerId = 0
+      filters.endpointPath = ''
+      filters.model = ''
+      filters.upstreamModel = ''
+      filters.traceId = ''
+      filters.projectId = 0
+      filters.startAt = ''
+      filters.endAt = ''
+      filters.emptyResponse = 0
+      filters.finishReason = 0
+      filters.routing = ''
+      filters.annotationKey = ''
+      filters.annotationValue = ''
+    }
+  },
+  { immediate: true },
+)
+
+watch(
   () => route.query.projectId,
   (value) => {
     const next = typeof value === 'string' ? Number(value) || 0 : 0
     if (filters.projectId !== next) {
       filters.projectId = next
+    }
+  },
+)
+
+watch(
+  () => route.query.startAt,
+  (value) => {
+    const next = typeof value === 'string' ? value : ''
+    if (filters.startAt !== next) {
+      filters.startAt = next
+    }
+  },
+)
+
+watch(
+  () => route.query.endAt,
+  (value) => {
+    const next = typeof value === 'string' ? value : ''
+    if (filters.endAt !== next) {
+      filters.endAt = next
     }
   },
 )
@@ -259,6 +386,10 @@ function openDetails(r: RequestView) {
   replaceRequestDetailUrl(r.id)
 }
 
+function requestHref(r: RequestView) {
+  return router.resolve({ name: 'requestDetail', params: { requestId: r.id } }).href
+}
+
 function rowSelected(r: RequestView) {
   return panel.isActive(`request:${r.id}`)
 }
@@ -297,10 +428,21 @@ const columns = computed<AutoDataTableColumn<RequestView>[]>(() => {
     {
       key: 'model',
       headerClass:
-        filters.model || filters.upstreamModel ? 'shadow-[inset_0_-2px_0_var(--color-accent)]' : '',
+        filters.model || filters.upstreamModel || filters.routing
+          ? 'shadow-[inset_0_-2px_0_var(--color-accent)]'
+          : '',
+      cellTitle: modelCellTitle,
     },
-    { key: 'status', header: '状态' },
-    { key: 'tokens', header: 'Token' },
+    {
+      key: 'status',
+      header: '完成原因',
+      headerClass: filters.finishReason ? 'shadow-[inset_0_-2px_0_var(--color-accent)]' : '',
+    },
+    {
+      key: 'tokens',
+      header: 'Token',
+      headerClass: filters.emptyResponse ? 'shadow-[inset_0_-2px_0_var(--color-accent)]' : '',
+    },
     { key: 'cost', header: '成本', align: 'right' },
     { key: 'timeSpentMs', header: '耗时', align: 'right' },
   )
@@ -313,8 +455,27 @@ const providerOptions = computed<ColumnFilterOption<number>[]>(() =>
 const projectOptions = computed<ColumnFilterOption<number>[]>(() =>
   projects.value.map((p) => ({ value: p.id, label: p.name })),
 )
+const endpointNameByPath = computed(() => {
+  const m = new Map<string, string>()
+  for (const e of endpoints.value) m.set(e.path, e.name)
+  return m
+})
+
+function endpointDisplay(path: string | undefined | null): { name: string; unified: boolean } {
+  if (!path) return { name: '—', unified: false }
+  if (isUnifiedEndpoint(path)) return { name: unifiedEndpointName(path), unified: true }
+  // Prefix endpoints record their concrete sub-path on request rows while the
+  // endpoint list only carries the prefix, so fall back to the longest prefix
+  // match before giving up and showing the raw path.
+  const names = endpointNameByPath.value
+  return { name: names.get(path) ?? longestPrefixName(names, path) ?? path, unified: false }
+}
+
 const endpointOptions = computed<ColumnFilterOption<string>[]>(() =>
-  endpoints.value.map((e) => ({ value: e.path, label: e.path })),
+  endpoints.value.map((e) => {
+    const d = endpointDisplay(e.path)
+    return { value: e.path, label: d.unified ? `${d.name} [统一网关]` : d.name }
+  }),
 )
 const modelOptions = computed<ColumnFilterOption<string>[]>(() =>
   models.value.map((m) => ({ value: m.name, label: m.name })),
@@ -328,21 +489,37 @@ const upstreamModelOptions = computed<ColumnFilterOption<string>[]>(() => {
       opts.push({ value: r.upstreamModel, label: r.upstreamModel })
     }
   }
-  for (const p of providers.value) {
-    if (!p.providerModels) continue
-    for (const m of p.providerModels) {
-      if (m.upstreamModelName && !seen.has(m.upstreamModelName)) {
-        seen.add(m.upstreamModelName)
-        opts.push({ value: m.upstreamModelName, label: m.upstreamModelName })
-      }
-      if (!m.upstreamModelName && m.model && !seen.has(m.model)) {
-        seen.add(m.model)
-        opts.push({ value: m.model, label: m.model })
-      }
+  for (const name of upstreamModels.value) {
+    if (name && !seen.has(name)) {
+      seen.add(name)
+      opts.push({ value: name, label: name })
     }
   }
   return opts
 })
+
+// Finish-reason filter options: the 7 fixed finish reasons (1..7) plus a
+// "失败" catch-all (sentinel -1 = all reasons except 正常结束/3). "Pending"
+// (NULL finish_reason) is intentionally excluded — in-flight rows still show
+// but are not a filter value. Labels mirror finishReasonLabel's fixed cases.
+const finishReasonOptions: ColumnFilterOption<number>[] = [
+  { value: -1, label: '非正常结束' },
+  { value: 3, label: '正常结束' },
+  { value: 1, label: '内部错误' },
+  { value: 2, label: '已取消' },
+  { value: 4, label: '请求头超时' },
+  { value: 5, label: '读取超时' },
+  { value: 6, label: '流式错误' },
+  { value: 7, label: '控制台打断' },
+]
+
+// Routing filter options: a request counts as routed when the upstream reported
+// a model that matches neither the requested model nor the one the attempt was
+// forwarded as (case-insensitive). An empty inferred model is never routed.
+const routingOptions: ColumnFilterOption<'detected' | 'undetected'>[] = [
+  { value: 'detected', label: '检测到路由' },
+  { value: 'undetected', label: '未检测到路由' },
+]
 
 function activeFilterCount(): number {
   let n = 0
@@ -351,7 +528,13 @@ function activeFilterCount(): number {
   if (filters.model) n++
   if (filters.upstreamModel) n++
   if (filters.traceId) n++
+  if (filters.requestId) n++
   if (filters.projectId) n++
+  if (filters.startAt || filters.endAt) n++
+  if (filters.emptyResponse) n++
+  if (filters.finishReason) n++
+  if (filters.routing) n++
+  if (filters.annotationKey) n++
   return n
 }
 
@@ -361,7 +544,15 @@ function clearAllFilters() {
   filters.model = ''
   filters.upstreamModel = ''
   filters.traceId = ''
+  filters.requestId = ''
   filters.projectId = 0
+  filters.startAt = ''
+  filters.endAt = ''
+  filters.emptyResponse = 0
+  filters.finishReason = 0
+  filters.routing = ''
+  filters.annotationKey = ''
+  filters.annotationValue = ''
 }
 
 function clearTraceFilter() {
@@ -372,24 +563,45 @@ function syncFiltersToQuery() {
   const query = currentSearchParams()
   const currentTrace = query.get('traceId') ?? ''
   const currentProject = Number(query.get('projectId') ?? '') || 0
+  const currentRequestId = query.get('requestId') ?? ''
   if (filters.traceId) {
     query.set('traceId', filters.traceId)
   } else {
     query.delete('traceId')
+  }
+  if (filters.requestId) {
+    query.set('requestId', filters.requestId)
+  } else {
+    query.delete('requestId')
   }
   if (filters.projectId) {
     query.set('projectId', String(filters.projectId))
   } else {
     query.delete('projectId')
   }
+  if (filters.startAt) {
+    query.set('startAt', filters.startAt)
+  } else {
+    query.delete('startAt')
+  }
+  if (filters.endAt) {
+    query.set('endAt', filters.endAt)
+  } else {
+    query.delete('endAt')
+  }
   query.delete('cursor')
+  const currentStart = query.get('startAt') ?? ''
+  const currentEnd = query.get('endAt') ?? ''
   if (
     filters.traceId === currentTrace &&
+    filters.requestId === currentRequestId &&
     filters.projectId === currentProject &&
+    filters.startAt === currentStart &&
+    filters.endAt === currentEnd &&
     !currentCursor.value
   )
     return
-  replaceBrowserUrl(currentAppPathname(), query)
+  router.replace({ name: 'requests', query: Object.fromEntries(query.entries()) })
 }
 
 function resetPaginationMemory() {
@@ -433,9 +645,16 @@ function formatTimeParts(iso: string | undefined): { time: string; date: string 
 
 type RequestState = 'pending' | 'ok' | 'err'
 function requestState(r: RequestView): RequestState {
-  // status: 0=Pending 1=HeaderReceived 2=Completed 3=Failed
-  if (r.status === 0 || r.status === 1) return 'pending'
-  if (r.status === 2) return 'ok'
+  // pending ⟺ finishReason null; ok ⟺ 2xx with finishReason in {2,3,5}.
+  if (r.finishReason === undefined || r.finishReason === null) return 'pending'
+  if (
+    r.statusCode !== undefined &&
+    r.statusCode !== null &&
+    r.statusCode >= 200 &&
+    r.statusCode < 300 &&
+    [2, 3, 5].includes(r.finishReason)
+  )
+    return 'ok'
   return 'err'
 }
 
@@ -470,14 +689,78 @@ function cacheHitRate(r: RequestView): number | null {
   if (denominator <= 0 || !r.cacheReadTokens) return null
   return r.cacheReadTokens / denominator
 }
+
+// The inferred model gets its own line only when it tells us something the row
+// doesn't already say — it must differ from the model the request was served by
+// (the upstream model when the attempt recorded one, the requested model
+// otherwise), compared case-insensitively because upstreams disagree about
+// casing. A request that named no model at all has nothing to compare against,
+// so there the inference is always news.
+function showInferredModel(r: RequestView): boolean {
+  if (!r.inferredModel) return false
+  const served = r.upstreamModel || r.model
+  return !served || served.toLowerCase() !== r.inferredModel.toLowerCase()
+}
+
+function modelCellTitle(r: RequestView): string {
+  return [
+    `请求模型：${r.model || '—'}`,
+    `上游模型：${r.upstreamModel || '—'}`,
+    `推测模型：${r.inferredModel || '—'}`,
+    `推测来源：${inferredModelSourceLabel(r.inferredModelSource) || '—'}`,
+  ].join('\n')
+}
 </script>
 
 <template>
   <div class="flex flex-col gap-3.5">
     <div class="flex items-end justify-between gap-3 flex-wrap">
-      <Field label="类型" as="div">
-        <SegmentedControl v-model="filters.type" :options="typeOptions" />
-      </Field>
+      <div class="flex items-end gap-2">
+        <Field label="类型" as="div">
+          <SegmentedControl v-model="filters.type" :options="typeOptions" />
+        </Field>
+        <DynamicFilterBar
+          v-model="visibleFilters"
+          :available="availableFilters"
+          @remove="onRemoveFilter"
+        >
+          <template #timeRange>
+            <TimeRangeFilter
+              :model-value="{ startAt: filters.startAt, endAt: filters.endAt }"
+              @update:model-value="
+                (v) => {
+                  filters.startAt = v.startAt
+                  filters.endAt = v.endAt
+                }
+              "
+            />
+          </template>
+          <template #requestId>
+            <input
+              v-model="filters.requestId"
+              type="text"
+              placeholder="也支持外部 ID"
+              class="rounded-md border border-line bg-surface-0 px-2 py-1.5 text-sm text-ink outline-none focus:border-accent focus-visible:ring-1 focus-visible:ring-accent"
+            />
+          </template>
+          <template #annotation>
+            <div class="flex items-center gap-1.5">
+              <input
+                v-model="filters.annotationKey"
+                type="text"
+                placeholder="键"
+                class="w-28 rounded-md border border-line bg-surface-0 px-2 py-1.5 text-sm text-ink outline-none focus:border-accent focus-visible:ring-1 focus-visible:ring-accent"
+              />
+              <input
+                v-model="filters.annotationValue"
+                type="text"
+                placeholder="值"
+                class="w-32 rounded-md border border-line bg-surface-0 px-2 py-1.5 text-sm text-ink outline-none focus:border-accent focus-visible:ring-1 focus-visible:ring-accent"
+              />
+            </div>
+          </template>
+        </DynamicFilterBar>
+      </div>
       <div class="flex items-center gap-2">
         <button
           v-if="activeFilterCount() > 0"
@@ -494,11 +777,16 @@ function cacheHitRate(r: RequestView): number | null {
         <IconButton title="刷新" aria-label="刷新" @click="requestsQuery.refetch()">
           <Icon name="refresh" :size="13" />
         </IconButton>
-        <Select v-model.number="refreshMs" size="sm" title="自动刷新" aria-label="自动刷新频率">
-          <option v-for="o in AUTO_REFRESH_OPTIONS" :key="o.value" :value="o.value">
-            {{ o.label }}
-          </option>
-        </Select>
+        <Select
+          :model-value="refreshMs"
+          :options="AUTO_REFRESH_OPTIONS"
+          :searchable="false"
+          size="sm"
+          class="w-24"
+          title="自动刷新"
+          aria-label="自动刷新频率"
+          @update:model-value="(v) => (refreshMs = Number(v))"
+        />
       </div>
     </div>
 
@@ -529,6 +817,7 @@ function cacheHitRate(r: RequestView): number | null {
         :row-key="rowKey"
         :selected="rowSelected"
         :new-row-keys="newRowKeys"
+        :row-href="requestHref"
         :on-row-click="(r) => openDetails(r)"
       >
         <template #header-projectId>
@@ -570,6 +859,31 @@ function cacheHitRate(r: RequestView): number | null {
             :options="upstreamModelOptions"
             placeholder="按实际发到上游的模型过滤"
           />
+          <ColumnFilter
+            v-model="filters.routing"
+            label="路由"
+            :options="routingOptions"
+            :searchable="false"
+            placeholder="按是否检测到路由过滤"
+          />
+        </template>
+        <template #header-tokens>
+          <ColumnFilter
+            v-model.number="filters.emptyResponse"
+            label="Token"
+            :options="[{ value: 1, label: '空回' }]"
+            :empty-value="0"
+            :searchable="false"
+          />
+        </template>
+        <template #header-status>
+          <ColumnFilter
+            v-model.number="filters.finishReason"
+            label="完成原因"
+            :options="finishReasonOptions"
+            :empty-value="0"
+            :searchable="false"
+          />
         </template>
         <template #cell-createdAt="{ row }">
           <div class="flex flex-col leading-tight">
@@ -600,18 +914,35 @@ function cacheHitRate(r: RequestView): number | null {
           <span v-else class="text-ink-faint">—</span>
         </template>
         <template #cell-providerId="{ row }">
-          <span v-if="row.providerId" class="font-medium">{{ providerLabel(row.providerId) }}</span>
-          <span v-else class="text-ink-faint">—</span>
+          <div class="flex flex-col leading-tight">
+            <span v-if="row.providerId" class="font-medium">{{
+              providerLabel(row.providerId)
+            }}</span>
+            <span v-else class="text-ink-faint">—</span>
+            <span v-if="row.inferredProvider" class="text-2xs text-ink-muted">{{
+              row.inferredProvider
+            }}</span>
+          </div>
         </template>
         <template #cell-endpointPath="{ row }">
-          <span class="font-mono text-ink-faint">{{ row.endpointPath }}</span>
+          <div class="flex items-center gap-1.5 min-w-0 max-w-2xs">
+            <span class="truncate text-ink" :title="row.endpointPath">{{
+              endpointDisplay(row.endpointPath).name
+            }}</span>
+            <Tag v-if="endpointDisplay(row.endpointPath).unified" variant="accent" title="统一网关"
+              >U</Tag
+            >
+          </div>
         </template>
         <template #cell-model="{ row }">
           <div class="flex flex-col leading-tight">
             <span v-if="row.model" class="font-mono text-ink">{{ row.model }}</span>
             <span v-else class="text-ink-faint">—</span>
+            <span v-if="showInferredModel(row)" class="font-mono text-2xs text-warn-ink">{{
+              row.inferredModel
+            }}</span>
             <span
-              v-if="row.model && row.upstreamModel && row.model !== row.upstreamModel"
+              v-else-if="row.model && row.upstreamModel && row.model !== row.upstreamModel"
               class="font-mono text-2xs text-ink-faint"
               >{{ row.upstreamModel }}</span
             >
@@ -622,12 +953,12 @@ function cacheHitRate(r: RequestView): number | null {
             <span
               v-if="requestState(row) === 'pending'"
               class="inline-flex items-center px-1.5 py-0.5 rounded-[5px] font-mono text-2xs leading-[1.2] bg-surface-100 text-ink-muted border border-line-soft"
-              >...</span
+              >处理中</span
             >
             <span
               v-else-if="requestState(row) === 'ok'"
               class="inline-flex items-center px-1.5 py-0.5 rounded-[5px] text-2xs leading-[1.2] bg-ok-faint text-ok-ink border border-transparent"
-              >成功</span
+              >{{ finishReasonLabel(row.finishReason) }}</span
             >
             <span
               v-else
@@ -688,6 +1019,12 @@ function cacheHitRate(r: RequestView): number | null {
       <Button v-if="canGoNext" variant="ghost" :disabled="loading" @click="goNext">
         {{ loading ? '加载中…' : '下一页' }}
       </Button>
+    </div>
+    <div
+      v-if="(filters.requestId || filters.annotationKey) && !filters.startAt"
+      class="text-center text-xs text-ink-faint"
+    >
+      仅显示最近30天结果；手动设置开始时间以扩大搜索范围。
     </div>
   </div>
 </template>

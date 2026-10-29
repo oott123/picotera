@@ -16,6 +16,7 @@ type ApiKeyView struct {
 	Key         string            `json:"key"`
 	Disabled    bool              `json:"disabled"`
 	Annotations map[string]string `json:"annotations"`
+	UserID      int64             `json:"userId"`
 	CreatedAt   string            `json:"createdAt"`
 	UpdatedAt   string            `json:"updatedAt"`
 }
@@ -33,6 +34,7 @@ func ToApiKeyView(k *db.ApiKey) (*ApiKeyView, error) {
 		Key:         k.Key,
 		Disabled:    k.Disabled,
 		Annotations: annotations,
+		UserID:      k.UserID,
 	}
 	if k.CreatedAt.Valid {
 		v.CreatedAt = k.CreatedAt.Time.UTC().Format(time.RFC3339)

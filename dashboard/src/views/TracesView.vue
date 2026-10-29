@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
 import { useCurrencyContext } from '@/composables/useCurrencyContext'
@@ -14,8 +14,10 @@ import {
   Icon,
   IconButton,
   Select,
+  TimeRangeFilter,
   type AutoDataTableColumn,
 } from '@/ui'
+import { formatDuration } from '@/utils/duration'
 import { useAutoRefreshMs, AUTO_REFRESH_OPTIONS } from '@/composables/useAutoRefreshMs'
 
 const router = useRouter()
@@ -29,15 +31,31 @@ const cursorIndex = ref(initialCursor ? 1 : 0)
 const pageCursors = ref<string[]>(initialCursor ? ['', initialCursor] : [''])
 const hasPaginationHistory = ref(!initialCursor)
 
+const filters = reactive({
+  startAt: typeof route.query.startAt === 'string' ? route.query.startAt : '',
+  endAt: typeof route.query.endAt === 'string' ? route.query.endAt : '',
+})
+
 const currentCursor = computed(() =>
   typeof route.query.cursor === 'string' ? route.query.cursor : '',
 )
 
 const tracesQuery = useQuery({
   queryKey: computed(() =>
-    queryKeys.requestTraces.list({ limit: pageSize, cursor: currentCursor.value }),
+    queryKeys.requestTraces.list({
+      limit: pageSize,
+      cursor: currentCursor.value,
+      startAt: filters.startAt || undefined,
+      endAt: filters.endAt || undefined,
+    }),
   ),
-  queryFn: () => listRequestTraces({ limit: pageSize, cursor: currentCursor.value || undefined }),
+  queryFn: () =>
+    listRequestTraces({
+      limit: pageSize,
+      cursor: currentCursor.value || undefined,
+      startAt: filters.startAt || undefined,
+      endAt: filters.endAt || undefined,
+    }),
   refetchInterval: computed(() => (refreshMs.value > 0 ? refreshMs.value : false)),
 })
 const traces = computed<RequestTraceView[]>(() => tracesQuery.data.value?.items ?? [])
@@ -45,7 +63,9 @@ const traces = computed<RequestTraceView[]>(() => tracesQuery.data.value?.items 
 const previousTraceIds = ref(new Set<string | number>())
 const newRowKeys = ref(new Set<string | number>())
 const lastContextKey = ref<string | null>(null)
-const contextKey = computed(() => JSON.stringify({ cursor: currentCursor.value }))
+const contextKey = computed(() =>
+  JSON.stringify({ cursor: currentCursor.value, startAt: filters.startAt, endAt: filters.endAt }),
+)
 
 watch(
   traces,
@@ -91,12 +111,71 @@ watch(
   },
 )
 
+function syncFiltersToQuery() {
+  const query = new URLSearchParams(route.query.toString())
+  if (filters.startAt) {
+    query.set('startAt', filters.startAt)
+  } else {
+    query.delete('startAt')
+  }
+  if (filters.endAt) {
+    query.set('endAt', filters.endAt)
+  } else {
+    query.delete('endAt')
+  }
+  query.delete('cursor')
+  const currentStart = route.query.startAt ?? ''
+  const currentEnd = route.query.endAt ?? ''
+  if (filters.startAt === currentStart && filters.endAt === currentEnd && !route.query.cursor) {
+    return
+  }
+  router.replace({ query: parseQueryEntries(query) })
+}
+
+function parseQueryEntries(query: URLSearchParams) {
+  const entries: Record<string, string> = {}
+  query.forEach((value, key) => {
+    entries[key] = value
+  })
+  return entries
+}
+
+watch(
+  () => [filters.startAt, filters.endAt],
+  () => {
+    cursorIndex.value = 0
+    pageCursors.value = ['']
+    hasPaginationHistory.value = false
+    syncFiltersToQuery()
+  },
+)
+
+watch(
+  () => route.query.startAt,
+  (value) => {
+    const next = typeof value === 'string' ? value : ''
+    if (filters.startAt !== next) {
+      filters.startAt = next
+    }
+  },
+)
+
+watch(
+  () => route.query.endAt,
+  (value) => {
+    const next = typeof value === 'string' ? value : ''
+    if (filters.endAt !== next) {
+      filters.endAt = next
+    }
+  },
+)
+
 const columns = computed<AutoDataTableColumn<RequestTraceView>[]>(() => [
   { key: 'lastRequestAt', header: '最近请求' },
   { key: 'firstRequestAt', header: '首次请求' },
+  { key: 'duration', header: '持续时间', align: 'right' },
   { key: 'userMessagePreview', header: '用户消息' },
   { key: 'projectId', header: '项目' },
-  { key: 'id', header: 'Trace ID' },
   { key: 'metaRequestCount', header: '请求', align: 'right' },
   { key: 'totalTokens', header: 'Token', align: 'right' },
   { key: 'cacheHitRate', header: '缓存命中', align: 'right' },
@@ -109,6 +188,10 @@ function rowKey(row: RequestTraceView) {
 
 function openTrace(row: RequestTraceView) {
   router.push({ name: 'requests', query: { traceId: row.id } })
+}
+
+function traceHref(row: RequestTraceView) {
+  return router.resolve({ name: 'requests', query: { traceId: row.id } }).href
 }
 
 function openProject(event: Event, projectId: number) {
@@ -214,10 +297,21 @@ function formatCosts(costs: TraceCostView[] | null): { text: string; title?: str
 <template>
   <div class="flex flex-col gap-3.5">
     <div class="flex items-center justify-between gap-3 flex-wrap">
-      <span class="text-xs text-ink-faint tabular-nums">
-        {{ traces.length }} 条追踪<span v-if="hasMore">（还有更多）</span>
-      </span>
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-3 flex-wrap">
+        <TimeRangeFilter
+          :model-value="{ startAt: filters.startAt, endAt: filters.endAt }"
+          @update:model-value="
+            (v) => {
+              filters.startAt = v.startAt
+              filters.endAt = v.endAt
+            }
+          "
+        />
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="text-xs text-ink-faint tabular-nums">
+          {{ traces.length }} 条追踪<span v-if="hasMore">（还有更多）</span>
+        </span>
         <IconButton
           title="刷新"
           aria-label="刷新"
@@ -226,11 +320,16 @@ function formatCosts(costs: TraceCostView[] | null): { text: string; title?: str
         >
           <Icon name="refresh" :size="13" />
         </IconButton>
-        <Select v-model.number="refreshMs" size="sm" title="自动刷新" aria-label="自动刷新频率">
-          <option v-for="o in AUTO_REFRESH_OPTIONS" :key="o.value" :value="o.value">
-            {{ o.label }}
-          </option>
-        </Select>
+        <Select
+          :model-value="refreshMs"
+          :options="AUTO_REFRESH_OPTIONS"
+          :searchable="false"
+          size="sm"
+          class="w-24"
+          title="自动刷新"
+          aria-label="自动刷新频率"
+          @update:model-value="(v) => (refreshMs = Number(v))"
+        />
       </div>
     </div>
 
@@ -240,6 +339,7 @@ function formatCosts(costs: TraceCostView[] | null): { text: string; title?: str
         :items="traces"
         :row-key="rowKey"
         :new-row-keys="newRowKeys"
+        :row-href="traceHref"
         :on-row-click="openTrace"
       >
         <template #cell-lastRequestAt="{ row }">
@@ -262,6 +362,18 @@ function formatCosts(costs: TraceCostView[] | null): { text: string; title?: str
             }}</span>
           </div>
         </template>
+        <template #cell-duration="{ row }">
+          <span
+            class="font-mono tabular-nums"
+            :class="
+              formatDuration(row.firstRequestAt, row.lastRequestAt) === '—'
+                ? 'text-ink-faint'
+                : 'text-ink'
+            "
+          >
+            {{ formatDuration(row.firstRequestAt, row.lastRequestAt) }}
+          </span>
+        </template>
         <template #cell-userMessagePreview="{ row }">
           <span
             class="block max-w-[18rem] truncate"
@@ -275,20 +387,12 @@ function formatCosts(costs: TraceCostView[] | null): { text: string; title?: str
           <button
             v-if="row.projectId"
             type="button"
-            class="font-medium text-ink hover:text-accent transition-colors bg-transparent border-0 p-0 cursor-pointer"
+            class="pointer-events-auto font-medium text-ink hover:text-accent transition-colors bg-transparent border-0 p-0 cursor-pointer"
             @click="(ev: Event) => openProject(ev, row.projectId!)"
           >
             {{ projectLabel(row.projectId) }}
           </button>
           <span v-else class="text-ink-faint">—</span>
-        </template>
-        <template #cell-id="{ row }">
-          <div class="flex max-w-[13rem] flex-col leading-tight">
-            <span class="truncate font-mono text-xs text-ink" :title="row.id">{{ row.id }}</span>
-            <span class="truncate font-mono text-2xs text-ink-faint" :title="row.parentSpanId">
-              {{ row.parentSpanId }}
-            </span>
-          </div>
         </template>
         <template #cell-metaRequestCount="{ row }">
           <div class="flex flex-col items-end leading-tight">

@@ -1,17 +1,17 @@
 import { computed } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
-import { listProjects } from '@/api/client'
+import { listProjectLabels } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
-import type { ProjectView } from '@/api'
+import type { ProjectLabel } from '@/api'
 
 export function useProjectsMap() {
   const query = useQuery({
-    queryKey: queryKeys.projects.all,
-    queryFn: listProjects,
+    queryKey: queryKeys.labels.projects,
+    queryFn: listProjectLabels,
   })
   const projects = computed(() => query.data.value ?? [])
   const projectsMap = computed(() => {
-    const m = new Map<number, ProjectView>()
+    const m = new Map<number, ProjectLabel>()
     for (const p of projects.value) m.set(p.id, p)
     return m
   })

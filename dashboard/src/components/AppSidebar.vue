@@ -1,32 +1,71 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, RouterLink } from 'vue-router'
+import { useQueryClient } from '@tanstack/vue-query'
 import PreferencesMenu from '@/components/PreferencesMenu.vue'
 import { useAppTitle } from '@/composables/useAppTitle'
+import { useMe } from '@/composables/useMe'
+import { useImpersonationStore } from '@/stores/impersonation'
+import { logout } from '@/api/client'
 import Icon from '@/ui/icons/Icon.vue'
+import { IconButton, Tag } from '@/ui'
 import type { IconName } from '@/ui/icons/paths'
 
 const route = useRoute()
-const { appTitle } = useAppTitle()
+const queryClient = useQueryClient()
+const { appTitle, canLogout } = useAppTitle()
+
+const { me, isAdmin } = useMe()
+const impersonation = useImpersonationStore()
+
+async function stopImpersonating() {
+  impersonation.stop()
+  queryClient.clear()
+}
+
+const loggingOut = ref(false)
+
+async function signOut() {
+  if (loggingOut.value) return
+  loggingOut.value = true
+  try {
+    await logout()
+    // A full page load, not a router push: the session is gone, so the server
+    // has to decide where the browser goes next.
+    window.location.assign('/')
+  } finally {
+    loggingOut.value = false
+  }
+}
+const refreshing = ref(false)
 const activeRouteName = computed(() => {
   if (route.name === 'requestDetail') return 'requests'
   return route.name
 })
 
-const nav: { name: string; label: string; icon: IconName }[] = [
+type NavItem = { name: string; label: string; icon: IconName }
+
+// User features: available to every authenticated user.
+const userNav: NavItem[] = [
   { name: 'overview', label: '概览', icon: 'chart-pie' },
+  { name: 'apiKeys', label: '密钥', icon: 'key' },
+  { name: 'requests', label: '请求', icon: 'activity' },
+  { name: 'traces', label: '追踪', icon: 'route' },
+  { name: 'projects', label: '项目', icon: 'folder' },
+  { name: 'test', label: '测试', icon: 'flask' },
+  { name: 'settings', label: '设置', icon: 'settings' },
+]
+
+// Admin features: hidden entirely for non-admins (also guarded by the router).
+const adminNav: NavItem[] = [
+  { name: 'adminOverview', label: '全览', icon: 'chart-pie' },
   { name: 'providers', label: '渠道', icon: 'cloud-fog' },
   { name: 'models', label: '模型', icon: 'cpu' },
   { name: 'endpoints', label: '端点', icon: 'plug' },
-  { name: 'requests', label: '请求', icon: 'activity' },
-  { name: 'traces', label: '追踪', icon: 'route' },
-  { name: 'apiKeys', label: '密钥', icon: 'key' },
-  { name: 'projects', label: '项目', icon: 'folder' },
   { name: 'scripts', label: '脚本', icon: 'braces' },
-  { name: 'simulate', label: '模拟', icon: 'geometry' },
   { name: 'kv', label: '缓存', icon: 'db' },
   { name: 'rates', label: '汇率', icon: 'currency-dollar' },
-  { name: 'settings', label: '设置', icon: 'settings' },
+  { name: 'users', label: '用户', icon: 'users' },
 ]
 </script>
 
@@ -54,7 +93,9 @@ const nav: { name: string; label: string; icon: IconName }[] = [
         </svg>
       </span>
       <div class="flex flex-col leading-[1.15]">
-        <span class="font-semibold text-[0.9375rem] tracking-[-0.01em] text-ink">{{ appTitle }}</span>
+        <span class="font-semibold text-[0.9375rem] tracking-[-0.01em] text-ink">{{
+          appTitle
+        }}</span>
         <span class="font-mono text-2xs text-ink-faint">LLM gateway</span>
       </div>
     </div>
@@ -63,10 +104,10 @@ const nav: { name: string; label: string; icon: IconName }[] = [
       <div
         class="px-2.5 pt-3 pb-1.5 text-2xs font-medium text-ink-faint uppercase tracking-[0.06em]"
       >
-        配置
+        用户
       </div>
       <RouterLink
-        v-for="item in nav"
+        v-for="item in userNav"
         :key="item.name"
         :to="{ name: item.name }"
         class="group relative flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm font-normal text-sidebar-text no-underline transition-colors hover:bg-sidebar-hover hover:text-sidebar-text-active"
@@ -89,10 +130,90 @@ const nav: { name: string; label: string; icon: IconName }[] = [
         </span>
         <span>{{ item.label }}</span>
       </RouterLink>
+
+      <template v-if="isAdmin">
+        <div
+          class="px-2.5 pt-3 pb-1.5 text-2xs font-medium text-ink-faint uppercase tracking-[0.06em]"
+        >
+          全局
+        </div>
+        <RouterLink
+          v-for="item in adminNav"
+          :key="item.name"
+          :to="{ name: item.name }"
+          class="group relative flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm font-normal text-sidebar-text no-underline transition-colors hover:bg-sidebar-hover hover:text-sidebar-text-active"
+          :class="
+            activeRouteName === item.name
+              ? 'bg-sidebar-active-bg text-sidebar-active-text font-medium'
+              : ''
+          "
+        >
+          <span
+            class="inline-flex w-[1.125rem] h-[1.125rem] items-center justify-center transition-colors"
+            :class="
+              activeRouteName === item.name
+                ? 'text-accent'
+                : 'text-ink-faint group-hover:text-ink-muted'
+            "
+            aria-hidden="true"
+          >
+            <Icon :name="item.icon" :size="15" :stroke-width="1.6" />
+          </span>
+          <span>{{ item.label }}</span>
+        </RouterLink>
+      </template>
     </nav>
 
-    <div class="px-3.5 pt-2.5 pb-3 border-t border-line flex items-center justify-between gap-2">
+    <div class="px-3.5 pt-2.5 pb-3 border-t border-line flex items-center gap-2">
+      <div class="flex-1 min-w-0 flex items-center gap-1.5">
+        <span
+          class="min-w-0 truncate text-sm text-ink-muted"
+          :title="
+            (impersonation.isImpersonating ? impersonation.target?.displayName : me?.displayName) ??
+            ''
+          "
+          >{{
+            (impersonation.isImpersonating ? impersonation.target?.displayName : me?.displayName) ??
+            ''
+          }}</span
+        >
+        <Tag v-if="impersonation.isImpersonating" variant="accent" class="shrink-0">扮演中</Tag>
+      </div>
+      <IconButton
+        v-if="impersonation.isImpersonating"
+        title="还原身份"
+        aria-label="还原身份"
+        @click="stopImpersonating"
+      >
+        <Icon name="arrow-left" :size="14" />
+      </IconButton>
+      <IconButton
+        v-if="canLogout"
+        title="退出登录"
+        aria-label="退出登录"
+        :disabled="loggingOut"
+        @click="signOut"
+      >
+        <Icon name="logout" :size="14" />
+      </IconButton>
       <PreferencesMenu />
+      <button
+        type="button"
+        aria-label="刷新"
+        title="刷新"
+        :disabled="refreshing"
+        class="shrink-0 inline-flex items-center justify-center w-7 h-7 p-0 bg-transparent text-ink-muted border border-transparent rounded-md cursor-pointer transition-colors hover:bg-sidebar-hover hover:text-ink disabled:opacity-50 disabled:cursor-not-allowed"
+        :class="refreshing ? 'animate-spin' : ''"
+        @click="
+          async () => {
+            refreshing = true
+            await queryClient.invalidateQueries()
+            refreshing = false
+          }
+        "
+      >
+        <Icon name="refresh" :size="14" />
+      </button>
     </div>
   </aside>
 </template>

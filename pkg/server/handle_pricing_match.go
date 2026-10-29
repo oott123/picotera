@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"picotera/pkg/contract"
-	"picotera/pkg/pricing"
 
 	"github.com/danielgtaylor/huma/v2"
 )
@@ -14,12 +13,7 @@ func (s *Server) handleMatchPricing(ctx context.Context, input *contract.MatchPr
 		return nil, huma.Error400BadRequest("targetModel is required")
 	}
 
-	candidates, err := pricing.Match(input.Body.TargetModel, 8)
-	if err != nil {
-		return nil, huma.Error500InternalServerError("failed to match pricing", err)
-	}
-
 	resp := &contract.MatchPricingResponse{}
-	resp.Body.Candidates = candidates
+	resp.Body.Candidates = s.pricing.Match(input.Body.TargetModel, 8)
 	return resp, nil
 }

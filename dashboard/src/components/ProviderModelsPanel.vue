@@ -266,6 +266,29 @@ function toggleEndpoint(row: Row, path: string) {
   else row.endpoints.push(path)
 }
 
+type EndpointOption = { path: string; stale: boolean }
+
+// Render every endpoint this row could reference: the provider's currently-bound
+// endpoints, plus any endpoint paths the row still has selected but the provider
+// no longer binds (stale). Stale options remain checked and selectable so users can
+// clear them; once toggled off they leave row.endpoints and disappear from the list.
+function rowEndpointPaths(row: Row): EndpointOption[] {
+  const available = new Set(availableEndpointPaths.value)
+  const out: EndpointOption[] = []
+  const seen = new Set<string>()
+  for (const p of availableEndpointPaths.value) {
+    if (seen.has(p)) continue
+    seen.add(p)
+    out.push({ path: p, stale: false })
+  }
+  for (const p of row.endpoints) {
+    if (available.has(p) || seen.has(p)) continue
+    seen.add(p)
+    out.push({ path: p, stale: true })
+  }
+  return out
+}
+
 async function fetchFromUpstream() {
   if (!hasModelsEndpoint.value) {
     error.value = '请先在渠道编辑表单配置模型列表 URL'
@@ -553,26 +576,36 @@ async function save() {
                 <Input v-model.number="row.priority" type="number" size="sm" />
               </Field>
               <Field label="端点（不勾选 = 全部已绑定端点）" as="div">
-                <div v-if="!availableEndpointPaths.length" class="text-2xs text-ink-faint">
+                <div
+                  v-if="!availableEndpointPaths.length && !row.endpoints.length"
+                  class="text-2xs text-ink-faint"
+                >
                   渠道尚未绑定任何端点
                 </div>
                 <ul v-else class="list-none m-0 p-0 flex flex-col gap-1">
                   <li
-                    v-for="path in availableEndpointPaths"
-                    :key="path"
+                    v-for="opt in rowEndpointPaths(row)"
+                    :key="opt.path"
                     class="flex items-center gap-2 text-xs"
                   >
                     <input
-                      :id="`ep-${row.uid}-${path}`"
+                      :id="`ep-${row.uid}-${opt.path}`"
                       type="checkbox"
                       class="cursor-pointer"
-                      :checked="row.endpoints.includes(path)"
-                      @change="toggleEndpoint(row, path)"
+                      :checked="row.endpoints.includes(opt.path)"
+                      @change="toggleEndpoint(row, opt.path)"
                     />
                     <label
-                      :for="`ep-${row.uid}-${path}`"
-                      class="font-mono text-ink cursor-pointer"
-                      >{{ path }}</label
+                      :for="`ep-${row.uid}-${opt.path}`"
+                      class="font-mono cursor-pointer"
+                      :class="opt.stale ? 'text-ink-faint line-through' : 'text-ink'"
+                      >{{ opt.path }}</label
+                    >
+                    <span
+                      v-if="opt.stale"
+                      title="该端点已从此渠道解绑，取消勾选即可移除"
+                      class="inline-flex items-center px-1.5 py-0.5 rounded-[5px] font-mono text-2xs leading-[1.2] bg-warn-faint text-warn-ink"
+                      >已解绑</span
                     >
                   </li>
                 </ul>

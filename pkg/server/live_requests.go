@@ -75,17 +75,22 @@ type liveProgress struct {
 	startedAt   time.Time
 	timingStart time.Time
 	lastChunkAt time.Time
+	// recordBody gates body buffering and per-line timing capture. When false
+	// (OTR body / body-and-message modes) recordChunk only accumulates the byte
+	// count, so both the live view and the persisted artifact carry no body or
+	// timings — just the byte total and status.
+	recordBody bool
 }
 
-func newLiveProgress() *liveProgress {
-	return &liveProgress{startedAt: time.Now()}
+func newLiveProgress(recordBody bool) *liveProgress {
+	return &liveProgress{startedAt: time.Now(), recordBody: recordBody}
 }
 
 // newLiveProgressWithOrigin builds a progress whose per-line timing origin is
 // already known (used for the meta-row record on cross-format/transforming
 // streams, which is created at stream-start rather than at registration).
-func newLiveProgressWithOrigin(origin time.Time) *liveProgress {
-	return &liveProgress{startedAt: time.Now(), timingStart: origin}
+func newLiveProgressWithOrigin(origin time.Time, recordBody bool) *liveProgress {
+	return &liveProgress{startedAt: time.Now(), timingStart: origin, recordBody: recordBody}
 }
 
 func (p *liveProgress) markHeaders(statusCode int, timingStart time.Time) {
@@ -99,9 +104,15 @@ func (p *liveProgress) markHeaders(statusCode int, timingStart time.Time) {
 func (p *liveProgress) recordChunk(b []byte) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.body.Write(b)
 	p.bytes += int64(len(b))
 	now := time.Now()
+	p.lastChunkAt = now
+	// OTR body modes keep only the byte count + status; skip body buffering and
+	// per-line timing capture (timings are meaningless without a body).
+	if !p.recordBody {
+		return
+	}
+	p.body.Write(b)
 	origin := p.timingStart
 	if origin.IsZero() {
 		origin = p.startedAt
@@ -112,7 +123,6 @@ func (p *liveProgress) recordChunk(b []byte) {
 			p.timings = append(p.timings, ms)
 		}
 	}
-	p.lastChunkAt = now
 }
 
 // artifactRecord returns a snapshot of the accumulated body and per-line
@@ -145,8 +155,8 @@ func (r *liveRequestRegistry) RegisterMeta(id string, cancel context.CancelFunc)
 
 // RegisterUpstream registers an upstream attempt row keyed by id with its
 // attempt cancel func and a fresh progress tracker.
-func (r *liveRequestRegistry) RegisterUpstream(id string, cancel context.CancelFunc) *liveEntry {
-	e := &liveEntry{kind: liveKindUpstream, cancel: cancel, progress: newLiveProgress()}
+func (r *liveRequestRegistry) RegisterUpstream(id string, cancel context.CancelFunc, recordBody bool) *liveEntry {
+	e := &liveEntry{kind: liveKindUpstream, cancel: cancel, progress: newLiveProgress(recordBody)}
 	r.entries.Set(id, e)
 	return e
 }

@@ -15,6 +15,10 @@ const { rates } = useExchangeRates()
 
 const tiers = computed<PricingTier[]>(() => props.modelValue?.tiers ?? [])
 const currency = computed(() => props.modelValue?.currency ?? 'USD')
+
+const currencyOptions = computed(() =>
+  rates.value.map((r) => ({ value: r.code, label: `${r.code} ${r.symbol}` })),
+)
 const enabled = computed(() => tiers.value.length > 0)
 const isMultiTier = computed(() => tiers.value.length >= 2)
 
@@ -99,12 +103,9 @@ const numericFields: { key: keyof PricingTier; label: string }[] = [
           :model-value="currency"
           size="sm"
           class="min-w-[8rem]"
+          :options="currencyOptions"
           @update:model-value="(v) => setCurrency(String(v))"
-        >
-          <option v-for="r in rates" :key="r.code" :value="r.code">
-            {{ r.code }} {{ r.symbol }}
-          </option>
-        </Select>
+        />
         <span class="text-2xs text-ink-faint">每百万 tokens</span>
         <span v-if="isMultiTier" class="text-2xs font-medium text-accent"
           >阶梯定价 · {{ tiers.length }} 档</span

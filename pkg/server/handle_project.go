@@ -16,7 +16,11 @@ import (
 )
 
 func (s *Server) handleListProjects(ctx context.Context, _ *struct{}) (*contract.ListProjectsResponse, error) {
-	rows, err := s.queries.ListProjects(ctx)
+	u, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.queries.ListProjects(ctx, u.ID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to list projects", err)
 	}
@@ -32,7 +36,11 @@ func (s *Server) handleListProjects(ctx context.Context, _ *struct{}) (*contract
 }
 
 func (s *Server) handleGetProject(ctx context.Context, in *contract.GetProjectRequest) (*contract.GetProjectResponse, error) {
-	r, err := s.queries.GetProject(ctx, in.ID)
+	u, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	r, err := s.queries.GetProject(ctx, db.GetProjectParams{ID: in.ID, UserID: u.ID})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, huma.Error404NotFound("project not found")
@@ -47,6 +55,10 @@ func (s *Server) handleGetProject(ctx context.Context, in *contract.GetProjectRe
 }
 
 func (s *Server) handleUpsertProject(ctx context.Context, in *contract.UpsertProjectRequest) (*contract.UpsertProjectResponse, error) {
+	u, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if in.Body.Name == "" {
 		return nil, huma.Error400BadRequest("name is required")
 	}
@@ -67,14 +79,16 @@ func (s *Server) handleUpsertProject(ctx context.Context, in *contract.UpsertPro
 	var row db.Project
 	if in.Body.ID == 0 {
 		row, err = s.queries.InsertProject(ctx, db.InsertProjectParams{
-			Name:  in.Body.Name,
-			Paths: pathsJSON,
+			Name:   in.Body.Name,
+			Paths:  pathsJSON,
+			UserID: u.ID,
 		})
 	} else {
 		row, err = s.queries.UpdateProject(ctx, db.UpdateProjectParams{
-			ID:    in.Body.ID,
-			Name:  in.Body.Name,
-			Paths: pathsJSON,
+			ID:     in.Body.ID,
+			UserID: u.ID,
+			Name:   in.Body.Name,
+			Paths:  pathsJSON,
 		})
 	}
 	if err != nil {
@@ -95,13 +109,21 @@ func (s *Server) handleUpsertProject(ctx context.Context, in *contract.UpsertPro
 }
 
 func (s *Server) handleDeleteProject(ctx context.Context, in *contract.DeleteProjectRequest) (*struct{}, error) {
-	if err := s.queries.DeleteProject(ctx, in.Body.ID); err != nil {
+	u, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.queries.DeleteProject(ctx, db.DeleteProjectParams{ID: in.Body.ID, UserID: u.ID}); err != nil {
 		return nil, huma.Error500InternalServerError("failed to delete project", err)
 	}
 	return &struct{}{}, nil
 }
 
 func (s *Server) handleMergeProject(ctx context.Context, in *contract.MergeProjectRequest) (*contract.MergeProjectResponse, error) {
+	u, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
 	src := in.Body.SourceID
 	tgt := in.Body.TargetID
 	if src <= 0 || tgt <= 0 {
@@ -118,13 +140,13 @@ func (s *Server) handleMergeProject(ctx context.Context, in *contract.MergeProje
 	defer tx.Rollback(ctx)
 	q := s.queries.WithTx(tx)
 
-	if _, err := q.GetProject(ctx, src); err != nil {
+	if _, err := q.GetProject(ctx, db.GetProjectParams{ID: src, UserID: u.ID}); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, huma.Error404NotFound("source project not found")
 		}
 		return nil, huma.Error500InternalServerError("failed to load source project", err)
 	}
-	if _, err := q.GetProject(ctx, tgt); err != nil {
+	if _, err := q.GetProject(ctx, db.GetProjectParams{ID: tgt, UserID: u.ID}); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, huma.Error404NotFound("target project not found")
 		}
@@ -147,7 +169,7 @@ func (s *Server) handleMergeProject(ctx context.Context, in *contract.MergeProje
 		return nil, huma.Error500InternalServerError("failed to reassign request rows", err)
 	}
 
-	if err := q.DeleteProject(ctx, src); err != nil {
+	if err := q.DeleteProject(ctx, db.DeleteProjectParams{ID: src, UserID: u.ID}); err != nil {
 		return nil, huma.Error500InternalServerError("failed to delete source project", err)
 	}
 

@@ -2,6 +2,7 @@ package jsx
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -18,12 +19,136 @@ import (
 // SetEvalTimeout cannot interrupt a blocking host function.
 var fetchClient = &http.Client{Timeout: 5 * time.Second}
 
-// registerHelpers wires fetch / console / kv into the VM as synchronous host
-// functions.
+// registerHelpers wires fetch / console / kv / body-proxy into the VM as
+// synchronous host functions.
 func registerHelpers(s *qjsSession) {
 	registerFetch(s.vm)
 	registerConsole(s)
 	registerKV(s)
+	registerObjects(s)
+	registerHostAPI(s)
+}
+
+// decodeAnnotationValue turns the SDK's JSON-encoded annotation value into the
+// HostAPI's *string: "" means "delete this key", otherwise the payload is the
+// JSON encoding of the string value (so an empty-string value stays
+// distinguishable from a delete).
+func decodeAnnotationValue(key, valueJSON string) (*string, error) {
+	if key == "" {
+		return nil, fmt.Errorf("jsx: annotation key must be a non-empty string")
+	}
+	if valueJSON == "" {
+		return nil, nil
+	}
+	var v string
+	if err := json.Unmarshal([]byte(valueJSON), &v); err != nil {
+		return nil, fmt.Errorf("jsx: decode annotation value: %w", err)
+	}
+	return &v, nil
+}
+
+// registerHostAPI exposes the HostAPI capabilities to JS: annotation writes
+// keyed by row id (picotera.request/provider/apiKey.setAnnotation) and
+// provider / api-key lookups (picotera.provider.get, picotera.apiKey.get).
+// Functions that can fail return (value, error) so the SDK throws on the error
+// element; void ops return error (null on success). Value/id type validation
+// happens on the JS side; the Go side re-checks the key defensively. The get
+// functions return "" for a missing id, which the SDK surfaces as null.
+func registerHostAPI(s *qjsSession) {
+	vm := s.vm
+	host := s.engine.hostAPI
+
+	_ = vm.RegisterFunc("__picotera_anno_request", func(requestID, key, valueJSON string) error {
+		value, err := decodeAnnotationValue(key, valueJSON)
+		if err != nil {
+			return err
+		}
+		return host.SetRequestAnnotation(s.ctx, requestID, key, value)
+	}, false)
+
+	_ = vm.RegisterFunc("__picotera_anno_provider", func(id int, key, valueJSON string) error {
+		value, err := decodeAnnotationValue(key, valueJSON)
+		if err != nil {
+			return err
+		}
+		return host.SetProviderAnnotation(s.ctx, int32(id), key, value)
+	}, false)
+
+	_ = vm.RegisterFunc("__picotera_anno_apikey", func(id int, key, valueJSON string) error {
+		value, err := decodeAnnotationValue(key, valueJSON)
+		if err != nil {
+			return err
+		}
+		return host.SetApiKeyAnnotation(s.ctx, int32(id), key, value)
+	}, false)
+
+	_ = vm.RegisterFunc("__picotera_get_provider", func(id int) (string, error) {
+		p, err := host.GetProvider(s.ctx, int32(id))
+		if err != nil {
+			return "", err
+		}
+		if p == nil {
+			return "", nil
+		}
+		b, merr := json.Marshal(p)
+		if merr != nil {
+			return "", merr
+		}
+		return string(b), nil
+	}, false)
+
+	_ = vm.RegisterFunc("__picotera_get_apikey", func(id int) (string, error) {
+		k, err := host.GetApiKey(s.ctx, int32(id))
+		if err != nil {
+			return "", err
+		}
+		if k == nil {
+			return "", nil
+		}
+		b, merr := json.Marshal(k)
+		if merr != nil {
+			return "", merr
+		}
+		return string(b), nil
+	}, false)
+}
+
+// registerObjects exposes the body object registry to JS. ctx.request.body and
+// rewriteRequest's pending.body are JS Proxies whose get/set/enumerate/delete
+// traps forward through these synchronous host functions, so scalars cross into
+// QuickJS only when a script reads them and writes land straight on the Go-side
+// jsonast tree. Functions that can fail return (value, error) so the SDK throws
+// on the error element; void ops return error (null on success). See objects.go.
+func registerObjects(s *qjsSession) {
+	vm := s.vm
+	reg := s.registry
+	_ = vm.RegisterFunc("__picotera_obj_root", func(slot string) (string, error) {
+		return reg.rootDesc(slot)
+	}, false)
+	_ = vm.RegisterFunc("__picotera_obj_get", func(id int, key string) (string, error) {
+		return reg.get(id, key)
+	}, false)
+	_ = vm.RegisterFunc("__picotera_obj_set", func(id int, key, valueJSON string) error {
+		return reg.set(id, key, valueJSON)
+	}, false)
+	_ = vm.RegisterFunc("__picotera_obj_del", func(id int, key string) error {
+		return reg.del(id, key)
+	}, false)
+	_ = vm.RegisterFunc("__picotera_obj_keys", func(id int) (string, error) {
+		return reg.keysDesc(id)
+	}, false)
+	_ = vm.RegisterFunc("__picotera_obj_has", func(id int, key string) (int, error) {
+		return reg.has(id, key)
+	}, false)
+	_ = vm.RegisterFunc("__picotera_obj_setlen", func(id, length int) error {
+		return reg.setlen(id, length)
+	}, false)
+	_ = vm.RegisterFunc("__picotera_arr_splice", func(id, start, deleteCount int, itemsJSON string) (string, error) {
+		return reg.arrSplice(id, start, deleteCount, itemsJSON)
+	}, false)
+	_ = vm.RegisterFunc("__picotera_arr_reverse", func(id int) error {
+		return reg.arrReverse(id)
+	}, false)
 }
 
 type fetchResponse struct {

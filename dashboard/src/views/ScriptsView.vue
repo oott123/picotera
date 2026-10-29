@@ -27,6 +27,7 @@ const deleteScriptMutation = useMutation({
 const updateScriptMutation = useMutation({
   mutationFn: (script: ScriptView) =>
     updateScript(script.id, {
+      id: script.id,
       name: script.name,
       source: script.source,
       enabled: !script.enabled,
@@ -81,7 +82,7 @@ async function toggle(s: ScriptView) {
             v-for="s in scripts"
             :key="s.id"
             :selected="panel.isActive(`script:${s.id}`)"
-            :class="!s.enabled ? 'opacity-55' : ''"
+            :dimmed="!s.enabled"
           >
             <Td>
               <span class="font-medium">{{ s.name }}</span>

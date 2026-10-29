@@ -11,7 +11,7 @@ services:
       PICOTERA_S3_SECRET_KEY: picotera
       PICOTERA_S3_USE_SSL: false
       PICOTERA_S3_BUCKET: picotera-artifacts
-      PICOTERA_S3_FORCE_PATH_STYLE: true
+      PICOTERA_S3_PATH_STYLE: "true"
       PICOTERA_S3_PUBLIC_URL: http://localhost:34050
 
   postgres:

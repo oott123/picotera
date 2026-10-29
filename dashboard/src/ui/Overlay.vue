@@ -11,6 +11,8 @@ defineEmits<{ click: [MouseEvent] }>()
   <Teleport to="body">
     <div
       v-if="open"
+      role="dialog"
+      aria-modal="true"
       class="fixed inset-0 z-[900] flex items-center justify-center bg-overlay-bg"
       :class="blur ? 'backdrop-blur-[4px]' : ''"
       @click.self="$emit('click', $event)"

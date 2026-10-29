@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -75,6 +77,25 @@ func TestGatewayHookErrorStatusMapping(t *testing.T) {
 	}
 }
 
+func TestSortProviderCandidatesTiesByProviderIDDesc(t *testing.T) {
+	rows := []providerCandidateRow{
+		{ProviderID: 1, ProviderPriority: 10, EntryPriority: 5},
+		{ProviderID: 3, ProviderPriority: 12, EntryPriority: 3},
+		{ProviderID: 2, ProviderPriority: 20, EntryPriority: 1},
+		{ProviderID: 4, ProviderPriority: 1, EntryPriority: 1},
+	}
+
+	sortProviderCandidates(rows)
+
+	got := []int32{rows[0].ProviderID, rows[1].ProviderID, rows[2].ProviderID, rows[3].ProviderID}
+	want := []int32{2, 3, 1, 4}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("provider order = %v, want %v", got, want)
+		}
+	}
+}
+
 func TestBuildPathCandidateSetAnnotations(t *testing.T) {
 	rows := []providerCandidateRow{{
 		ProviderID:              1,
@@ -86,16 +107,45 @@ func TestBuildPathCandidateSetAnnotations(t *testing.T) {
 		ProxyURL:                pgtype.Text{String: "direct", Valid: true},
 		ProviderAnnotations:     []byte(`{"k":"provider","providerOnly":"1"}`),
 		ModelAnnotations:        []byte(`{"k":"model","modelOnly":"1"}`),
-		EntryAnnotations:        []byte(`{"k":"entry","entryOnly":"1"}`),
+		EntryAnnotations:        []byte(`{"k":"entry","entryOnly":"1","u":"entry"}`),
 		EndpointPath:            "/v1/messages",
 	}}
-	set, err := buildPathCandidateSet(rows, map[string]string{"k": "api", "apiOnly": "1"}, nil, db.Endpoint{Path: "/v1/messages"})
+	userAnno := map[string]string{"k": "user", "u": "user", "userOnly": "1"}
+	set, err := buildPathCandidateSet(rows, userAnno, map[string]string{"k": "api", "apiOnly": "1"}, nil, db.Endpoint{Path: "/v1/messages"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	anno := set.Items[0].Candidate.Annotations
+	// Order: model < provider < entry < user < apiKey.
 	if anno["k"] != "api" || anno["modelOnly"] != "1" || anno["providerOnly"] != "1" || anno["entryOnly"] != "1" || anno["apiOnly"] != "1" {
 		t.Fatalf("unexpected merged annotations: %+v", anno)
+	}
+	// user overrides entry on shared key "u"; user-only key survives.
+	if anno["u"] != "user" || anno["userOnly"] != "1" {
+		t.Fatalf("user layer not applied between entry and apiKey: %+v", anno)
+	}
+}
+
+// TestBuildPathCandidateSetFormat guards the path-route candidate format: the
+// sidecar and the JS-visible ProviderModel must carry the endpoint's bridge
+// format so buildRewrittenUpstreamRequest patches ctx.format to the real
+// source format instead of clobbering it with "unknown".
+func TestBuildPathCandidateSetFormat(t *testing.T) {
+	rows := []providerCandidateRow{{
+		ProviderID:   1,
+		ProviderName: "provider",
+		EndpointPath: "/v1/messages",
+	}}
+	set, err := buildPathCandidateSet(rows, nil, nil, nil, db.Endpoint{Path: "/v1/messages", EndpointType: contract.EndpointType_AnthropicMessages}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	side := set.Items[0].Sidecar
+	if side.UpstreamFormat != llmbridge.FormatAnthropicMessages {
+		t.Fatalf("unexpected path sidecar format: %+v", side)
+	}
+	if got := set.Items[0].Candidate.ProviderModel.UpstreamFormat; got != "anthropicMessages" {
+		t.Fatalf("unexpected JS-visible upstream format: %q", got)
 	}
 }
 
@@ -114,7 +164,7 @@ func TestBuildUnifiedCandidateSetAnnotationsAndFormat(t *testing.T) {
 		Annotations:             []byte(`{"k":"entry"}`),
 		SupportsNativeWebSearch: true,
 	}}
-	set, err := buildUnifiedCandidateSet(rows, map[string]string{"k": "api"}, nil, db.Endpoint{})
+	set, err := buildUnifiedCandidateSet(rows, map[string]string{"k": "user"}, map[string]string{"k": "api"}, nil, "", upstreamFormatFor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,6 +174,115 @@ func TestBuildUnifiedCandidateSetAnnotationsAndFormat(t *testing.T) {
 	}
 	if set.Items[0].Candidate.Annotations["k"] != "api" {
 		t.Fatalf("api annotation should win, got %+v", set.Items[0].Candidate.Annotations)
+	}
+}
+
+// TestBuildPathCandidateSetPrefixSuffix pins that a prefix endpoint's suffix
+// follows the candidate: it lands on AppendPath (appended to the upstream URL
+// at send time) and on EndpointPath (what the upstream row records), while a
+// non-prefix endpoint ignores a suffix entirely.
+func TestBuildPathCandidateSetPrefixSuffix(t *testing.T) {
+	rows := []providerCandidateRow{{ProviderID: 1, ProviderName: "provider", EndpointPath: "/api/codex"}}
+
+	set, err := buildPathCandidateSet(rows, nil, nil, nil, db.Endpoint{Path: "/api/codex", EndpointType: contract.EndpointType_Codex, PrefixMatch: true}, "/responses/compact")
+	if err != nil {
+		t.Fatal(err)
+	}
+	side := set.Items[0].Sidecar
+	if side.AppendPath != "/responses/compact" {
+		t.Errorf("AppendPath = %q", side.AppendPath)
+	}
+	if side.EndpointPath != "/api/codex/responses/compact" {
+		t.Errorf("EndpointPath = %q", side.EndpointPath)
+	}
+
+	// prefix_match = false: the endpoint never sees a suffix, but pin that a
+	// stray one would be ignored rather than silently appended.
+	set, err = buildPathCandidateSet(rows, nil, nil, nil, db.Endpoint{Path: "/api/codex"}, "/responses")
+	if err != nil {
+		t.Fatal(err)
+	}
+	side = set.Items[0].Sidecar
+	if side.AppendPath != "" || side.EndpointPath != "/api/codex" {
+		t.Errorf("non-prefix endpoint picked up a suffix: %+v", side)
+	}
+}
+
+// TestBuildUnifiedCandidateSetCodex pins the codex candidate on the unified
+// mount: it carries the request's suffix (a bridged sibling row does not), and
+// its upstream format comes from the caller's closure so src == upstream and
+// unifiedStreamSuccess degenerates to byte forwarding.
+func TestBuildUnifiedCandidateSetCodex(t *testing.T) {
+	rows := []db.GetProvidersByEndpointTypesAndModelRow{
+		{ProviderID: 1, ProviderName: "codex-provider", EndpointPath: "/api/codex", EndpointType: contract.EndpointType_Codex, PrefixMatch: true},
+		{ProviderID: 2, ProviderName: "responses-provider", EndpointPath: "/v1/responses", EndpointType: contract.EndpointType_OpenAIResponses},
+	}
+	upstreamFormat := func(t int32) llmbridge.Format {
+		if t == contract.EndpointType_Codex {
+			return llmbridge.FormatOpenAIResponses
+		}
+		return upstreamFormatFor(t)
+	}
+	set, err := buildUnifiedCandidateSet(rows, nil, nil, nil, "/responses", upstreamFormat)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	codex := set.Items[0].Sidecar
+	if codex.AppendPath != "/responses" || codex.EndpointPath != "/api/codex/responses" {
+		t.Errorf("codex sidecar = %+v", codex)
+	}
+	if codex.UpstreamFormat != llmbridge.FormatOpenAIResponses {
+		t.Errorf("codex UpstreamFormat = %s, want identity with the source", codex.UpstreamFormat)
+	}
+	if got := set.Items[0].Candidate.ProviderModel.UpstreamFormat; got != "codex" {
+		t.Errorf("JS-visible upstreamFormat = %q, want codex", got)
+	}
+	// The candidate key must stay keyed on the configured endpoint path, since
+	// candidateKey rebuilds it from the JS-visible providerModel.endpoint.
+	if codex.Key != "1|/api/codex" {
+		t.Errorf("codex Key = %q", codex.Key)
+	}
+
+	bridged := set.Items[1].Sidecar
+	if bridged.AppendPath != "" || bridged.EndpointPath != "/v1/responses" {
+		t.Errorf("non-prefix candidate picked up the suffix: %+v", bridged)
+	}
+}
+
+// TestBuildUnifiedCandidateSetSendResolver pins that a unified candidate sends
+// credentials per its own endpoint row's resolver (overridden by the
+// provider_endpoint's when that is concrete), not the virtual endpoint's
+// Unknown — which would fall through to followRequest and mirror the client's
+// header (e.g. an Anthropic client's X-Api-Key) onto an OpenAI upstream.
+func TestBuildUnifiedCandidateSetSendResolver(t *testing.T) {
+	cases := []struct {
+		name     string
+		endpoint int32
+		pe       int32
+		want     int32
+	}{
+		{"endpoint resolver inherited", contract.CredentialsResolver_BearerToken, contract.CredentialsResolver_Unknown, contract.CredentialsResolver_BearerToken},
+		{"provider_endpoint overrides", contract.CredentialsResolver_BearerToken, contract.CredentialsResolver_XApiKey, contract.CredentialsResolver_XApiKey},
+		{"followRequest kept", contract.CredentialsResolver_FollowRequest, contract.CredentialsResolver_Unknown, contract.CredentialsResolver_FollowRequest},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rows := []db.GetProvidersByEndpointTypesAndModelRow{{
+				ProviderID:                  1,
+				EndpointPath:                "/v1/chat/completions",
+				EndpointType:                contract.EndpointType_OpenAIChatCompletions,
+				EndpointCredentialsResolver: tc.endpoint,
+				SendCredentialsResolver:     tc.pe,
+			}}
+			set, err := buildUnifiedCandidateSet(rows, nil, nil, nil, "", upstreamFormatFor)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := set.Items[0].Sidecar.SendResolver; got != tc.want {
+				t.Errorf("SendResolver = %d, want %d", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -167,5 +326,34 @@ func TestPersistContextKeepsRequestValues(t *testing.T) {
 	defer pcancel()
 	if got := pctx.Value(key("trace")); got != "value" {
 		t.Fatalf("persist context value = %v, want value", got)
+	}
+}
+
+func TestClassifyStreamFinishReason(t *testing.T) {
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	idleTimeout := fmt.Errorf("%w after %v: %w", errReadIdleTimeout, time.Minute, context.DeadlineExceeded)
+
+	tests := []struct {
+		name            string
+		readErr         error
+		reqCtx          context.Context
+		streamCompleted bool
+		want            int32
+	}{
+		{"eof", io.EOF, context.Background(), false, db.FinishReasonEOF},
+		{"eofWhileCanceled", io.EOF, canceled, false, db.FinishReasonEOF},
+		{"idleTimeout", idleTimeout, context.Background(), false, db.FinishReasonReadTimeout},
+		{"idleTimeoutAfterCompletion", idleTimeout, canceled, true, db.FinishReasonReadTimeout},
+		{"canceledMidStream", context.Canceled, canceled, false, db.FinishReasonCancelled},
+		{"canceledAfterCompletion", context.Canceled, canceled, true, db.FinishReasonEOF},
+		{"otherError", errors.New("connection reset"), context.Background(), false, db.FinishReasonEOF},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := classifyStreamFinishReason(tt.readErr, tt.reqCtx, tt.streamCompleted); got != tt.want {
+				t.Errorf("classifyStreamFinishReason = %d, want %d", got, tt.want)
+			}
+		})
 	}
 }

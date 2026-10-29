@@ -14,7 +14,7 @@ RETURNING *;
 
 -- name: UpdateScript :one
 UPDATE script
-SET name = $2, source = $3, enabled = $4, updated_at = now()
+SET id = $2, name = $3, source = $4, enabled = $5, updated_at = now()
 WHERE id = $1
 RETURNING *;
 

@@ -57,6 +57,8 @@ type successInput struct {
 	UpstreamModel     string
 	Prepared          attemptPrepared
 	Entry             *liveEntry
+	CurrentRetryCount int
+	TotalAttemptCount int
 }
 
 type attemptResult struct {
@@ -100,6 +102,13 @@ func (f *gatewayFlow) runSingleAttempt(cand jsx.CandidateView, side gatewayCandi
 	if candAnno == nil {
 		candAnno = side.Annotations
 	}
+	// Reset ctx.upstreamRequest to null: beforeRequest runs before this attempt's
+	// upstream row exists, so a hook must not see the previous attempt's identity.
+	// It is filled in right after the row is inserted below.
+	if err := f.session.SetUpstreamRequest(nil); err != nil {
+		f.failHook(err)
+		return false, true
+	}
 	dec, err := f.runBeforeRequest(cand, candAnno, state)
 	if err != nil {
 		f.failHook(err)
@@ -120,9 +129,22 @@ func (f *gatewayFlow) runSingleAttempt(cand jsx.CandidateView, side gatewayCandi
 	if err != nil {
 		f.recordAttemptFailure(state, input, side.ProviderID, 0, err, db.FinishReasonInternal)
 		cancel()
+		if hookDec, brk := f.runAfterUpstreamError(state, false); brk {
+			f.respondUpstreamErrorBreak(hookDec, 0, []byte(err.Error()), nil)
+			return true, true
+		}
 		return false, false
 	}
 	defer f.h.liveRequests.Remove(input.UpstreamID)
+	// The upstream row now exists, so expose its identity: rewriteRequest,
+	// afterUpstreamError and the in-stream error hook can annotate this attempt
+	// via picotera.request.setAnnotation(ctx.upstreamRequest.id, ...).
+	if err := f.session.SetUpstreamRequest(f.requestRef(input.UpstreamID)); err != nil {
+		f.recordAttemptFailure(state, input, side.ProviderID, int32(gatewayHookStatus(err)), err, db.FinishReasonInternal)
+		f.failHook(err)
+		cancel()
+		return true, true
+	}
 	prepared, err := f.buildRewrittenUpstreamRequest(input)
 	if err != nil {
 		var hookErr gatewayHookError
@@ -134,23 +156,35 @@ func (f *gatewayFlow) runSingleAttempt(cand jsx.CandidateView, side gatewayCandi
 		}
 		f.recordAttemptFailure(state, input, side.ProviderID, 0, err, db.FinishReasonInternal)
 		cancel()
+		if hookDec, brk := f.runAfterUpstreamError(state, false); brk {
+			f.respondUpstreamErrorBreak(hookDec, 0, []byte(err.Error()), nil)
+			return true, true
+		}
 		return false, false
 	}
 	reqArtifactCtx, reqArtifactCancel := f.ctxs.Persist()
-	f.h.uploadRequestArtifact(reqArtifactCtx, input.UpstreamID, input.UpstreamCreatedAt, prepared.Request.Method, prepared.Request.URL.String(), prepared.Request.Header.Clone(), prepared.RequestBody)
+	redactedHeader, redactedURL := redactRequestCredentials(prepared.Request.Header.Clone(), prepared.Request.URL.String())
+	f.h.uploadRequestArtifact(reqArtifactCtx, input.UpstreamID, input.UpstreamCreatedAt, prepared.Request.Method, redactedURL, redactedHeader, f.artifactBody(prepared.RequestBody))
 	reqArtifactCancel()
 	upstreamStart := time.Now()
-	resp, err := f.h.forwardRequest(prepared.Request, side.ProxyURL, f.model.Mode.Streaming)
+	resp, err := f.h.forwardRequest(prepared.Request, side.transport(), f.model.Mode.Streaming)
 	if err != nil {
 		f.recordAttemptFailure(state, input, side.ProviderID, 0, err, f.finishReasonFor(input.UpstreamID, classifyForwardError(err, f.ctxs.Request)))
 		cancel()
+		if hookDec, brk := f.runAfterUpstreamError(state, false); brk {
+			f.respondUpstreamErrorBreak(hookDec, 0, []byte(err.Error()), nil)
+			return true, true
+		}
 		return false, false
 	}
 	if resp.StatusCode == http.StatusOK {
-		f.config.HandleSuccess(successInput{Flow: f, Candidate: cand, Sidecar: side, Response: resp, AttemptCtx: input.AttemptCtx, Cancel: cancel, UpstreamID: input.UpstreamID, UpstreamCreatedAt: input.UpstreamCreatedAt, AttemptStart: input.AttemptStart, UpstreamStartTime: upstreamStart, ProviderID: side.ProviderID, RoutedModel: f.model.Routed, UpstreamModel: input.UpstreamModel, Prepared: prepared, Entry: input.Entry})
+		f.config.HandleSuccess(successInput{Flow: f, Candidate: cand, Sidecar: side, Response: resp, AttemptCtx: input.AttemptCtx, Cancel: cancel, UpstreamID: input.UpstreamID, UpstreamCreatedAt: input.UpstreamCreatedAt, AttemptStart: input.AttemptStart, UpstreamStartTime: upstreamStart, ProviderID: side.ProviderID, RoutedModel: f.model.Routed, UpstreamModel: input.UpstreamModel, Prepared: prepared, Entry: input.Entry, CurrentRetryCount: input.CurrentRetryCount, TotalAttemptCount: input.TotalAttemptCount})
 		return true, false
 	}
-	f.handleUpstreamNonOK(state, input, resp, side.ProviderID)
+	if f.handleUpstreamNonOK(state, input, resp, side.ProviderID) {
+		cancel()
+		return true, true
+	}
 	cancel()
 	return false, false
 }
@@ -210,7 +244,6 @@ func (f *gatewayFlow) insertUpstreamAttempt(cand jsx.CandidateView, side gateway
 		SpanID:             pgtype.Text{String: f.meta.ID, Valid: true},
 		ParentSpanID:       f.meta.ParentSpanIDPg,
 		Type:               db.RequestTypeUpstream,
-		Status:             db.RequestStatusPending,
 		ProviderID:         pgtype.Int4{Int32: side.ProviderID, Valid: true},
 		EndpointPath:       pgtype.Text{String: side.EndpointPath, Valid: side.EndpointPath != ""},
 		ApiKeyID:           f.auth.APIKeyID,
@@ -222,28 +255,67 @@ func (f *gatewayFlow) insertUpstreamAttempt(cand jsx.CandidateView, side gateway
 		UserMessagePreview: pgtype.Text{Valid: false},
 		ProjectID:          f.meta.ProjectID,
 		CreatedAt:          pgtype.Timestamp{Time: upstreamIDCreatedAt, Valid: true},
+		UserID:             f.auth.UserID,
+		ExternalRequestID:  pgtype.Text{Valid: false},
+		ExternalResponseID: pgtype.Text{Valid: false},
 	})
-	entry := f.h.liveRequests.RegisterUpstream(upstreamID, cancel)
+	entry := f.h.liveRequests.RegisterUpstream(upstreamID, cancel, f.otr.recordBody())
 	return attemptInput{Candidate: cand, Sidecar: side, Annotations: candAnno, Decision: dec, CurrentRetryCount: state.CurrentRetryCount, TotalAttemptCount: state.TotalAttemptCount, AttemptCtx: attemptCtx, UpstreamID: upstreamID, UpstreamCreatedAt: upstreamCreatedAt, AttemptStart: time.Now(), UpstreamModel: upstreamModel, Entry: entry}, cancel, nil
 }
 
 func (f *gatewayFlow) buildRewrittenUpstreamRequest(input attemptInput) (attemptPrepared, error) {
 	body := f.body
 	upstreamModel := input.UpstreamModel
+	pathVars := f.config.PathVars
 	if f.config.Kind == gatewayRouteUnified {
 		upstreamModel = ""
-		var err error
-		body, err = setUnifiedModel(f.config.SourceFormat, f.body, input.UpstreamModel)
-		if err != nil {
-			return attemptPrepared{}, err
+		// The upstream URL's {model} token (Gemini endpoints) must carry the
+		// resolved upstream model name, not the inbound chi params — which are
+		// empty for non-Gemini source routes that get bridged to Gemini.
+		pathVars = unifiedUpstreamPathVars(input.UpstreamModel)
+		// A no-model request (a prefix mount whose body carried no model field)
+		// must not get a `"model": ""` injected into a body that never had one —
+		// that would break passthrough semantics. Same condition buildUpstreamRequest
+		// applies on the path gateway. A beforeRequest hook can still opt in by
+		// setting upstreamModel.
+		if input.UpstreamModel != "" {
+			// Goes through the config closure rather than setUnifiedModel directly:
+			// the model's home (body vs {model} path var) is a property of the
+			// route, which only the unified config still knows about.
+			var err error
+			body, err = f.config.SetBodyModel(f.body, input.UpstreamModel)
+			if err != nil {
+				return attemptPrepared{}, err
+			}
 		}
 	}
-	req, reqBody, err := buildUpstreamRequest(input.AttemptCtx, f.r, body, input.Sidecar.UpstreamURL, upstreamModel, input.Sidecar.Credentials, input.Sidecar.SendResolver, f.config.PathVars)
+	authHeaderName := ""
+	if f.h.config.Auth.HeaderEnabled {
+		authHeaderName = f.h.config.Auth.HeaderName
+	}
+	req, reqBody, err := buildUpstreamRequest(input.AttemptCtx, f.r, body, input.Sidecar.UpstreamURL, input.Sidecar.AppendPath, upstreamModel, input.Sidecar.Credentials, input.Sidecar.SendResolver, pathVars, authHeaderName)
 	if err != nil {
 		return attemptPrepared{}, err
 	}
-	pending := serializePendingRequest(req, reqBody)
-	newPending, err := f.session.RunRewriteRequest(pending)
+	// Web-search rewriting / beforeTransform / llmbridge conversion run BEFORE
+	// the rewriteRequest hook, so the hook sees (and mutates) the body in the
+	// upstream's format — a hook keyed on the upstream endpoint would otherwise
+	// write fields that the cross-format bridge silently drops.
+	input.Request = req
+	input.RequestBody = reqBody
+	prepared, err := f.config.PrepareAttempt(input.AttemptCtx, f, input)
+	if err != nil {
+		return attemptPrepared{}, err
+	}
+	req, reqBody = prepared.Request, prepared.RequestBody
+	// The body is now in the upstream's format (after any llmbridge conversion),
+	// so ctx.format reflects the format of the request about to be sent.
+	outFormat := input.Sidecar.UpstreamFormat.String()
+	if err := f.session.PatchContext(jsx.ContextPatch{Format: &outFormat}); err != nil {
+		return attemptPrepared{}, gatewayHookError{err: err}
+	}
+	pending := serializePendingRequest(req)
+	newPending, err := f.session.RunRewriteRequest(pending, []byte(jsonBodyOrNil(req.Header, reqBody)))
 	if err != nil {
 		return attemptPrepared{}, gatewayHookError{err: err}
 	}
@@ -251,38 +323,52 @@ func (f *gatewayFlow) buildRewrittenUpstreamRequest(input attemptInput) (attempt
 	if err != nil {
 		return attemptPrepared{}, gatewayHookError{err: err}
 	}
-	input.Request = req
-	input.RequestBody = reqBody
-	return f.config.PrepareAttempt(input.AttemptCtx, f, input)
+	prepared.Request = req
+	prepared.RequestBody = reqBody
+	return prepared, nil
 }
 
-func (f *gatewayFlow) handleUpstreamNonOK(state *attemptState, input attemptInput, resp *http.Response, providerID int32) {
+// handleUpstreamNonOK records a non-200 upstream response as a failed attempt
+// and runs the afterUpstreamError hook. It returns true when the hook decided to
+// break — in which case the downstream response has already been written and the
+// caller must stop trying further providers.
+func (f *gatewayFlow) handleUpstreamNonOK(state *attemptState, input attemptInput, resp *http.Response, providerID int32) bool {
 	decoded, err := decodedBody(resp)
 	if err != nil {
 		_ = resp.Body.Close()
 		f.recordAttemptFailure(state, input, providerID, int32(resp.StatusCode), fmt.Errorf("decode upstream response: %w", err), db.FinishReasonInternal)
-		return
+		if hookDec, brk := f.runAfterUpstreamError(state, false); brk {
+			f.respondUpstreamErrorBreak(hookDec, resp.StatusCode, []byte(err.Error()), nil)
+			return true
+		}
+		return false
 	}
 	respBody, err := io.ReadAll(decoded.Body)
 	_ = decoded.Body.Close()
 	if err != nil {
 		f.recordAttemptFailure(state, input, providerID, int32(resp.StatusCode), fmt.Errorf("decode upstream response: %w", err), db.FinishReasonInternal)
-		return
+		if hookDec, brk := f.runAfterUpstreamError(state, false); brk {
+			f.respondUpstreamErrorBreak(hookDec, resp.StatusCode, []byte(err.Error()), nil)
+			return true
+		}
+		return false
 	}
 	pctx, pcancel := f.ctxs.Persist()
 	defer pcancel()
-	f.h.uploadResponseArtifact(pctx, input.UpstreamID, input.UpstreamCreatedAt, resp.StatusCode, resp.Header.Clone(), respBody, nil)
+	f.h.uploadResponseArtifact(pctx, input.UpstreamID, input.UpstreamCreatedAt, resp.StatusCode, resp.Header.Clone(), f.artifactBody(respBody), nil)
 	errMsg := string(respBody)
-	f.h.updateRequestOnComplete(pctx, db.UpdateRequestOnCompleteParams{
-		ID:           input.UpstreamID,
-		StatusCode:   pgtype.Int4{Int32: int32(resp.StatusCode), Valid: true},
-		ErrorMessage: pgtype.Text{String: errMsg, Valid: true},
-		TimeSpentMs:  pgtype.Int4{Int32: int32(time.Since(input.AttemptStart).Milliseconds()), Valid: true},
-		Status:       db.RequestStatusFailed,
-		FinishReason: pgtype.Int4{Int32: db.FinishReasonInternal, Valid: true},
-		CreatedAt:    pgtype.Timestamp{Time: input.UpstreamCreatedAt, Valid: true},
-	})
+	f.h.updateRequest(pctx, newRequestUpdate(input.UpstreamID, input.UpstreamCreatedAt).
+		StatusCode(pgtype.Int4{Int32: int32(resp.StatusCode), Valid: true}).
+		ErrorMessage(pgtype.Text{String: errMsg, Valid: true}).
+		TimeSpentMs(pgtype.Int4{Int32: int32(time.Since(input.AttemptStart).Milliseconds()), Valid: true}).
+		FinishReason(pgtype.Int4{Int32: db.FinishReasonInternal, Valid: true}).
+		ExternalResponseID(matchExternalIDHeader(resp.Header, f.h.externalResponseIDHeaders)))
 	updateAttemptState(state, providerID, resp.StatusCode, errMsg, fmt.Errorf("upstream returned %d: %s", resp.StatusCode, errMsg))
+	if hookDec, brk := f.runAfterUpstreamError(state, false); brk {
+		f.respondUpstreamErrorBreak(hookDec, resp.StatusCode, respBody, resp.Header)
+		return true
+	}
+	return false
 }
 
 // finishReasonFor resolves the finish reason for a request row, preferring a
@@ -302,8 +388,99 @@ func (f *gatewayFlow) finishReasonFor(rowID string, fallback int32) int32 {
 func (f *gatewayFlow) recordAttemptFailure(state *attemptState, input attemptInput, providerID int32, statusCode int32, err error, finishReason int32) {
 	pctx, pcancel := f.ctxs.Persist()
 	defer pcancel()
-	f.h.completeFailedAttemptWithReason(pctx, input.UpstreamID, input.UpstreamCreatedAt, input.AttemptStart, statusCode, err.Error(), finishReason)
+	f.h.completeFailedAttemptWithReason(pctx, input.UpstreamID, input.UpstreamCreatedAt, input.AttemptStart, statusCode, err.Error(), finishReason, nil)
 	updateAttemptState(state, providerID, int(statusCode), err.Error(), err)
+}
+
+// runAfterUpstreamError patches the per-attempt ctx (counts + lastError, which
+// updateAttemptState must have already written into state.LastJSErr) and runs
+// the afterUpstreamError waterfall. It returns the decision plus whether the
+// caller should break now (decision.Break && !streamed). A hook failure is
+// advisory: it is logged and treated as break=false.
+func (f *gatewayFlow) runAfterUpstreamError(state *attemptState, streamed bool) (jsx.AfterUpstreamErrorDecision, bool) {
+	var statusCode int
+	var message string
+	if state.LastJSErr != nil {
+		statusCode = state.LastJSErr.StatusCode
+		message = state.LastJSErr.Message
+	}
+	if err := f.session.PatchContext(jsx.ContextPatch{Attempt: &jsx.AttemptState{
+		CurrentRetryCount: state.CurrentRetryCount,
+		TotalAttemptCount: state.TotalAttemptCount,
+		LastError:         state.LastJSErr,
+	}}); err != nil {
+		logx.WithContext(f.ctxs.Request).WithError(err).Warn("afterUpstreamError patch context failed")
+		return jsx.AfterUpstreamErrorDecision{}, false
+	}
+	// Seed break=true for a bare 400 upstream error that hasn't streamed yet, so
+	// the default is to pass that response through; the hook can read this default
+	// in input.break and return { break: false } to keep trying other providers.
+	defaultBreak := statusCode == http.StatusBadRequest && !streamed
+	dec, err := f.session.RunAfterUpstreamError(jsx.UpstreamErrorView{Break: defaultBreak, StatusCode: statusCode, Message: message, Streamed: streamed})
+	if err != nil {
+		logx.WithContext(f.ctxs.Request).WithError(err).Warn("afterUpstreamError hook failed")
+		return jsx.AfterUpstreamErrorDecision{}, false
+	}
+	return dec, dec.Break && !streamed
+}
+
+// respondUpstreamErrorBreak writes the downstream response for an
+// afterUpstreamError break and finalizes the meta row. dec.Message overrides the
+// body (application/json); otherwise the upstream's original body + Content-Type
+// are passed through. dec.StatusCode overrides the status; otherwise the
+// upstream's original status, falling back to 502.
+func (f *gatewayFlow) respondUpstreamErrorBreak(dec jsx.AfterUpstreamErrorDecision, origStatus int, origBody []byte, origHeader http.Header) {
+	status := dec.StatusCode
+	if status <= 0 {
+		status = origStatus
+	}
+	if status <= 0 {
+		status = http.StatusBadGateway
+	}
+	var body []byte
+	contentType := "application/json"
+	if dec.Message != "" {
+		body = []byte(dec.Message)
+	} else {
+		body = origBody
+		if origHeader != nil {
+			if ct := origHeader.Get("Content-Type"); ct != "" {
+				contentType = ct
+			}
+		}
+	}
+	f.w.Header().Set("Content-Type", contentType)
+	f.w.WriteHeader(status)
+	_, _ = f.w.Write(body)
+	errMsg := dec.Message
+	if errMsg == "" {
+		errMsg = string(origBody)
+	}
+	f.failMeta(int32(status), errMsg, db.FinishReasonInternal, origHeader)
+	pctx, pcancel := f.ctxs.Persist()
+	defer pcancel()
+	f.h.uploadMetaResponseArtifact(pctx, f.meta.ID, f.meta.CreatedAt, status, f.w.Header().Clone(), f.artifactBody(body), f.collectLogs(), nil)
+}
+
+// runStreamErrorHook runs the afterUpstreamError waterfall for an in-stream
+// error (HTTP 200 + an SSE error payload). The response already streamed to the
+// client, so streamed=true and the hook's break is ignored — it runs purely for
+// observation (logging, kv writes). Unlike runAfterUpstreamError it does not
+// depend on an attemptState; the success path has no state, so the caller passes
+// the counts and error explicitly.
+func (f *gatewayFlow) runStreamErrorHook(providerID int32, currentRetry, totalAttempt, statusCode int, message string) {
+	lastErr := &jsx.LastError{ProviderID: int(providerID), StatusCode: statusCode, Message: message}
+	if err := f.session.PatchContext(jsx.ContextPatch{Attempt: &jsx.AttemptState{
+		CurrentRetryCount: currentRetry,
+		TotalAttemptCount: totalAttempt,
+		LastError:         lastErr,
+	}}); err != nil {
+		logx.WithContext(f.ctxs.Request).WithError(err).Warn("afterUpstreamError patch context failed")
+		return
+	}
+	if _, err := f.session.RunAfterUpstreamError(jsx.UpstreamErrorView{StatusCode: statusCode, Message: message, Streamed: true}); err != nil {
+		logx.WithContext(f.ctxs.Request).WithError(err).Warn("afterUpstreamError hook failed")
+	}
 }
 
 func updateAttemptState(state *attemptState, providerID int32, statusCode int, message string, err error) {
@@ -319,7 +496,7 @@ func identityPrepareAttempt(_ context.Context, _ *gatewayFlow, input attemptInpu
 
 func prepareUnifiedAttempt(ctx context.Context, f *gatewayFlow, input attemptInput) (attemptPrepared, error) {
 	req, reqBody := input.Request, input.RequestBody
-	wsCtx, err := prepareUnifiedWebSearch(f, input, reqBody)
+	wsCtx, err := prepareUnifiedWebSearch(ctx, f, input, reqBody)
 	if err != nil {
 		return attemptPrepared{}, err
 	}
@@ -338,11 +515,15 @@ func prepareUnifiedAttempt(ctx context.Context, f *gatewayFlow, input attemptInp
 	return attemptPrepared{Request: req, RequestBody: reqBody, OutboundProfile: profile, WebSearch: wsCtx}, nil
 }
 
-func prepareUnifiedWebSearch(f *gatewayFlow, input attemptInput, reqBody []byte) (*webSearchContext, error) {
+func prepareUnifiedWebSearch(ctx context.Context, f *gatewayFlow, input attemptInput, reqBody []byte) (*webSearchContext, error) {
 	if f.config.SourceFormat != llmbridge.FormatAnthropicMessages || input.Sidecar.SupportsNativeWebSearch || !hasWebSearchTool(reqBody) {
 		return nil, nil
 	}
-	rewrote, err := rewriteWebSearchTools(reqBody)
+	backend, err := resolveWebSearchBackend(ctx, f.h.queries)
+	if err != nil {
+		return nil, err
+	}
+	rewrote, err := rewriteWebSearchTools(reqBody, backend)
 	if err != nil {
 		return nil, err
 	}
@@ -350,7 +531,7 @@ func prepareUnifiedWebSearch(f *gatewayFlow, input attemptInput, reqBody []byte)
 	if err != nil {
 		return nil, err
 	}
-	return &webSearchContext{active: true, apiKeyToken: f.auth.APIKey.Key, metaID: f.meta.ID, metaCreatedAt: f.meta.CreatedAt, parentSpanID: f.meta.ParentSpanID, originalRequestBody: append([]byte(nil), f.preRewriteBody...), rewrittenBody: rewrote}, nil
+	return &webSearchContext{active: true, apiKeyToken: f.auth.APIKey.Key, metaID: f.meta.ID, metaCreatedAt: f.meta.CreatedAt, parentSpanID: f.meta.ParentSpanID, originalRequestBody: append([]byte(nil), f.preRewriteBody...), rewrittenBody: rewrote, backend: backend}, nil
 }
 
 func prepareUnifiedOutboundProfile(f *gatewayFlow, input attemptInput) (llmbridge.OutboundProfile, error) {
@@ -388,6 +569,15 @@ func bridgeUnifiedRequest(ctx context.Context, f *gatewayFlow, input attemptInpu
 	}
 	resetRequestBody(req, upBody)
 	req.Header.Set("Content-Type", upCT)
+	// 桥接到 Gemini streamGenerateContent 时,客户端(非 Gemini 源)不会携带
+	// alt=sse,Gemini 默认返回 JSON 数组流而非 SSE。强制写入 alt=sse,使上游返回
+	// text/event-stream,供 BridgeStream 正确解析。在 rewriteRequest 钩子前注入,
+	// 脚本可改写或删除。
+	if input.Sidecar.UpstreamFormat == llmbridge.FormatGeminiStreamGenerateContent {
+		q := req.URL.Query()
+		q.Set("alt", "sse")
+		req.URL.RawQuery = q.Encode()
+	}
 	return req, upBody, nil
 }
 

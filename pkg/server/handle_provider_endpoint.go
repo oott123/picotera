@@ -78,10 +78,36 @@ func (s *Server) handleFetchModels(ctx context.Context, input *contract.FetchMod
 		return nil, huma.Error400BadRequest("provider has no models endpoint configured")
 	}
 
-	fetchCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
+	sess, serr := s.jsxEngine.NewSession(ctx, fmt.Sprintf("fetch-models:%d:%d", input.Body.ProviderID, time.Now().UnixNano()))
+	if serr != nil {
+		return nil, huma.Error502BadGateway("failed to load js hooks: " + serr.Error())
+	}
+	defer sess.Close()
 
-	req, err := http.NewRequestWithContext(fetchCtx, http.MethodGet, provider.ModelsEndpointUrl, nil)
+	providerAnno, _ := annotations.Decode(provider.Annotations)
+	// fetch-models has no model context — routedModel/request/apiKey/
+	// providerModel/attempt/endpoint stay null on ctx (models are addressed via
+	// provider.modelsEndpointUrl, not an endpoint row). apiKey isn't
+	// authenticated on this management route either, so ctx.annotations carries
+	// only the provider-level annotations.
+	endpointType := "fetchModels"
+	provJS := jsx.ProviderSummary{
+		ID:          provider.ID,
+		Name:        provider.Name,
+		Priority:    provider.Priority,
+		Annotations: providerAnno,
+		Disabled:    provider.Disabled,
+	}
+	mergedAnno := annotations.Merge(providerAnno)
+	if perr := sess.PatchContext(jsx.ContextPatch{
+		EndpointType: &endpointType,
+		Provider:     &provJS,
+		Annotations:  &mergedAnno,
+	}); perr != nil {
+		return nil, huma.NewError(gatewayHookStatus(perr), perr.Error())
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, provider.ModelsEndpointUrl, nil)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to create upstream request", err)
 	}
@@ -89,11 +115,26 @@ func (s *Server) handleFetchModels(ctx context.Context, input *contract.FetchMod
 	applyCredentials(req, provider.Credentials, provider.ModelsEndpointResolver, nil)
 	req.Header.Set("anthropic-version", "2023-06-01")
 
+	pending, herr := sess.RunRewriteRequest(serializePendingRequest(req), nil)
+	if herr != nil {
+		return nil, huma.NewError(gatewayHookStatus(herr), herr.Error())
+	}
+
+	// 10s covers only the upstream round-trip; the hook itself is bounded by
+	// the engine's PICOTERA_JS_HOOK_TIMEOUT.
+	fetchCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	req, _, err = buildRequestFromPending(fetchCtx, pending, nil)
+	if err != nil {
+		return nil, huma.Error502BadGateway(err.Error())
+	}
+
 	var proxyURL string
 	if provider.ProxyUrl.Valid {
 		proxyURL = provider.ProxyUrl.String
 	}
-	resp, err := s.forwardRequest(req, proxyURL, true)
+	resp, err := s.forwardRequest(req, transportProfile{ProxyURL: proxyURL, InsecureTLS: provider.InsecureTls}, true)
 	if err != nil {
 		return nil, huma.Error502BadGateway("upstream request failed: " + err.Error())
 	}
@@ -109,7 +150,9 @@ func (s *Server) handleFetchModels(ctx context.Context, input *contract.FetchMod
 		return nil, huma.Error502BadGateway(fmt.Sprintf("upstream returned %d: %s", resp.StatusCode, string(body)))
 	}
 
-	body, err := io.ReadAll(io.LimitReader(decoded.Body, 1024*1024))
+	// Codex embeds a full instructions template per model, so its /models
+	// response is hundreds of KiB.
+	body, err := io.ReadAll(io.LimitReader(decoded.Body, 8*1024*1024))
 	if err != nil {
 		return nil, huma.Error502BadGateway("failed to read upstream response: " + err.Error())
 	}
@@ -131,46 +174,19 @@ func (s *Server) handleFetchModels(ctx context.Context, input *contract.FetchMod
 
 	aggregated, removed := aggregateProviderModels(oldList, upstreamNames)
 
-	sess, serr := s.jsxEngine.NewSession(ctx, fmt.Sprintf("fetch-models:%d:%d", input.Body.ProviderID, time.Now().UnixNano()))
-	if serr != nil {
-		return nil, huma.Error502BadGateway("failed to load js hooks: " + serr.Error())
-	}
-	defer sess.Close()
-
 	upstreamRawJSON, _ := json.Marshal(upstreamRaw)
 
-	providerAnno, _ := annotations.Decode(provider.Annotations)
-	// fetch-models has no model context — routedModel/request/apiKey/
-	// providerModel/attempt/endpoint stay null on ctx. apiKey isn't
-	// authenticated on this management route either, so ctx.annotations carries
-	// only the provider-level annotations, and ctx.upstreamResponse carries the
-	// raw upstream /models JSON.
-	provJS := jsx.ProviderSummary{
-		ID:          provider.ID,
-		Name:        provider.Name,
-		Priority:    provider.Priority,
-		Annotations: providerAnno,
-		Disabled:    provider.Disabled,
-	}
-	mergedAnno := annotations.Merge(providerAnno)
+	// ctx.upstreamResponse (the raw upstream /models JSON) is only visible from
+	// here on, in rewriteProviderModels — it doesn't exist yet at rewriteRequest
+	// time.
 	if perr := sess.PatchContext(jsx.ContextPatch{
-		Provider:         &provJS,
-		Annotations:      &mergedAnno,
 		UpstreamResponse: upstreamRawJSON,
 	}); perr != nil {
-		status := http.StatusBadGateway
-		if errors.Is(perr, jsx.ErrHookTimeout) {
-			status = http.StatusServiceUnavailable
-		}
-		return nil, huma.NewError(status, perr.Error())
+		return nil, huma.NewError(gatewayHookStatus(perr), perr.Error())
 	}
 	processed, herr := sess.RunRewriteProviderModels(contractToJsxEntries(aggregated))
 	if herr != nil {
-		status := http.StatusBadGateway
-		if errors.Is(herr, jsx.ErrHookTimeout) {
-			status = http.StatusServiceUnavailable
-		}
-		return nil, huma.NewError(status, herr.Error())
+		return nil, huma.NewError(gatewayHookStatus(herr), herr.Error())
 	}
 
 	converted := jsxToContractEntries(processed)
@@ -198,10 +214,13 @@ func parseModelsResponse(body []byte) ([]string, error) {
 		return nil, fmt.Errorf("invalid JSON response: %w", err)
 	}
 
-	if models := extractFieldFromData(raw, "id"); len(models) > 0 {
+	if models := extractFieldFromKey(raw, "data", "id"); len(models) > 0 {
 		return models, nil
 	}
-	if models := extractFieldFromData(raw, "name"); len(models) > 0 {
+	if models := extractFieldFromKey(raw, "data", "name"); len(models) > 0 {
+		return models, nil
+	}
+	if models := extractFieldFromKey(raw, "models", "slug"); len(models) > 0 {
 		return models, nil
 	}
 	if models := extractFieldFromTopLevel(raw, "id"); len(models) > 0 {
@@ -216,12 +235,12 @@ func parseModelsResponse(body []byte) ([]string, error) {
 	return nil, fmt.Errorf("could not parse models from upstream response")
 }
 
-func extractFieldFromData(raw any, field string) []string {
+func extractFieldFromKey(raw any, containerKey, field string) []string {
 	obj, ok := raw.(map[string]any)
 	if !ok {
 		return nil
 	}
-	data, ok := obj["data"]
+	data, ok := obj[containerKey]
 	if !ok {
 		return nil
 	}

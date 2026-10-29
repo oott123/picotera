@@ -30,7 +30,9 @@ export function parseJsonBody(
   if (bodyEncoding === 'base64') {
     return { ok: false, value: null, error: '二进制内容不能解析为 JSON' }
   }
-  if (body === undefined) {
+  // An empty body counts as absent: JSON.parse('') only ever yields a bare
+  // "unexpected end of data" that says less than the plain fact.
+  if (!body) {
     return { ok: false, value: null, error: '没有 body 内容' }
   }
   try {

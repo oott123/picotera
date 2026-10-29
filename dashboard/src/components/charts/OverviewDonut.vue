@@ -56,7 +56,12 @@ function escape(s: string) {
 
 const prefs = usePreferencesStore()
 const themeVersion = ref(0)
-watch(() => prefs.theme, () => { themeVersion.value++ })
+watch(
+  () => prefs.theme,
+  () => {
+    themeVersion.value++
+  },
+)
 
 const option = computed<EChartsOption>(() => {
   void themeVersion.value
@@ -114,9 +119,7 @@ const option = computed<EChartsOption>(() => {
         if (!d) return ''
         const value = (d.value as number) ?? 0
         const datum = d._datum as DonutDatum
-        const formatted = props.valueFormat
-          ? props.valueFormat(value, datum)
-          : String(value)
+        const formatted = props.valueFormat ? props.valueFormat(value, datum) : String(value)
         const pct = total.value === 0 ? '0' : ((value / total.value) * 100).toFixed(1)
         return `<div class="text-xs"><div class="font-medium">${escape(d.name as string)}</div><div class="mono tabular text-ink-muted">${formatted} · ${pct}%</div></div>`
       },

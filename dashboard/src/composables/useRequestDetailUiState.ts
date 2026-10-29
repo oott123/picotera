@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import type { SubView as ResponseSubView } from '@/components/ResponseArtifactView.vue'
 
-export type DetailTab = 'overview' | 'request' | 'response' | 'conversation' | 'logs'
+export type DetailTab = 'overview' | 'request' | 'response' | 'conversation' | 'logs' | 'usage'
 
 const detailTab = ref<DetailTab>('overview')
 const requestBodyView = ref<'raw' | 'json'>('json')

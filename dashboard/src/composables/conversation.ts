@@ -1,20 +1,60 @@
 import type { AggregatedFormat } from '@/components/artifactTypes'
+import { toolResultSegments } from '@/lib/toolFormat'
+import { imageFromBase64, imageFromUrl, type ImageSource } from './images'
 
 export type ConversationRole = 'system' | 'user' | 'assistant' | 'tool'
 
+// One shape for both search backends: the Codex search output (citation / wordlim / crawled)
+// and DeepSeek's /v1/tools/search (siteName / authority / score). Fields a backend does not
+// report are '' / null.
+export interface SearchResult {
+  citation: string
+  title: string
+  url: string | null
+  siteName: string | null
+  wordlim: string | null
+  published: string | null
+  crawled: string | null
+  authority: number | null
+  score: number | null
+  content: string
+}
+
+export type ToolResultContent =
+  | { kind: 'text'; text: string }
+  | { kind: 'media'; mediaType: string; label: string; image: ImageSource | null }
+  | { kind: 'json'; value: unknown }
+
 export type ConversationPart =
   | { kind: 'text'; text: string }
-  | { kind: 'thinking'; text: string }
+  // `text: null` is a thinking block that carried no plaintext (signature only / redacted).
+  | { kind: 'thinking'; text: string | null }
   | { kind: 'toolCall'; id: string | null; name: string; input: unknown }
-  | { kind: 'toolResult'; id: string | null; name: string | null; output: unknown; isError: boolean }
-  | { kind: 'media'; mediaType: string; label: string }
+  | {
+      kind: 'toolResult'
+      id: string | null
+      name: string | null
+      output: unknown
+      // Segmented view of `output` when it is a string or an array of typed blocks.
+      content: ToolResultContent[] | null
+      isError: boolean
+    }
+  | { kind: 'media'; mediaType: string; label: string; image: ImageSource | null }
+  | { kind: 'searchResults'; results: SearchResult[] }
 
 export interface ConversationMessage {
   role: ConversationRole
   parts: ConversationPart[]
 }
 
-type ConversationFormat = 'openaiChat' | 'openaiResponses' | 'anthropic' | 'gemini'
+type ConversationFormat =
+  | 'openaiChat'
+  | 'openaiResponses'
+  | 'anthropic'
+  | 'gemini'
+  | 'openaiSearch'
+  | 'deepseekSearch'
+  | 'openaiImages'
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return null
@@ -46,7 +86,50 @@ function pushThinking(parts: ConversationPart[], text: unknown) {
   if (typeof text === 'string' && text !== '') parts.push({ kind: 'thinking', text })
 }
 
-function messageOrNull(role: ConversationRole, parts: ConversationPart[]): ConversationMessage | null {
+function pushHiddenThinking(parts: ConversationPart[]) {
+  parts.push({ kind: 'thinking', text: null })
+}
+
+function pushMedia(parts: ConversationPart[], mediaType: string, image: ImageSource | null = null) {
+  parts.push({ kind: 'media', mediaType, label: `[${mediaType}]`, image })
+}
+
+function anthropicImage(block: Record<string, unknown>): ImageSource | null {
+  const source = asRecord(block.source)
+  if (source?.type === 'base64') return imageFromBase64(source.data, source.media_type)
+  if (source?.type === 'url') return imageFromUrl(source.url)
+  return null
+}
+
+function imageContent(image: ImageSource | null): ToolResultContent {
+  return { kind: 'media', mediaType: 'image', label: '[image]', image }
+}
+
+function toolResultContent(output: unknown): ToolResultContent[] | null {
+  const segments = toolResultSegments(output)
+  if (!segments) return null
+  return segments.map((segment): ToolResultContent => {
+    if (segment.kind === 'text') return { kind: 'text', text: segment.text }
+    const block = segment.block
+    if (block.type === 'image') return imageContent(anthropicImage(block))
+    if (block.type === 'input_image') return imageContent(imageFromUrl(block.image_url))
+    return { kind: 'json', value: block }
+  })
+}
+
+function toolResultPart(
+  id: string | null,
+  name: string | null,
+  output: unknown,
+  isError: boolean,
+): ConversationPart {
+  return { kind: 'toolResult', id, name, output, content: toolResultContent(output), isError }
+}
+
+function messageOrNull(
+  role: ConversationRole,
+  parts: ConversationPart[],
+): ConversationMessage | null {
   return parts.length ? { role, parts } : null
 }
 
@@ -77,28 +160,38 @@ function roleFromGemini(value: unknown): ConversationRole | null {
   }
 }
 
-function hasAnthropicContentBlocks(messages: unknown[]): boolean {
+const ANTHROPIC_BLOCK_TYPES = new Set([
+  'tool_use',
+  'tool_result',
+  'thinking',
+  'redacted_thinking',
+  'server_tool_use',
+  'mcp_tool_use',
+  'image',
+  'document',
+])
+
+// Server-side tool results: web_search_tool_result, web_fetch_tool_result,
+// code_execution_tool_result, mcp_tool_result …
+function isAnthropicServerToolResult(type: unknown): boolean {
+  return typeof type === 'string' && type.endsWith('_tool_result')
+}
+
+function isAnthropicToolCall(type: unknown): boolean {
+  return type === 'tool_use' || type === 'server_tool_use' || type === 'mcp_tool_use'
+}
+
+// Only signals OpenAI Chat never carries count: `role: "system"` messages are sent
+// by both formats (Claude Code inserts them into Anthropic `messages`).
+function hasAnthropicFeatures(root: Record<string, unknown>, messages: unknown[]): boolean {
+  if ('system' in root) return true
   for (const itemValue of messages) {
     const item = asRecord(itemValue)
     for (const blockValue of asArray(item?.content)) {
-      const block = asRecord(blockValue)
-      if (
-        block?.type === 'tool_use' ||
-        block?.type === 'tool_result' ||
-        block?.type === 'thinking'
-      ) {
-        return true
-      }
+      const type = asRecord(blockValue)?.type
+      if (typeof type === 'string' && ANTHROPIC_BLOCK_TYPES.has(type)) return true
+      if (isAnthropicServerToolResult(type)) return true
     }
-  }
-  return false
-}
-
-function hasOpenAIChatFeatures(messages: unknown[]): boolean {
-  for (const itemValue of messages) {
-    const item = asRecord(itemValue)
-    if (item?.role === 'system' || item?.role === 'tool' || item?.role === 'developer') return true
-    if (Array.isArray(item?.tool_calls)) return true
   }
   return false
 }
@@ -114,14 +207,23 @@ export function detectFormat(
     if (Array.isArray(root.contents)) return 'gemini'
     if ('input' in root) return 'openaiResponses'
     const messages = asArray(root.messages)
-    if (messages.length) {
-      if (hasOpenAIChatFeatures(messages)) return 'openaiChat'
-      if ('system' in root || hasAnthropicContentBlocks(messages)) return 'anthropic'
-    }
-    return null
+    if (!messages.length) return null
+    // Anthropic wins when both formats' signals are present. Everything else is
+    // OpenAI Chat — including messages with neither side's own signals (plain
+    // system / user / assistant text), which both parsers read identically.
+    if (hasAnthropicFeatures(root, messages)) return 'anthropic'
+    return 'openaiChat'
   }
 
+  if (typeof root.output === 'string') return 'openaiSearch'
+  if (isDeepseekSearchResponse(root)) return 'deepseekSearch'
   if (Array.isArray(root.candidates)) return 'gemini'
+  // Shape-matched on the first element so an embeddings response (`data: [{embedding}]`)
+  // doesn't land here.
+  if (Array.isArray(root.data)) {
+    const first = asRecord(root.data[0])
+    if (typeof first?.b64_json === 'string' || typeof first?.url === 'string') return 'openaiImages'
+  }
   if (root.object === 'response' || Array.isArray(root.output)) return 'openaiResponses'
   if (Array.isArray(root.choices)) return 'openaiChat'
   if (
@@ -143,18 +245,23 @@ function parseOpenAIContentParts(content: unknown): ConversationPart[] {
   for (const partValue of asArray(content)) {
     const part = asRecord(partValue)
     if (!part) continue
-    if ((part.type === 'text' || part.type === 'input_text' || part.type === 'output_text') && typeof part.text === 'string') {
+    if (
+      (part.type === 'text' || part.type === 'input_text' || part.type === 'output_text') &&
+      typeof part.text === 'string'
+    ) {
       pushText(parts, part.text)
     } else if (part.type === 'image_url') {
-      parts.push({ kind: 'media', mediaType: 'image', label: '[image]' })
+      // Chat Completions wraps the URL in an object; Responses' input_image
+      // carries it as a bare string.
+      pushMedia(parts, 'image', imageFromUrl(asRecord(part.image_url)?.url))
     } else if (part.type === 'input_image') {
-      parts.push({ kind: 'media', mediaType: 'image', label: '[image]' })
+      pushMedia(parts, 'image', imageFromUrl(part.image_url))
     } else if (part.type === 'input_audio') {
-      parts.push({ kind: 'media', mediaType: 'audio', label: '[audio]' })
+      pushMedia(parts, 'audio')
     } else if (part.type === 'input_file') {
-      parts.push({ kind: 'media', mediaType: 'file', label: '[file]' })
+      pushMedia(parts, 'file')
     } else if (typeof part.type === 'string') {
-      parts.push({ kind: 'media', mediaType: part.type, label: `[${part.type}]` })
+      pushMedia(parts, part.type)
     }
   }
   return parts
@@ -171,14 +278,10 @@ function parseOpenAIChatMessage(messageValue: unknown): ConversationMessage | nu
 
   if (role === 'tool') {
     const output =
-      typeof message.content === 'string' ? parseMaybeJson(message.content) : (message.content ?? null)
-    parts.push({
-      kind: 'toolResult',
-      id: stringOrNull(message.tool_call_id),
-      name: null,
-      output,
-      isError: false,
-    })
+      typeof message.content === 'string'
+        ? parseMaybeJson(message.content)
+        : (message.content ?? null)
+    parts.push(toolResultPart(stringOrNull(message.tool_call_id), null, output, false))
     return messageOrNull(role, parts)
   }
 
@@ -219,47 +322,70 @@ function responseRole(value: unknown): ConversationRole {
   return value === 'system' || value === 'assistant' || value === 'tool' ? value : 'user'
 }
 
-function parseOpenAIResponseMessage(item: Record<string, unknown>): ConversationMessage | null {
-  const role = responseRole(item.role)
-  const parts = parseOpenAIContentParts(item.content)
-  return messageOrNull(role, parts)
+// `result` is bare base64 with no accompanying MIME field, so the media type
+// comes from sniffing the bytes.
+function imageGenerationParts(item: Record<string, unknown>): ConversationPart[] {
+  const image = imageFromBase64(item.result)
+  if (!image) return []
+  const parts: ConversationPart[] = []
+  pushMedia(parts, 'image', image)
+  return parts
 }
 
-function parseOpenAIResponseItem(itemValue: unknown): ConversationMessage | null {
+function responseCallId(item: Record<string, unknown>): string | null {
+  return stringOrNull(item.call_id) ?? stringOrNull(item.id)
+}
+
+function responseToolCall(
+  item: Record<string, unknown>,
+  name: string | null,
+  input: unknown,
+): ConversationMessage | null {
+  if (!name) return null
+  return { role: 'assistant', parts: [{ kind: 'toolCall', id: responseCallId(item), name, input }] }
+}
+
+function responseToolResult(item: Record<string, unknown>, output: unknown): ConversationMessage {
+  return {
+    role: 'tool',
+    parts: [toolResultPart(stringOrNull(item.call_id), null, output, false)],
+  }
+}
+
+// Shared by request `input[]` and response `output[]`: a multi-turn conversation
+// replays the previous turns' reasoning / tool calls / image_generation_call in `input`.
+function responseItemParts(itemValue: unknown): ConversationMessage | null {
   const item = asRecord(itemValue)
   if (!item) return null
 
-  if (item.type === 'message') return parseOpenAIResponseMessage(item)
-  if (item.type === 'function_call') {
-    const name = stringOrNull(item.name)
-    if (!name) return null
-    return {
-      role: 'assistant',
-      parts: [
-        {
-          kind: 'toolCall',
-          id: stringOrNull(item.call_id) ?? stringOrNull(item.id),
-          name,
-          input: parseMaybeJson(item.arguments ?? null),
-        },
-      ],
+  switch (item.type) {
+    case 'message':
+      return messageOrNull(responseRole(item.role), parseOpenAIContentParts(item.content))
+    case 'reasoning': {
+      const parts: ConversationPart[] = []
+      for (const partValue of asArray(item.summary)) pushThinking(parts, asRecord(partValue)?.text)
+      // Encrypted reasoning carries no summary text.
+      if (!parts.length) pushHiddenThinking(parts)
+      return { role: 'assistant', parts }
     }
-  }
-  if (item.type === 'function_call_output') {
-    return {
-      role: 'tool',
-      parts: [
-        {
-          kind: 'toolResult',
-          id: stringOrNull(item.call_id),
-          name: null,
-          output: parseMaybeJson(item.output ?? null),
-          isError: false,
-        },
-      ],
+    case 'function_call':
+      return responseToolCall(item, stringOrNull(item.name), parseMaybeJson(item.arguments ?? null))
+    // A custom tool's input is free-form text, not JSON arguments.
+    case 'custom_tool_call':
+      return responseToolCall(item, stringOrNull(item.name), item.input ?? null)
+    case 'web_search_call':
+      return responseToolCall(item, 'web_search', item.action ?? null)
+    case 'function_call_output':
+      return responseToolResult(item, parseMaybeJson(item.output ?? null))
+    case 'custom_tool_call_output':
+      return responseToolResult(item, item.output ?? null)
+    case 'image_generation_call': {
+      const parts = imageGenerationParts(item)
+      return parts.length ? { role: 'assistant', parts } : null
     }
+    default:
+      return null
   }
-  return null
 }
 
 export function parseOpenAIResponsesRequest(json: unknown): ConversationMessage[] {
@@ -274,7 +400,7 @@ export function parseOpenAIResponsesRequest(json: unknown): ConversationMessage[
     messages.push({ role: 'user', parts: [{ kind: 'text', text: root.input }] })
   } else {
     for (const item of asArray(root.input)) {
-      const message = parseOpenAIResponseItem(item)
+      const message = responseItemParts(item)
       if (message) messages.push(message)
     }
   }
@@ -286,33 +412,30 @@ export function parseOpenAIResponsesResponse(json: unknown): ConversationMessage
   const assistantParts: ConversationPart[] = []
   const messages: ConversationMessage[] = []
 
-  for (const itemValue of asArray(root?.output)) {
-    const item = asRecord(itemValue)
-    if (!item) continue
-    if (item.type === 'message') {
-      assistantParts.push(...parseOpenAIContentParts(item.content))
-    } else if (item.type === 'reasoning') {
-      for (const partValue of asArray(item.summary)) {
-        const part = asRecord(partValue)
-        pushThinking(assistantParts, part?.text)
-      }
-    } else if (item.type === 'function_call') {
-      const name = stringOrNull(item.name)
-      if (!name) continue
-      assistantParts.push({
-        kind: 'toolCall',
-        id: stringOrNull(item.call_id) ?? stringOrNull(item.id),
-        name,
-        input: parseMaybeJson(item.arguments ?? null),
-      })
-    } else {
-      const message = parseOpenAIResponseItem(item)
-      if (message) messages.push(message)
-    }
+  for (const item of asArray(root?.output)) {
+    const message = responseItemParts(item)
+    if (!message) continue
+    if (message.role === 'assistant') assistantParts.push(...message.parts)
+    else messages.push(message)
   }
 
   const assistant = messageOrNull('assistant', assistantParts)
   return assistant ? [...messages, assistant] : messages
+}
+
+export function parseOpenAIImagesResponse(json: unknown): ConversationMessage[] {
+  const root = asRecord(json)
+  const parts: ConversationPart[] = []
+  for (const itemValue of asArray(root?.data)) {
+    const item = asRecord(itemValue)
+    if (!item) continue
+    // `output_format: "png"` sits on the root and is a bare format word, not a
+    // MIME type — imageFromBase64 sniffs the bytes instead.
+    const image = imageFromBase64(item.b64_json) ?? imageFromUrl(item.url)
+    if (image) pushMedia(parts, 'image', image)
+  }
+  const message = messageOrNull('assistant', parts)
+  return message ? [message] : []
 }
 
 function parseAnthropicSystem(system: unknown): ConversationMessage | null {
@@ -341,8 +464,15 @@ function parseAnthropicContent(content: unknown): ConversationPart[] {
     if (block.type === 'text') {
       pushText(parts, block.text)
     } else if (block.type === 'thinking') {
-      pushThinking(parts, block.thinking)
-    } else if (block.type === 'tool_use') {
+      // Signature-only thinking (`thinking: ""`) still shows that the model thought.
+      if (typeof block.thinking === 'string' && block.thinking !== '') {
+        pushThinking(parts, block.thinking)
+      } else {
+        pushHiddenThinking(parts)
+      }
+    } else if (block.type === 'redacted_thinking') {
+      pushHiddenThinking(parts)
+    } else if (isAnthropicToolCall(block.type)) {
       const name = stringOrNull(block.name)
       if (!name) continue
       parts.push({
@@ -351,18 +481,19 @@ function parseAnthropicContent(content: unknown): ConversationPart[] {
         name,
         input: block.input ?? null,
       })
-    } else if (block.type === 'tool_result') {
-      parts.push({
-        kind: 'toolResult',
-        id: stringOrNull(block.tool_use_id),
-        name: null,
-        output: block.content ?? null,
-        isError: block.is_error === true,
-      })
+    } else if (block.type === 'tool_result' || isAnthropicServerToolResult(block.type)) {
+      parts.push(
+        toolResultPart(
+          stringOrNull(block.tool_use_id),
+          null,
+          block.content ?? null,
+          block.is_error === true,
+        ),
+      )
     } else if (block.type === 'image') {
-      parts.push({ kind: 'media', mediaType: 'image', label: '[image]' })
+      pushMedia(parts, 'image', anthropicImage(block))
     } else if (typeof block.type === 'string') {
-      parts.push({ kind: 'media', mediaType: block.type, label: `[${block.type}]` })
+      pushMedia(parts, block.type)
     }
   }
   return parts
@@ -379,7 +510,8 @@ export function parseAnthropicRequest(json: unknown): ConversationMessage[] {
   for (const itemValue of asArray(root.messages)) {
     const item = asRecord(itemValue)
     if (!item) continue
-    const role = item?.role === 'assistant' ? 'assistant' : item?.role === 'user' ? 'user' : null
+    const role =
+      item.role === 'assistant' || item.role === 'user' || item.role === 'system' ? item.role : null
     if (!role) continue
     const message = messageOrNull(role, parseAnthropicContent(item.content))
     if (message) messages.push(message)
@@ -408,27 +540,25 @@ function parseGeminiParts(partsValue: unknown): ConversationPart[] {
       parts.push({ kind: 'toolCall', id: null, name, input: call?.args ?? null })
     } else if (asRecord(part.functionResponse)) {
       const result = asRecord(part.functionResponse)
-      parts.push({
-        kind: 'toolResult',
-        id: null,
-        name: stringOrNull(result?.name),
-        output: result?.response ?? null,
-        isError: false,
-      })
+      parts.push(toolResultPart(null, stringOrNull(result?.name), result?.response ?? null, false))
     } else if (asRecord(part.inlineData)) {
       const inlineData = asRecord(part.inlineData)
       const mediaType = stringOrNull(inlineData?.mimeType) ?? 'media'
-      parts.push({ kind: 'media', mediaType, label: `[${mediaType}]` })
+      pushMedia(parts, mediaType, imageFromBase64(inlineData?.data, inlineData?.mimeType))
     } else if (asRecord(part.fileData)) {
       const fileData = asRecord(part.fileData)
       const mediaType = stringOrNull(fileData?.mimeType) ?? 'file'
-      parts.push({ kind: 'media', mediaType, label: `[${mediaType}]` })
+      // A `gs://` fileUri fails the scheme whitelist and stays a chip.
+      pushMedia(parts, mediaType, imageFromUrl(fileData?.fileUri))
     }
   }
   return parts
 }
 
-function parseGeminiContent(contentValue: unknown, defaultRole: ConversationRole): ConversationMessage | null {
+function parseGeminiContent(
+  contentValue: unknown,
+  defaultRole: ConversationRole,
+): ConversationMessage | null {
   const content = asRecord(contentValue)
   if (!content) return null
   const role = roleFromGemini(content.role) ?? defaultRole
@@ -455,6 +585,148 @@ export function parseGeminiResponse(json: unknown): ConversationMessage[] {
   const candidate = asRecord(asArray(root?.candidates)[0])
   const message = parseGeminiContent(candidate?.content, 'assistant')
   return message ? [{ ...message, role: 'assistant' }] : []
+}
+
+// A search result is anchored by its citation marker: U+E200 "cite" U+E202 <ref> U+E201
+// (a marker may carry several U+E202-separated refs). Dash separators between results are
+// unreliable (sometimes absent, sometimes glued to the preceding text), so results are split
+// on the markers, not the dashes.
+const SEARCH_CITE = /\uE200cite\uE202([\s\S]*?)\uE201/g
+
+function stripTrailingSeparators(text: string): string {
+  return text.replace(/\s*-{20,}\s*$/, '').replace(/^\s+|\s+$/g, '')
+}
+
+// The title of a result is the line directly above its citation marker.
+function searchTitleBefore(
+  output: string,
+  markerStart: number,
+): { title: string; lineStart: number } {
+  const nlBefore = output.lastIndexOf('\n', markerStart - 1)
+  if (nlBefore < 0) return { title: output.slice(0, markerStart).trim(), lineStart: 0 }
+  const prevNL = output.lastIndexOf('\n', nlBefore - 1)
+  return { title: output.slice(prevNL + 1, nlBefore).trim(), lineStart: prevNL + 1 }
+}
+
+function parseSearchOutput(output: string): SearchResult[] {
+  const markers = [...output.matchAll(SEARCH_CITE)]
+  const results: SearchResult[] = []
+  for (let k = 0; k < markers.length; k++) {
+    const marker = markers[k]
+    if (!marker || marker.index === undefined) continue
+    const markerEnd = marker.index + marker[0].length
+
+    const citation = (marker[1] ?? '')
+      .split('\uE202')
+      .map((ref) => ref.trim())
+      .filter(Boolean)
+      .join(', ')
+
+    const titleLine = searchTitleBefore(output, marker.index).title
+
+    // Content runs until the title line of the next result (or end of output).
+    let regionEnd = output.length
+    const next = markers[k + 1]
+    if (next && next.index !== undefined) {
+      regionEnd = searchTitleBefore(output, next.index).lineStart
+    }
+    const region = output.slice(markerEnd, regionEnd)
+
+    let title = titleLine
+    let url: string | null = null
+    const urlMatch = titleLine.match(/^(.*?)\s*\((https?:\/\/[^\s)]+)\)\s*$/)
+    if (urlMatch) {
+      title = urlMatch[1]?.trim() ?? titleLine
+      url = urlMatch[2] ?? null
+    }
+
+    const wordlim = region.match(/\[wordlim:\s*([^\]]+)\]/)?.[1]?.trim() ?? null
+    const published = region.match(/Published:\s*([^;]+);/)?.[1]?.trim() ?? null
+    const crawled = region.match(/Crawled:\s*([^;]+);/)?.[1]?.trim() ?? null
+
+    // Strip the three metadata markers (rendered as badges) and the trailing result
+    // separator; the rest is the Markdown content.
+    const content = stripTrailingSeparators(
+      region
+        .replace(/\[wordlim:\s*[^\]]+\]/, '')
+        .replace(/Published:\s*[^;]+;\s*/, '')
+        .replace(/Crawled:\s*[^;]+;\s*/, ''),
+    )
+
+    if (!title && !content) continue
+    results.push({
+      citation,
+      title,
+      url,
+      siteName: null,
+      wordlim,
+      published,
+      crawled,
+      authority: null,
+      score: null,
+      content,
+    })
+  }
+  return results
+}
+
+// DeepSeek's /v1/tools/search answers `{results: [...]}`; `rerank_score` tells it apart from
+// other `results`-shaped bodies such as Exa's (whose entries carry `score`).
+function isDeepseekSearchResponse(root: Record<string, unknown>): boolean {
+  const first = asRecord(asArray(root.results)[0])
+  return typeof first?.url === 'string' && typeof first.rerank_score === 'number'
+}
+
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value !== '' ? value : null
+}
+
+function finiteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+// `summary` is what the web search emulation hands to the model; `content` is only filled
+// when the caller asked for need_content, and `snippet` is the last resort.
+function parseDeepseekSearchResults(root: Record<string, unknown>): SearchResult[] {
+  const results: SearchResult[] = []
+  for (const item of asArray(root.results)) {
+    const result = asRecord(item)
+    if (!result) continue
+    const title = nonEmptyString(result.title) ?? ''
+    const url = nonEmptyString(result.url)
+    const content =
+      nonEmptyString(result.summary) ??
+      nonEmptyString(result.content) ??
+      nonEmptyString(result.snippet) ??
+      ''
+    if (!title && !url && !content) continue
+    results.push({
+      citation: '',
+      title,
+      url,
+      siteName: nonEmptyString(result.site_name),
+      wordlim: null,
+      published: nonEmptyString(result.date),
+      crawled: null,
+      authority: finiteNumber(result.authority),
+      score: finiteNumber(result.rerank_score),
+      content,
+    })
+  }
+  return results
+}
+
+export function extractSearchResults(json: unknown): SearchResult[] {
+  const root = asRecord(json)
+  if (!root) return []
+  if (typeof root.output === 'string') return parseSearchOutput(root.output)
+  if (isDeepseekSearchResponse(root)) return parseDeepseekSearchResults(root)
+  return []
+}
+
+export function parseSearchResponse(json: unknown): ConversationMessage[] {
+  const results = extractSearchResults(json)
+  return results.length ? [{ role: 'assistant', parts: [{ kind: 'searchResults', results }] }] : []
 }
 
 function formatFromAggregated(format: AggregatedFormat | undefined): ConversationFormat | null {
@@ -484,6 +756,10 @@ export function parseRequestConversation(json: unknown): ConversationMessage[] |
       return parseAnthropicRequest(json)
     case 'gemini':
       return parseGeminiRequest(json)
+    case 'openaiSearch':
+    case 'deepseekSearch':
+    case 'openaiImages':
+      return []
   }
 }
 
@@ -502,9 +778,48 @@ export function parseResponseConversation(
       return parseAnthropicResponse(json)
     case 'gemini':
       return parseGeminiResponse(json)
+    case 'openaiSearch':
+    case 'deepseekSearch':
+      return parseSearchResponse(json)
+    case 'openaiImages':
+      return parseOpenAIImagesResponse(json)
   }
+}
+
+// Tool results mostly carry only the call id; fill in the name from the matching call
+// anywhere in the conversation (request history + response).
+export function linkToolResultNames(messages: ConversationMessage[]): ConversationMessage[] {
+  const names = new Map<string, string>()
+  for (const message of messages) {
+    for (const part of message.parts) {
+      if (part.kind === 'toolCall' && part.id !== null) names.set(part.id, part.name)
+    }
+  }
+  return messages.map((message) => {
+    if (!message.parts.some((part) => part.kind === 'toolResult' && part.name === null)) {
+      return message
+    }
+    return {
+      ...message,
+      parts: message.parts.map((part) => {
+        if (part.kind !== 'toolResult' || part.name !== null || part.id === null) return part
+        const name = names.get(part.id)
+        return name === undefined ? part : { ...part, name }
+      }),
+    }
+  })
 }
 
 export function hasConversationMessages(messages: ConversationMessage[] | null): boolean {
   return !!messages?.some((message) => message.parts.length > 0)
+}
+
+export function collectConversationImages(messages: ConversationMessage[]): ImageSource[] {
+  const images: ImageSource[] = []
+  for (const message of messages) {
+    for (const part of message.parts) {
+      if (part.kind === 'media' && part.image) images.push(part.image)
+    }
+  }
+  return images
 }

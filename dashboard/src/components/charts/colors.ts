@@ -27,13 +27,24 @@ export function groupColor(index: number): string {
   if (index < CHART_COLOR_COUNT) {
     return toHex(readCSSVar(`--color-chart-${index}`) || FALLBACK_COLORS[index]!)
   }
-  const base = readCSSVar(`--color-chart-${index % CHART_COLOR_COUNT}`) || FALLBACK_COLORS[index % CHART_COLOR_COUNT]!
+  const base =
+    readCSSVar(`--color-chart-${index % CHART_COLOR_COUNT}`) ||
+    FALLBACK_COLORS[index % CHART_COLOR_COUNT]!
   const hueMatch = base.match(/oklch\(([^ ]+) ([^ ]+) ([^ )]+)\)/)
   if (!hueMatch) return toHex(base)
   const [, l, c, h] = hueMatch
   const rotation = 23 * Math.floor(index / CHART_COLOR_COUNT)
   const hue = (parseFloat(h!) + rotation) % 360
   return toHex(`oklch(${l} ${c} ${hue})`)
+}
+
+// Border shade for filled marks (e.g. boxplot): darker than the fill on light themes,
+// lighter on dark themes, so lines drawn with the border color (boxplot median) stand out.
+export function groupBorderColor(index: number): string {
+  const dark = document.documentElement.dataset.dark === 'true'
+  const c = new Color(groupColor(index)).to('oklch')
+  c.coords[0] = Math.min(1, Math.max(0, c.coords[0]! + (dark ? 0.15 : -0.15)))
+  return toHex(c.toString())
 }
 
 export function getChartColors(): string[] {

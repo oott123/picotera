@@ -13,7 +13,7 @@ type ProviderEndpointView struct {
 	ProviderID          int32  `json:"providerId"`
 	EndpointPath        string `json:"endpointPath"`
 	UpstreamUrl         string `json:"upstreamUrl"`
-	CredentialsResolver string `json:"credentialsResolver,omitempty" enum:"unknown,generalApiKey,bearerToken,xApiKey,searchKey,googApiKey"`
+	CredentialsResolver string `json:"credentialsResolver,omitempty" enum:"unknown,followRequest,bearerToken,xApiKey,searchKey,googApiKey"`
 }
 
 func ToProviderEndpointView(pe *db.ProviderEndpoint) *ProviderEndpointView {

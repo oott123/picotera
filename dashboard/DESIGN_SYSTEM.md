@@ -104,6 +104,11 @@ Imported from the barrel `src/ui/index.ts`. Keep adding to this barrel when intr
 - **`TagList`** — `flex flex-wrap gap-1` container. Always wrap Tags in this.
 - **`StateText`** — status-colored inline text for empty-state and loading messages. `dashed` (default true) gives a dashed border, `compact` switches to tight vertical padding. Use this instead of inventing bespoke "No data yet" blocks.
 
+### Filtering
+- **`ColumnFilter`** — single-select header filter dropdown (positioned via floating-ui). Trigger styling is the shared uppercase `text-2xs` filter button; active value renders as an accent-faint monospace chip with an inline clear button.
+- **`MultiColumnFilter`** — multi-select variant of `ColumnFilter`.
+- **`TimeRangeFilter`** — always-inline `[startAt, endAt]` time window (RFC3339 UTC strings). Renders two `Field`-wrapped native `datetime-local` inputs side by side (label on top, input below, seconds precision via `step="1"`) — no trigger, no floating panel. `v-model` is a `TimeRangeValue` (`{ startAt, endAt }`, both `''` when unset); inputs convert to/from local time on the fly and emit on every change (clearing a field emits `''`). An inline error shows when start > end or an external value is unparseable. Use for list-page created-at / last-request-at windows.
+
 ### Overlays / navigation
 
 - **`Overlay`** — fullscreen `position: fixed` scrim with `bg-overlay-bg`, optional `backdrop-blur-[4px]`. Teleported to `<body>`; click-outside emits `click` on the backdrop only.
