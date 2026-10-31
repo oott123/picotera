@@ -13,15 +13,18 @@ import {
   DataCard,
   Icon,
   IconButton,
+  Select,
   TimeRangeFilter,
   type AutoDataTableColumn,
 } from '@/ui'
 import { formatDuration } from '@/utils/duration'
+import { useAutoRefreshMs, AUTO_REFRESH_OPTIONS } from '@/composables/useAutoRefreshMs'
 
 const router = useRouter()
 const route = useRoute()
 const currency = useCurrencyContext()
 const { projectLabel } = useProjectsMap()
+const refreshMs = useAutoRefreshMs('picotera.traces.refreshMs')
 const pageSize = 30
 const initialCursor = typeof route.query.cursor === 'string' ? route.query.cursor : ''
 const cursorIndex = ref(initialCursor ? 1 : 0)
@@ -53,9 +56,46 @@ const tracesQuery = useQuery({
       startAt: filters.startAt || undefined,
       endAt: filters.endAt || undefined,
     }),
+  refetchInterval: computed(() => (refreshMs.value > 0 ? refreshMs.value : false)),
 })
 const traces = computed<RequestTraceView[]>(() => tracesQuery.data.value?.items ?? [])
-const loading = computed(() => tracesQuery.isLoading.value || tracesQuery.isFetching.value)
+
+const previousTraceIds = ref(new Set<string | number>())
+const newRowKeys = ref(new Set<string | number>())
+const lastContextKey = ref<string | null>(null)
+const contextKey = computed(() =>
+  JSON.stringify({ cursor: currentCursor.value, startAt: filters.startAt, endAt: filters.endAt }),
+)
+
+watch(
+  traces,
+  (newTraces) => {
+    // A new query key with no cached data yet: wait for its first result,
+    // otherwise the empty placeholder becomes the baseline and every row flashes.
+    if (tracesQuery.data.value === undefined) return
+    const currentIds = new Set(newTraces.map((r) => rowKey(r)))
+    if (contextKey.value !== lastContextKey.value) {
+      lastContextKey.value = contextKey.value
+      previousTraceIds.value = currentIds
+      newRowKeys.value = new Set()
+      return
+    }
+    const fresh = new Set<string | number>()
+    for (const id of currentIds) {
+      if (!previousTraceIds.value.has(id)) fresh.add(id)
+    }
+    previousTraceIds.value = currentIds
+    newRowKeys.value = fresh
+    if (fresh.size > 0) {
+      setTimeout(() => {
+        newRowKeys.value = new Set()
+      }, 100)
+    }
+  },
+  // Immediate, so a remount served from cache sets the baseline right away.
+  { flush: 'post', immediate: true },
+)
+const loading = computed(() => tracesQuery.isLoading.value)
 const hasMore = computed(() => tracesQuery.data.value?.pagination.hasMore ?? false)
 const canGoHome = computed(() => !!currentCursor.value)
 const canGoPrevious = computed(
@@ -284,6 +324,17 @@ function formatCosts(costs: TraceCostView[] | null): { text: string; title?: str
         >
           <Icon name="refresh" :size="13" />
         </IconButton>
+        <div class="w-24">
+          <Select
+            :model-value="refreshMs"
+            :options="AUTO_REFRESH_OPTIONS"
+            :searchable="false"
+            size="sm"
+            title="自动刷新"
+            aria-label="自动刷新频率"
+            @update:model-value="(v) => (refreshMs = Number(v))"
+          />
+        </div>
       </div>
     </div>
 
@@ -292,6 +343,7 @@ function formatCosts(costs: TraceCostView[] | null): { text: string; title?: str
         :columns="columns"
         :items="traces"
         :row-key="rowKey"
+        :new-row-keys="newRowKeys"
         :row-href="traceHref"
         :on-row-click="openTrace"
       >

@@ -14,6 +14,7 @@ import {
 import { queryKeys, type RequestsFilters } from '@/api/queryKeys'
 import RequestDetailsPanel from '@/components/RequestDetailsPanel.vue'
 import { useSidePanel } from '@/composables/useSidePanel'
+import { useAutoRefreshMs, AUTO_REFRESH_OPTIONS } from '@/composables/useAutoRefreshMs'
 import {
   Button,
   IconButton,
@@ -24,6 +25,7 @@ import {
   Field,
   Icon,
   SegmentedControl,
+  Select,
   ColumnFilter,
   TimeRangeFilter,
   MoneyDisplay,
@@ -43,11 +45,12 @@ const route = useRoute()
 const router = useRouter()
 const { providers, providerLabel } = useProvidersMap()
 const { projects, projectLabel } = useProjectsMap()
+const refreshMs = useAutoRefreshMs('picotera.requests.refreshMs')
 
 // Track new rows for animation on refresh
 const previousRequestIds = ref(new Set<string | number>())
 const newRowKeys = ref(new Set<string | number>())
-const isRefreshing = ref(false)
+const lastContextKey = ref<string | null>(null)
 
 type RequestKind = 'meta' | 'upstream' | 'all'
 
@@ -162,6 +165,10 @@ const currentCursor = computed(() =>
   typeof route.query.cursor === 'string' ? route.query.cursor : '',
 )
 
+const contextKey = computed(() =>
+  JSON.stringify({ ...requestFilters.value, cursor: currentCursor.value }),
+)
+
 const requestsQuery = useQuery({
   queryKey: computed(() =>
     queryKeys.requests.list({
@@ -176,33 +183,41 @@ const requestsQuery = useQuery({
       limit: pageSize,
       cursor: currentCursor.value || undefined,
     }),
+  refetchInterval: computed(() => (refreshMs.value > 0 ? refreshMs.value : false)),
 })
 const requests = computed<RequestView[]>(() => requestsQuery.data.value?.items ?? [])
 
-// When requests change after refresh, compute which ones are new
 watch(
   requests,
   (newRequests) => {
-    if (!isRefreshing.value) return
-    isRefreshing.value = false
+    // A new query key with no cached data yet: wait for its first result,
+    // otherwise the empty placeholder becomes the baseline and every row flashes.
+    if (requestsQuery.data.value === undefined) return
     const currentIds = new Set(newRequests.map((r) => rowKey(r)))
+    // Navigation / filter change → new context: reset baseline, do not flash.
+    if (contextKey.value !== lastContextKey.value) {
+      lastContextKey.value = contextKey.value
+      previousRequestIds.value = currentIds
+      newRowKeys.value = new Set()
+      return
+    }
+    // Same context (manual or auto refresh) → flash genuinely new rows.
     const fresh = new Set<string | number>()
     for (const id of currentIds) {
-      if (!previousRequestIds.value.has(id)) {
-        fresh.add(id)
-      }
+      if (!previousRequestIds.value.has(id)) fresh.add(id)
     }
-    newRowKeys.value = fresh
     previousRequestIds.value = currentIds
+    newRowKeys.value = fresh
     if (fresh.size > 0) {
       setTimeout(() => {
         newRowKeys.value = new Set()
       }, 100)
     }
   },
-  { flush: 'post' },
+  // Immediate, so a remount served from cache sets the baseline right away.
+  { flush: 'post', immediate: true },
 )
-const loading = computed(() => requestsQuery.isLoading.value || requestsQuery.isFetching.value)
+const loading = computed(() => requestsQuery.isLoading.value)
 const hasMore = computed(() => requestsQuery.data.value?.pagination.hasMore ?? false)
 const canGoHome = computed(() => !!currentCursor.value)
 const canGoPrevious = computed(
@@ -699,12 +714,6 @@ function modelCellTitle(r: RequestView): string {
     `推测来源：${inferredModelSourceLabel(r.inferredModelSource) || '—'}`,
   ].join('\n')
 }
-
-function resetCursorAndReload() {
-  previousRequestIds.value = new Set(requests.value.map((r) => rowKey(r)))
-  isRefreshing.value = true
-  requestsQuery.refetch()
-}
 </script>
 
 <template>
@@ -769,9 +778,20 @@ function resetCursorAndReload() {
         <span class="text-xs text-ink-faint tabular-nums">
           {{ requests.length }} 条<span v-if="hasMore">（还有更多）</span>
         </span>
-        <IconButton title="刷新" aria-label="刷新" @click="resetCursorAndReload">
+        <IconButton title="刷新" aria-label="刷新" @click="requestsQuery.refetch()">
           <Icon name="refresh" :size="13" />
         </IconButton>
+        <div class="w-24">
+          <Select
+            :model-value="refreshMs"
+            :options="AUTO_REFRESH_OPTIONS"
+            :searchable="false"
+            size="sm"
+            title="自动刷新"
+            aria-label="自动刷新频率"
+            @update:model-value="(v) => (refreshMs = Number(v))"
+          />
+        </div>
       </div>
     </div>
 
