@@ -1,8 +1,8 @@
 import { ref, watch, type Ref } from 'vue'
 
 export const AUTO_REFRESH_OPTIONS: { value: number; label: string }[] = [
-  { value: 0, label: '关闭' },
-  { value: 200, label: '实时' },
+  { value: 0, label: '手动' },
+  { value: 200, label: '0.2 秒' },
   { value: 5000, label: '5 秒' },
   { value: 10000, label: '10 秒' },
   { value: 30000, label: '30 秒' },

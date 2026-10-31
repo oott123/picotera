@@ -775,12 +775,6 @@ function modelCellTitle(r: RequestView): string {
           <Icon name="close" :size="11" />
           <span>清除筛选 ({{ activeFilterCount() }})</span>
         </button>
-        <span class="text-xs text-ink-faint tabular-nums">
-          {{ requests.length }} 条<span v-if="hasMore">（还有更多）</span>
-        </span>
-        <IconButton title="刷新" aria-label="刷新" @click="requestsQuery.refetch()">
-          <Icon name="refresh" :size="13" />
-        </IconButton>
         <div class="w-24">
           <Select
             :model-value="refreshMs"
@@ -792,6 +786,9 @@ function modelCellTitle(r: RequestView): string {
             @update:model-value="(v) => (refreshMs = Number(v))"
           />
         </div>
+        <IconButton title="刷新" aria-label="刷新" @click="requestsQuery.refetch()">
+          <Icon name="refresh" :size="13" />
+        </IconButton>
       </div>
     </div>
 

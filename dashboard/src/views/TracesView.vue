@@ -313,17 +313,6 @@ function formatCosts(costs: TraceCostView[] | null): { text: string; title?: str
         />
       </div>
       <div class="flex items-center gap-3">
-        <span class="text-xs text-ink-faint tabular-nums">
-          {{ traces.length }} 条追踪<span v-if="hasMore">（还有更多）</span>
-        </span>
-        <IconButton
-          title="刷新"
-          aria-label="刷新"
-          :disabled="loading"
-          @click="tracesQuery.refetch()"
-        >
-          <Icon name="refresh" :size="13" />
-        </IconButton>
         <div class="w-24">
           <Select
             :model-value="refreshMs"
@@ -335,6 +324,14 @@ function formatCosts(costs: TraceCostView[] | null): { text: string; title?: str
             @update:model-value="(v) => (refreshMs = Number(v))"
           />
         </div>
+        <IconButton
+          title="刷新"
+          aria-label="刷新"
+          :disabled="loading"
+          @click="tracesQuery.refetch()"
+        >
+          <Icon name="refresh" :size="13" />
+        </IconButton>
       </div>
     </div>
 
