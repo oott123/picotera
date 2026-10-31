@@ -3,7 +3,7 @@ import { ref, watch, computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import type { RequestView, ProviderLabel, RequestLiveView, ToolUsageEntryView } from '@/api'
-import { listRequestSpans, getRequestLive, interruptRequest } from '@/api/client'
+import { listRequestSpans, getRequestLive, interruptRequest, listApiKeys } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
 import { StateText, Field, Tag, IconButton, Icon, Tabs, MoneyDisplay, Button } from '@/ui'
 import RawArtifactView from './RawArtifactView.vue'
@@ -38,6 +38,13 @@ const error = computed(() => spansQuery.error.value?.message ?? '')
 const providersMap = computed(() => {
   const m = new Map<number, ProviderLabel>()
   for (const p of props.providers ?? []) m.set(p.id, p)
+  return m
+})
+
+const apiKeysQuery = useQuery({ queryKey: queryKeys.apiKeys.all, queryFn: listApiKeys })
+const apiKeyNames = computed(() => {
+  const m = new Map<number, string>()
+  for (const k of apiKeysQuery.data.value ?? []) m.set(k.id, k.name)
   return m
 })
 
@@ -154,6 +161,11 @@ function providerLabel(id: number | undefined | null) {
   if (!id) return '—'
   const p = providersMap.value.get(id)
   return p ? p.name : `#${id}`
+}
+
+function apiKeyLabel(id: number | undefined | null) {
+  if (!id) return '—'
+  return apiKeyNames.value.get(id) ?? `#${id}`
 }
 
 function statusCodeClass(code: number | undefined | null) {
@@ -452,6 +464,11 @@ watch(detailTabs, (tabs) => {
                   :class="statusCodeClass(selected.statusCode)"
                   >{{ selected.statusCode }}</span
                 >
+              </Field>
+              <Field label="密钥" as="div">
+                <span class="font-mono text-sm break-all">{{
+                  apiKeyLabel(selected.apiKeyId)
+                }}</span>
               </Field>
               <Field label="时间" as="div">
                 <span class="font-mono text-xs">{{ formatTime(selected.createdAt) }}</span>
