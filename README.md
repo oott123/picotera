@@ -164,6 +164,8 @@ PICOTERA_AUTH_OIDC_PKCE=true
 PICOTERA_AUTH_OIDC_CLIENT_AUTH_METHOD=client_secret_basic
 ```
 
+在 IdP 注册应用时，将 `/api/picotera/auth/callback` 注册为回调地址。
+
 ### 通过命令行绑定用户
 
 如果没有使用自动创建用户，你应运行如下命令以绑定提供商到现存用户：
