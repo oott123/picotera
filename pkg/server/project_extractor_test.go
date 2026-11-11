@@ -84,3 +84,67 @@ func TestLastPathComponent(t *testing.T) {
 		})
 	}
 }
+
+func TestAutoCreateSeedPath(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"/srv/proj", "/srv/proj"},
+		{"/srv/proj/worktrees/feat/sub", "/srv/proj"},
+		{`D:\src\proj\worktrees\feat`, `D:\src\proj`},
+		{`/srv/proj\worktrees/feat`, "/srv/proj"},
+		{"/a/worktrees/b/worktrees/c", "/a"},
+		{"/home/alice/proj/.claude/worktrees/feat", "/home/alice/proj"},
+		{"/home/alice/.codex/worktrees/ab12/proj", "/home/alice"},
+		{`D:\src\proj\.claude\worktrees\feat`, `D:\src\proj`},
+		{`C:\Users\alice\.codex\worktrees\ab12\proj`, `C:\Users\alice`},
+		{"/srv/proj/.git/worktrees/x", "/srv/proj/.git"},
+		{"/srv/proj/worktrees", "/srv/proj/worktrees"},
+		{"/srv/myworktrees/x", "/srv/myworktrees/x"},
+		{"/srv/worktreesx/x", "/srv/worktreesx/x"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			got := autoCreateSeedPath(tc.in)
+			if got != tc.want {
+				t.Fatalf("autoCreateSeedPath(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsExcludedAutoCreatePath(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"/home/alice", true},
+		{"/home/alice/", true},
+		{"/root", true},
+		{"/root/", true},
+		{"/tmp", true},
+		{`C:\Users\alice`, true},
+		{`C:\Users\alice\`, true},
+		{`d:\Users\alice`, true},
+		{"C:/Users/alice", true},
+		{"/home", false},
+		{"/home/alice/proj", false},
+		{"/home//alice", false},
+		{"/tmp/foo", false},
+		{"/root/foo", false},
+		{"/srv/proj", false},
+		{`C:\Users\alice\proj`, false},
+		{`C:\users\alice`, false},
+		{`CD:\Users\alice`, false},
+		{`C:\Users`, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			got := isExcludedAutoCreatePath(tc.in)
+			if got != tc.want {
+				t.Fatalf("isExcludedAutoCreatePath(%q) = %v, want %v", tc.in, got, tc.want)
+			}
+		})
+	}
+}

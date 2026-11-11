@@ -5,8 +5,11 @@
 // separator-aligned ancestors, and matches them to a project id with a single
 // SQL query. Matching is scoped to the requesting user. When no project matches
 // and the requesting user's `project.autoCreate` setting is enabled, a project
-// is created on the fly so subsequent requests match it. Hooked from the gateway
-// flow after authentication, once the user is known.
+// is created on the fly so subsequent requests match it. The seed path of an
+// auto-created project is cut at its first `worktrees` component, and paths
+// naming a home or scratch directory itself (`/root`, `/tmp`, `/home/<x>`,
+// `<drive>:\Users\<x>`) never seed one. Hooked from the gateway flow after
+// authentication, once the user is known.
 package server
 
 import (
@@ -16,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"regexp"
+	"slices"
 	"strings"
 
 	"picotera/pkg/db"
@@ -34,6 +38,15 @@ const autoCreateMinPathLen = 5
 // autoCreateMaxRetries bounds name-collision retries when inserting an
 // auto-created project.
 const autoCreateMaxRetries = 5
+
+// worktreesComponentRe finds a `worktrees` path component, i.e. one with a
+// separator on both sides. An auto-created project's seed path is cut there.
+var worktreesComponentRe = regexp.MustCompile(`[/\\]worktrees[/\\]`)
+
+// worktreeParentDirs are tool directories that hold their worktrees under
+// `<repo>/<dir>/worktrees/`; after the cut such a dir is dropped too so the
+// seed lands on the repository itself.
+var worktreeParentDirs = []string{".claude", ".codex"}
 
 // projectExtractRegexps are the fixed patterns scanned over each request body.
 // New patterns must be appended here — there is no runtime configuration.
@@ -100,8 +113,10 @@ func (e *projectExtractor) Extract(ctx context.Context, body []byte, userID int6
 }
 
 // maybeAutoCreate creates a project for userID seeded with the longest eligible
-// path when that user's `project.autoCreate` setting is enabled. Returns
-// (0, false, nil) when disabled or no path qualifies.
+// path when that user's `project.autoCreate` setting is enabled. Each path is
+// first reduced by autoCreateSeedPath; a seed is eligible when it is longer
+// than autoCreateMinPathLen and not excluded by isExcludedAutoCreatePath.
+// Returns (0, false, nil) when disabled or no path qualifies.
 func (e *projectExtractor) maybeAutoCreate(ctx context.Context, paths []string, userID int64) (int32, bool, error) {
 	if !e.autoCreateEnabled(ctx, userID) {
 		return 0, false, nil
@@ -109,8 +124,12 @@ func (e *projectExtractor) maybeAutoCreate(ctx context.Context, paths []string, 
 
 	source := ""
 	for _, p := range paths {
-		if len(p) > autoCreateMinPathLen && len(p) > len(source) {
-			source = p
+		seed := autoCreateSeedPath(p)
+		if len(seed) <= autoCreateMinPathLen || isExcludedAutoCreatePath(seed) {
+			continue
+		}
+		if len(seed) > len(source) {
+			source = seed
 		}
 	}
 	if source == "" {
@@ -233,6 +252,47 @@ func lastPathComponent(p string) string {
 		return p[i+1:]
 	}
 	return p
+}
+
+// autoCreateSeedPath cuts p before its first `worktrees` component, then
+// drops a trailing worktreeParentDirs component. Paths without a `worktrees`
+// component are returned unchanged.
+//
+//	/srv/proj/worktrees/feat/sub          -> /srv/proj
+//	/srv/proj/.claude/worktrees/feat      -> /srv/proj
+//	D:\src\proj\.codex\worktrees\a\proj   -> D:\src\proj
+func autoCreateSeedPath(p string) string {
+	loc := worktreesComponentRe.FindStringIndex(p)
+	if loc == nil {
+		return p
+	}
+	p = p[:loc[0]]
+	if slices.Contains(worktreeParentDirs, lastPathComponent(p)) {
+		if i := strings.LastIndexAny(p, `/\`); i >= 0 {
+			p = p[:i]
+		}
+	}
+	return p
+}
+
+// isExcludedAutoCreatePath reports whether p names a home or scratch directory
+// itself rather than a project inside one: `/root`, `/tmp`, `/home/<x>` or
+// `<drive>:\Users\<x>`. Trailing separators are ignored; `/` and `\` are
+// both separators.
+func isExcludedAutoCreatePath(p string) bool {
+	parts := strings.Split(strings.ReplaceAll(strings.TrimRight(p, `/\`), `\`, "/"), "/")
+	switch len(parts) {
+	case 2:
+		return parts[0] == "" && (parts[1] == "root" || parts[1] == "tmp")
+	case 3:
+		return (parts[0] == "" && parts[1] == "home") || (isDriveLetter(parts[0]) && parts[1] == "Users")
+	}
+	return false
+}
+
+// isDriveLetter reports whether s is a Windows drive such as `C:`.
+func isDriveLetter(s string) bool {
+	return len(s) == 2 && s[1] == ':' && ('a' <= s[0] && s[0] <= 'z' || 'A' <= s[0] && s[0] <= 'Z')
 }
 
 // randomSuffix returns 8 hex characters from 4 crypto-random bytes.
