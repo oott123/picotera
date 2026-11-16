@@ -62,10 +62,14 @@ const baseTheme = EditorView.theme({
     borderColor: 'var(--color-accent)',
     boxShadow: '0 0 0 3px color-mix(in oklch, var(--color-accent) 20%, transparent)',
   },
+  // The scroller and panels sit inside the 1px border, so their radius is 6px - 1px.
+  // Without it the square gutter / active-line backgrounds poke out of the corners.
   '.cm-scroller': {
+    borderRadius: '5px',
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
     lineHeight: '1.55',
   },
+  '.cm-panels': { borderRadius: '5px' },
   '.cm-gutters': {
     backgroundColor: 'var(--color-surface-50)',
     color: 'var(--color-ink-faint)',

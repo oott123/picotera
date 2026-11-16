@@ -661,9 +661,79 @@ picotera.fetch(url: string, init?: {
 - 例外：`afterUpstreamError`、`getToolUsageCost`、`requestFinished` 出错只记日志、按未干预处理，不影响请求。
 - 脚本加载本身出错：所有请求都会失败，请先在测试环境验证脚本语法。
 
+## 控制台扩展
+
+脚本除了服务端源码，还可以带一段前端代码，用来给控制台加页面和按钮。前端代码在脚本编辑表单的「前端」标签页里编写，和服务端源码共用「启用」开关；两者运行环境完全独立，服务端不会执行前端代码，也不检查它的语法。
+
+### 模块与 host
+
+前端代码是一个浏览器端 ES module，默认导出一个函数，返回（或 resolve 为）一个描述符：
+
+```ts
+export default function (host: ExtensionHost): ExtensionDescriptor | Promise<ExtensionDescriptor>
+```
+
+`host` 的字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `vue` / `vueRouter` / `vueQuery` | `vue`、`vue-router`、`@tanstack/vue-query` 的完整命名空间，与控制台用的是同一份，所以组件里的 `useQuery` / `useRoute` 共享控制台的查询缓存和路由 |
+| `ui` | 控制台的 UI 组件库（`Button`、`DataCard`、`AutoDataTable`、`StateText`、`Icon` 等） |
+| `api` | 控制台的 `openapi-fetch` 客户端，自带扮演身份请求头和登录跳转 |
+| `client` | 控制台的数据获取函数、`invalidate*` 缓存失效函数和 `ApiRequestError`，见 `dashboard/src/api/client.ts` |
+| `queryKeys` | 查询键注册表，用法如 `useQuery({ queryKey: queryKeys.providers.all, queryFn: client.listProviders })` |
+| `queryClient` | 控制台共享的 `QueryClient` |
+| `router` | 控制台的路由实例 |
+| `composables` | `useConfirm`、`useSidePanel`，以及只能在组件 `setup` 中调用的 `useMe`、`useProvidersMap`、`useProjectsMap`、`useCurrencyContext` |
+| `me` | 加载模块时的当前用户 `{ id, displayName, isAdmin }`（扮演时是被扮演的用户） |
+
+控制台打包的 Vue 不含模板编译器，组件只能用 render function（`h`）编写。
+
+可以直接使用 Tailwind 类名，主题和控制台一致（`bg-accent`、`text-ink-faint`、`border-line` 等）。加载模块前，控制台会扫描它的源码文本，编译其中出现的类名。所以类名必须完整地写在源码里，`` `bg-${color}` `` 这样拼出来的不会生效。第三方库用绝对 URL 导入（如 `import dayjs from 'https://esm.sh/dayjs'`）；模块从 blob URL 加载，不支持相对路径导入。
+
+### 描述符
+
+```ts
+interface ExtensionDescriptor {
+  pages?: {
+    id: string          // ^[a-zA-Z0-9_-]+$，1–64 个字符，同一脚本内唯一
+    title: string       // 非空
+    icon?: IconName     // 侧边栏图标，默认 'puzzle'
+    component: Component
+  }[]
+  buttons?: {
+    slot: 'providers.toolbar' | 'providers.row' | 'models.toolbar'
+    label: string       // 非空；在 providers.row 上作为悬停提示
+    icon?: IconName     // providers.row 上必填
+    onClick: (context) => void | Promise<void>
+  }[]
+}
+```
+
+校验是严格的：多出的键、类型不符、未知的图标名（`IconName` 见 `dashboard/src/ui/icons/paths.ts`）都会让整个模块加载失败。
+
+页面出现在侧边栏的「扩展」分组，路由为 `/ext/<脚本 ID>/<页面 id>`。按钮插槽：
+
+| 插槽 | 位置 | `context` |
+| --- | --- | --- |
+| `providers.toolbar` | 渠道页顶部「新增渠道」左侧 | `{}` |
+| `providers.row` | 渠道列表每行操作按钮的最前面（只显示图标） | `{ provider: ProviderView }` |
+| `models.toolbar` | 模型页顶部「新增模型」左侧 | `{}` |
+
+按钮执行期间处于禁用状态；结束后（无论成败）控制台刷新所有查询缓存。
+
+### 加载与可见范围
+
+- 前端代码对所有登录用户加载，并且会下发给所有用户，不要在里面写密钥。返回只有管理员能用的页面前先判断 `host.me.isAdmin`，普通用户调用管理员接口会得到 403。三个按钮插槽所在的页面只有管理员能进。
+- 每个脚本的错误互相隔离：模块加载或描述符校验失败时，脚本列表显示「前端加载失败」，编辑表单里能看到错误信息；页面渲染出错只影响这个页面；按钮抛出的错误显示在页面顶部。
+- 保存、启用或禁用脚本后，控制台不刷新页面就会重新加载有变化的模块；开始或结束扮演时全部重新加载。旧模块无法卸载，它注册的定时器、全局事件监听等副作用需要作者自己清理。
+
 ## 示例
 
-更多可直接使用的示例见 [`docs/example-scripts/`](./example-scripts/)：熔断、重试规则、模型名归一化、按注解过滤渠道、工具用量计费等。
+更多可直接使用的示例见 [`docs/example-scripts/`](./example-scripts/)：熔断、重试规则、模型名归一化、按注解过滤渠道、工具用量计费等。其中两个带控制台扩展（`*.frontend.js` 是前端代码）：
+
+- `header-routing.js` + `header-routing.frontend.js`：按 `X-Picotera-Route` 请求头分流到指定渠道，规则在一个连线式的配置页面里编辑；
+- `register-orphan-models.frontend.js`：在模型页加一个按钮，一键注册所有未注册模型。
 
 ```js
 // 改写模型名 + 在请求时添加参数

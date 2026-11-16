@@ -45,6 +45,13 @@ const router = createRouter({
     { path: '/kv', name: 'kv', component: () => import('@/views/KvView.vue') },
     { path: '/rates', name: 'rates', component: () => import('@/views/RatesView.vue') },
     { path: '/settings', name: 'settings', component: () => import('@/views/SettingsView.vue') },
+    // Pages declared by script frontend modules, open to every user: the
+    // module itself decides (via host.me) which pages a non-admin gets.
+    {
+      path: '/ext/:scriptId/:pageId',
+      name: 'extensionPage',
+      component: () => import('@/views/ExtensionPageView.vue'),
+    },
   ],
 })
 

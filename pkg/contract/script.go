@@ -29,6 +29,7 @@ type ScriptView struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	Source    string `json:"source"`
+	Frontend  string `json:"frontend"`
 	Enabled   bool   `json:"enabled"`
 	CreatedAt string `json:"createdAt"`
 	UpdatedAt string `json:"updatedAt"`
@@ -36,10 +37,11 @@ type ScriptView struct {
 
 func ToScriptView(s *db.Script) *ScriptView {
 	v := &ScriptView{
-		ID:      s.ID,
-		Name:    s.Name,
-		Source:  s.Source,
-		Enabled: s.Enabled,
+		ID:       s.ID,
+		Name:     s.Name,
+		Source:   s.Source,
+		Frontend: s.Frontend,
+		Enabled:  s.Enabled,
 	}
 	if s.CreatedAt.Valid {
 		v.CreatedAt = s.CreatedAt.Time.UTC().Format(time.RFC3339)
@@ -60,10 +62,11 @@ type GetScriptRequest struct {
 type GetScriptResponse struct{ Body ScriptView }
 
 type ScriptMutateBody struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Source  string `json:"source"`
-	Enabled bool   `json:"enabled"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Source   string `json:"source"`
+	Frontend string `json:"frontend"`
+	Enabled  bool   `json:"enabled"`
 }
 
 type CreateScriptRequest struct {

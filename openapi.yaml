@@ -1771,6 +1771,20 @@ components:
         - id
         - type
       type: object
+    ScriptFrontendView:
+      additionalProperties: false
+      properties:
+        frontend:
+          type: string
+        id:
+          type: string
+        name:
+          type: string
+      required:
+        - id
+        - name
+        - frontend
+      type: object
     ScriptMutateBody:
       additionalProperties: false
       properties:
@@ -1782,6 +1796,8 @@ components:
           type: string
         enabled:
           type: boolean
+        frontend:
+          type: string
         id:
           type: string
         name:
@@ -1792,6 +1808,7 @@ components:
         - id
         - name
         - source
+        - frontend
         - enabled
       type: object
     ScriptView:
@@ -1807,6 +1824,8 @@ components:
           type: string
         enabled:
           type: boolean
+        frontend:
+          type: string
         id:
           type: string
         name:
@@ -1819,6 +1838,7 @@ components:
         - id
         - name
         - source
+        - frontend
         - enabled
         - createdAt
         - updatedAt
@@ -4270,6 +4290,26 @@ paths:
                 $ref: "#/components/schemas/PicoTeraError"
           description: Error
       summary: List spans (meta + upstream) related to a request
+  /api/picotera/script-frontends:
+    get:
+      operationId: listScriptFrontends
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/ScriptFrontendView"
+                nullable: true
+                type: array
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PicoTeraError"
+          description: Error
+      summary: List frontend modules of enabled scripts
   /api/picotera/scripts:
     get:
       operationId: listScripts

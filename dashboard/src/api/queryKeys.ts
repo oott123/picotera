@@ -82,6 +82,9 @@ export const queryKeys = {
     all: ['scripts'] as const,
     detail: (id: string) => ['scripts', id] as const,
   },
+  scriptFrontends: {
+    all: ['scriptFrontends'] as const,
+  },
   apiKeys: {
     all: ['apiKeys'] as const,
     detail: (id: number) => ['apiKeys', id] as const,

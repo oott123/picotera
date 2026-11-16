@@ -17,6 +17,7 @@ import ProviderForm from '@/components/ProviderForm.vue'
 import ProviderEndpointsPanel from '@/components/ProviderEndpointsPanel.vue'
 import ProviderModelsPanel from '@/components/ProviderModelsPanel.vue'
 import { useSidePanel } from '@/composables/useSidePanel'
+import ExtensionButtons from '@/extensions/ExtensionButtons.vue'
 import {
   Button,
   IconButton,
@@ -219,6 +220,7 @@ function rowSelected(id: number) {
         <template v-else>{{ count }} 个渠道</template>
       </span>
       <div class="flex items-center gap-2">
+        <ExtensionButtons extension-slot="providers.toolbar" :context="{}" />
         <Button @click="openCreate">
           <Icon name="plus" :size="14" :stroke-width="2.2" />
           <span>新增渠道</span>
@@ -298,6 +300,7 @@ function rowSelected(id: number) {
                 <div
                   class="inline-flex gap-1 opacity-55 group-hover:opacity-100 transition-opacity"
                 >
+                  <ExtensionButtons extension-slot="providers.row" :context="{ provider: p }" />
                   <IconButton
                     :title="p.disabled ? '启用渠道' : '禁用渠道'"
                     :aria-label="p.disabled ? '启用渠道' : '禁用渠道'"

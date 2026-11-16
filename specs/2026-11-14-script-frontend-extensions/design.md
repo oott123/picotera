@@ -65,7 +65,7 @@ store 还保存一个 `me: MeView | null`，记录最近一次加载时用的用
 1. 如果 `me.id` 或 `me.isAdmin` 和 store 里的 `me` 不同，先把所有条目视为需要重新加载，再更新 store 的 `me`。
 2. 已有条目中，不在 `frontends` 里的直接删除。
 3. `frontends` 里的脚本，如果还没有条目、条目的 `frontend` 和当前代码不同，或者第 1 步要求重新加载，就新建或覆盖条目（`status = 'loading'`，`generation + 1`），然后异步加载。只有 `name` 变了的话，直接更新 `scriptName`，不重新加载。
-4. 加载过程：`new Blob([frontend], { type: 'text/javascript' })` → `URL.createObjectURL` → `import(/* @vite-ignore */ url)` → `finally` 里 `URL.revokeObjectURL`。模块的 `default` 必须是函数，否则报错 `default export must be a function`。用 `createExtensionHost(me)` 调用它，`await` 返回值，再交给 `validateDescriptor` 校验。
+4. 加载过程：先编译源码里用到的 Tailwind 类名（见「Tailwind 编译」），再 `new Blob([frontend], { type: 'text/javascript' })` → `URL.createObjectURL` → `import(/* @vite-ignore */ url)` → `finally` 里 `URL.revokeObjectURL`。模块的 `default` 必须是函数，否则报错 `default export must be a function`。用 `createExtensionHost(me)` 调用它，`await` 返回值，再交给 `validateDescriptor` 校验。
 5. 结果写回条目之前，先比较 `generation`。不一致说明这期间又有新的加载，丢弃本次结果。成功时 `status = 'ready'`；任何异常都记为 `status = 'error'`，`error` 取 `e instanceof Error ? e.message : String(e)`。
 
 派生 getter（按 `scriptId` 字典序排列，同一脚本内保持声明顺序）：
@@ -79,6 +79,14 @@ store 还保存一个 `me: MeView | null`，记录最近一次加载时用的用
 `api/client.ts` 新增 fetcher `listScriptFrontends`；`queryKeys` 新增 `scriptFrontends: { all: ['scriptFrontends'] }`；`invalidateScripts` 同时让 `scriptFrontends.all` 失效，所以保存、启用 / 禁用、删除脚本都会触发热重载。扮演开始和结束时，`queryClient.clear()` 已经会让 `me` 和这个列表重新获取，再由第 1 步触发全部重新加载。
 
 模块无法卸载。重新加载就是 import 一份新模块，旧模块对象不再被引用；模块里注册的全局副作用（定时器、全局事件监听）由作者自己负责清理，文档中说明。
+
+### Tailwind 编译（`extensions/tailwind.ts`）
+
+- 控制台 `index.css` 里的 `@theme` 块拆到 `src/theme.css`，由 `index.css` `@import`，主样式表的编译结果不变。
+- `tailwind.ts` 用 `tailwindcss` 包的 `compile()` 在浏览器里编译，输入是 `@layer theme, base, components, utilities;` 加上 `tailwindcss/theme.css`（`layer(theme)`）、`tailwindcss/utilities.css`（`layer(utilities)`）和 `theme.css`。三份样式表通过 `?raw` 引入，由 `loadStylesheet` 提供。不包含 preflight 和 base 样式，因为控制台的样式表里已经有了；生成的工具类进入同名的 cascade layer。
+- 候选类名的提取方式和 Tailwind 扫描源文件一样：用空白、引号、反引号、反斜杠把源码切成 token，去重后全部交给 `build()`，不是工具类的 token 由 `build()` 丢弃。
+- 编译器只创建一次。`build()` 会累积历次的候选类名，所以所有扩展共用一个 `<style data-picotera-extensions>`，每次加载都用最新结果覆盖它的内容。卸载或修改扩展时不删除旧的工具类，刷新页面后才会清掉。
+- 加载器通过 `await import('@/extensions/tailwind')` 动态加载这个模块，编译器单独打成一个 chunk，只有存在扩展时才会下载。
 
 ### host
 
@@ -137,7 +145,7 @@ createExtensionHost(me: MeView): ExtensionHost => ({
 
 ### 按钮
 
-`ExtensionButtons.vue`，props 是 `slot: ExtensionSlot` 和 `context`（对应插槽的上下文类型）：
+`ExtensionButtons.vue`，props 是 `extensionSlot: ExtensionSlot` 和 `context`（对应插槽的上下文类型）。prop 不叫 `slot`，因为模板里的 `slot` 属性会被 eslint 的 `vue/no-deprecated-slot-attribute` 当成 Vue 2 的具名插槽语法：
 
 - `providers.toolbar` / `models.toolbar`：每个按钮渲染成 `Button`，有 `icon` 时显示图标，后面跟 `label`。
 - `providers.row`：每个按钮渲染成 `IconButton`，`label` 用作 `title` 和 `aria-label`。
@@ -163,7 +171,7 @@ createExtensionHost(me: MeView): ExtensionHost => ({
 
 - `header-routing.js` + `header-routing.frontend.js`：
   - KV 键 `header-routing`，值是 `JSON.stringify({ rules: { [headerValue]: providerId[] } })`，与服务端 `picotera.kv.get` 的 JSON 约定一致。
-  - 服务端 `sortProviders`：读取 `ctx.request.headers['X-Picotera-Route']` 的第一个值（Go 规范化后的头名）。没有这个头，或者没有对应的规则时直接放行；命中规则时，只保留 `provider.id` 在列表里的候选。
+  - 服务端 `sortProviders`：读取 `ctx.request.headers['x-picotera-route']` 的第一个值（`ctx.request.headers` 的键是小写的）。没有这个头，或者没有对应的规则时直接放行；命中规则时，只保留 `provider.id` 在列表里的候选。
   - 前端：只在 `host.me.isAdmin` 时返回这个页面（它要调用 admin 接口）。左栏是请求头的取值（可以新增、删除），右栏是渠道列表。用 SVG 连线表示规则：先点左栏的一个值，再点右栏的渠道，就切换这条连线。点「保存」时写入 KV。没有引入第三方库。渠道列表用 `useQuery({ queryKey: queryKeys.providers.all, queryFn: client.listProviders })` 获取；KV 用 `host.api.GET('/api/picotera/kv/{key}')` 读取，404 视为空配置（`client.getKvEntry` 不暴露状态码）；保存用 `client.upsertKvEntry`，然后调用 `client.invalidateKv(queryClient)`。
 - `register-orphan-models.frontend.js`（只有前端代码，服务端源码留空）：在 `models.toolbar` 插槽加一个「注册所有未注册模型」按钮。它用 `queryClient.fetchQuery` 配合 `queryKeys.models.all` / `queryKeys.providers.all` 和 `client.listModels` / `client.listProviders` 取数据，找出所有渠道 `providerModels[].model` 里、还没有出现在模型列表中的名字。经 `composables.useConfirm().require` 确认数量后，逐个调用 `client.upsertModel({ name, disabled: false, annotations: {} })`。
 

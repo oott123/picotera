@@ -18,6 +18,7 @@ Vue 3 (beta, pinned in `pnpm-workspace.yaml` overrides) + Tailwind CSS v4 + Pini
 - `src/composables/` — reusable composition functions.
 - `src/lib/` — plain TypeScript modules with no Vue dependency. `toolFormat.ts` renders tool calls / tool results as one-line Python-style literals (`Bash(command="ls")`, `Bash → "…"`, each value capped at 128 chars) and is meant to be reused wherever a tool call needs a summary; `testBody.ts` / `testStream.ts` back the gateway test view.
 - `src/api/` — `openapi-fetch` client (`plugin.ts`), shared `QueryClient` (`queryClient.ts`), typed `queryKeys` registry (`queryKeys.ts`), async fetcher wrappers + invalidation helpers (`client.ts`), and re-exported schema types (`index.ts`). Generated types live at `src/openapi-types.d.ts` (output of `pnpm --dir dashboard generate-openapi`).
+- `src/extensions/` — runtime for script frontend modules (console extensions): the author-facing types (`types.ts`), `createExtensionHost` (`host.ts`), the strict descriptor validator (`validate.ts`), `ExtensionButtons` (renders one slot's buttons: `providers.toolbar`, `providers.row`, `models.toolbar`) and `ExtensionBoundary` (confines a page's render errors). The loader is the `extensions` Pinia store (`src/stores/extensions.ts`), driven once from `App.vue` by `useExtensionsLoader`: it syncs against `listScriptFrontends` + `me`, imports each module through a blob URL, reloads only modules whose source changed (all of them when `me.id` / `me.isAdmin` changes), and drops stale loads by a generation counter. Before importing a module it compiles the Tailwind utilities the module's source mentions (`extensions/tailwind.ts`, lazily imported: `tailwindcss`' `compile()` over `tailwindcss/theme.css` + `utilities.css` + `src/theme.css`, no preflight, accumulated into one shared `<style>`) — which is why the dashboard's `@theme` block lives in `src/theme.css`, imported by `index.css`. Pages render through `ExtensionPageView` and the sidebar's 「扩展」 group; a button's thrown error lands in `buttonError`, shown above the router view.
 - `src/ui/` — **local UI primitive library. No third-party UI kit. No variant-authoring libs (cva/tv).** Style with Tailwind classes directly inside each component.
 
 ## Local UI Primitives (`src/ui/`)
@@ -59,7 +60,7 @@ When building new screens, compose these primitives — don't reach for a third-
 
 When you add a new route, register the route name in `src/App.vue`'s `pageMeta` map (`title` + `hint`). The shell reads it to render header chrome — without an entry the page renders untitled. The map key must match the route's `name` exactly (defined in `src/router/index.ts`). See `src/views/CLAUDE.md`.
 
-Routes: `/overview` (default), `/providers`, `/models`, `/endpoints`, `/requests`, `/requests/:requestId`, `/projects`, `/scripts`, `/kv`, `/api-keys`, `/rates`, `/traces`.
+Routes: `/overview` (default), `/providers`, `/models`, `/endpoints`, `/requests`, `/requests/:requestId`, `/projects`, `/scripts`, `/kv`, `/api-keys`, `/rates`, `/traces`, `/ext/:scriptId/:pageId` (extension pages; its `pageMeta` comes from the extension's page title and script name).
 
 ## Charts
 

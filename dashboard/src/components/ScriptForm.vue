@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
-import { SidePanel, Button, Input, Field, CodeEditor } from '@/ui'
+import { SidePanel, Button, Input, Field, CodeEditor, Tabs, StateText } from '@/ui'
 import type { ScriptView } from '@/api'
 import { createScript, invalidateScripts, updateScript } from '@/api/client'
+import { useExtensionsStore } from '@/stores/extensions'
 
 const emit = defineEmits<{ close: [] }>()
 const props = defineProps<{ script?: ScriptView; onSave?: () => void }>()
@@ -14,13 +15,32 @@ const form = ref({
   id: props.script?.id ?? '',
   name: props.script?.name ?? '',
   source: props.script?.source ?? '',
+  frontend: props.script?.frontend ?? '',
   enabled: props.script?.enabled ?? true,
 })
 const saving = ref(false)
 const error = ref('')
+const sourceTab = ref<'source' | 'frontend'>('source')
+const sourceTabs = [
+  { value: 'source', label: '服务端' },
+  { value: 'frontend', label: '前端' },
+]
+
+const extensions = useExtensionsStore()
+const frontendLoadError = computed(() => {
+  if (!props.script) return ''
+  const entry = extensions.entries[props.script.id]
+  return entry?.status === 'error' ? entry.error : ''
+})
+
 const saveMutation = useMutation({
-  mutationFn: (body: { id: string; name: string; source: string; enabled: boolean }) =>
-    isEdit ? updateScript(props.script!.id, body) : createScript(body),
+  mutationFn: (body: {
+    id: string
+    name: string
+    source: string
+    frontend: string
+    enabled: boolean
+  }) => (isEdit ? updateScript(props.script!.id, body) : createScript(body)),
   onSuccess: () => invalidateScripts(queryClient),
 })
 
@@ -32,6 +52,7 @@ async function submit() {
       id: form.value.id,
       name: form.value.name,
       source: form.value.source,
+      frontend: form.value.frontend,
       enabled: form.value.enabled,
     })
     props.onSave?.()
@@ -62,13 +83,31 @@ async function submit() {
           <span class="text-sm text-ink-muted">enabled</span>
         </label>
       </Field>
-      <Field label="源代码">
-        <CodeEditor
-          v-model="form.source"
-          language="javascript"
-          min-height="400px"
-          max-height="70vh"
-        />
+      <Field label="源代码" as="div">
+        <div class="flex flex-col gap-2">
+          <Tabs
+            :model-value="sourceTab"
+            :tabs="sourceTabs"
+            @update:model-value="(v) => (sourceTab = v as 'source' | 'frontend')"
+          />
+          <StateText v-if="frontendLoadError" :dashed="false" compact>
+            前端加载失败：{{ frontendLoadError }}
+          </StateText>
+          <CodeEditor
+            v-if="sourceTab === 'source'"
+            v-model="form.source"
+            language="javascript"
+            min-height="400px"
+            max-height="70vh"
+          />
+          <CodeEditor
+            v-else
+            v-model="form.frontend"
+            language="javascript"
+            min-height="400px"
+            max-height="70vh"
+          />
+        </div>
       </Field>
     </form>
 

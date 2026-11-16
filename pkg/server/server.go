@@ -324,6 +324,7 @@ func (s *Server) registerOperations() {
 func (s *Server) register(mgmt, admin *huma.Group) {
 	// --- User group: every authenticated user ---
 	huma.Register(mgmt, contract.OperationGetMe, s.handleGetMe)
+	huma.Register(mgmt, contract.OperationListScriptFrontends, s.handleListScriptFrontends)
 	huma.Register(mgmt, contract.OperationGetOverviewSummary, s.handleGetOverviewSummary)
 	huma.Register(mgmt, contract.OperationGetOverviewDistribution, s.handleGetOverviewDistribution)
 	huma.Register(mgmt, contract.OperationGetOverviewSeries, s.handleGetOverviewSeries)

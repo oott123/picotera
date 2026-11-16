@@ -37,6 +37,7 @@ import type {
   RequestLiveView,
   RequestView,
   ScriptView,
+  ScriptFrontendView,
   UpsertUserSettingRequestBody,
   UpsertProjectRequestBody,
   UserView,
@@ -227,6 +228,14 @@ export async function updateScript(
 export async function deleteScript(id: string): Promise<void> {
   const { error } = await api.POST('/api/picotera/scripts/delete', { body: { id } })
   if (error) fail(error, '删除脚本失败')
+}
+
+// Open to every authenticated user: only the frontend modules of enabled
+// scripts, never their server-side source.
+export async function listScriptFrontends(): Promise<ScriptFrontendView[]> {
+  const { data, error } = await api.GET('/api/picotera/script-frontends')
+  if (error) fail(error, '加载脚本前端失败')
+  return data ?? []
 }
 
 export async function listApiKeys(): Promise<ApiKeyView[]> {
@@ -494,8 +503,11 @@ export function invalidateProviderEndpoints(client: QueryClient) {
   client.invalidateQueries({ queryKey: queryKeys.models.all })
 }
 
+// Saving, toggling or deleting a script may change its frontend module, which
+// the extensions loader hot-reloads from the refetched list.
 export function invalidateScripts(client: QueryClient) {
   client.invalidateQueries({ queryKey: queryKeys.scripts.all })
+  client.invalidateQueries({ queryKey: queryKeys.scriptFrontends.all })
 }
 
 export function invalidateApiKeys(client: QueryClient) {

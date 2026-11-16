@@ -25,6 +25,7 @@ import ModelPricingMatchPanel from '@/components/ModelPricingMatchPanel.vue'
 import PricingExportPanel from '@/components/PricingExportPanel.vue'
 import ModelUpstreamsPanel, { type Upstream } from '@/components/ModelUpstreamsPanel.vue'
 import { useSidePanel } from '@/composables/useSidePanel'
+import ExtensionButtons from '@/extensions/ExtensionButtons.vue'
 import {
   Button,
   IconButton,
@@ -193,6 +194,7 @@ function confirmDelete(_event: Event, m: ModelView) {
     <div class="flex items-center justify-between gap-3">
       <span class="text-xs text-ink-faint tabular-nums">{{ count }} 个模型</span>
       <div class="flex items-center gap-2">
+        <ExtensionButtons extension-slot="models.toolbar" :context="{}" />
         <Button @click="openCreate">
           <Icon name="plus" :size="14" :stroke-width="2.2" />
           <span>新增模型</span>

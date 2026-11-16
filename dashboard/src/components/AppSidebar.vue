@@ -6,6 +6,7 @@ import PreferencesMenu from '@/components/PreferencesMenu.vue'
 import { useAppTitle } from '@/composables/useAppTitle'
 import { useMe } from '@/composables/useMe'
 import { useImpersonationStore } from '@/stores/impersonation'
+import { useExtensionsStore } from '@/stores/extensions'
 import { logout } from '@/api/client'
 import Icon from '@/ui/icons/Icon.vue'
 import { IconButton, Tag } from '@/ui'
@@ -17,6 +18,7 @@ const { appTitle, canLogout } = useAppTitle()
 
 const { me, isAdmin } = useMe()
 const impersonation = useImpersonationStore()
+const extensions = useExtensionsStore()
 
 async function stopImpersonating() {
   impersonation.stop()
@@ -44,6 +46,14 @@ const activeRouteName = computed(() => {
 })
 
 type NavItem = { name: string; label: string; icon: IconName }
+
+function isActiveExtensionPage(scriptId: string, pageId: string) {
+  return (
+    route.name === 'extensionPage' &&
+    route.params.scriptId === scriptId &&
+    route.params.pageId === pageId
+  )
+}
 
 // User features: available to every authenticated user.
 const userNav: NavItem[] = [
@@ -160,6 +170,39 @@ const adminNav: NavItem[] = [
             <Icon :name="item.icon" :size="15" :stroke-width="1.6" />
           </span>
           <span>{{ item.label }}</span>
+        </RouterLink>
+      </template>
+
+      <!-- Pages declared by script frontend modules, shown to every user. -->
+      <template v-if="extensions.pages.length">
+        <div
+          class="px-2.5 pt-3 pb-1.5 text-2xs font-medium text-ink-faint uppercase tracking-[0.06em]"
+        >
+          扩展
+        </div>
+        <RouterLink
+          v-for="page in extensions.pages"
+          :key="`${page.scriptId}:${page.id}`"
+          :to="{ name: 'extensionPage', params: { scriptId: page.scriptId, pageId: page.id } }"
+          class="group relative flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm font-normal text-sidebar-text no-underline transition-colors hover:bg-sidebar-hover hover:text-sidebar-text-active"
+          :class="
+            isActiveExtensionPage(page.scriptId, page.id)
+              ? 'bg-sidebar-active-bg text-sidebar-active-text font-medium'
+              : ''
+          "
+        >
+          <span
+            class="inline-flex w-[1.125rem] h-[1.125rem] items-center justify-center transition-colors"
+            :class="
+              isActiveExtensionPage(page.scriptId, page.id)
+                ? 'text-accent'
+                : 'text-ink-faint group-hover:text-ink-muted'
+            "
+            aria-hidden="true"
+          >
+            <Icon :name="page.icon ?? 'puzzle'" :size="15" :stroke-width="1.6" />
+          </span>
+          <span>{{ page.title }}</span>
         </RouterLink>
       </template>
     </nav>

@@ -104,6 +104,7 @@ type Querier interface {
 	ListAdminOverviewTraceCountsByDimension(ctx context.Context, arg ListAdminOverviewTraceCountsByDimensionParams) ([]ListAdminOverviewTraceCountsByDimensionRow, error)
 	ListApiKeys(ctx context.Context, userID int64) ([]ApiKey, error)
 	ListAvailableModelNames(ctx context.Context) ([]string, error)
+	ListEnabledScriptFrontends(ctx context.Context) ([]ListEnabledScriptFrontendsRow, error)
 	ListEnabledScripts(ctx context.Context) ([]Script, error)
 	ListOverviewBreakdownCosts(ctx context.Context, arg ListOverviewBreakdownCostsParams) ([]ListOverviewBreakdownCostsRow, error)
 	ListOverviewBreakdownTokens(ctx context.Context, arg ListOverviewBreakdownTokensParams) ([]ListOverviewBreakdownTokensRow, error)

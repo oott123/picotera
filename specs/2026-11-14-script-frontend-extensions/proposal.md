@@ -14,3 +14,4 @@
 - 前端脚本对普通用户和管理员都生效。
 - 前端脚本可以使用控制台自己的 helper 库，比如 TanStack Query、api client 这些。
 - 脚本需要的第三方库，由脚本作者自己 `import` 外部 URL（例如 esm.sh 或自托管的 esm.sh）。PicoTera 不内置 esm.sh。
+- 前端脚本里可以直接写 Tailwind 类名，由控制台自动编译，不要求类名在控制台自身代码里出现过。

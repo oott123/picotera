@@ -25,6 +25,20 @@ func (s *Server) handleListScripts(ctx context.Context, _ *struct{}) (*contract.
 	return &contract.ListScriptsResponse{Body: out}, nil
 }
 
+// handleListScriptFrontends serves the browser-side modules of enabled scripts
+// to every authenticated user; the server-side source stays admin-only.
+func (s *Server) handleListScriptFrontends(ctx context.Context, _ *struct{}) (*contract.ListScriptFrontendsResponse, error) {
+	rows, err := s.queries.ListEnabledScriptFrontends(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to list script frontends", err)
+	}
+	out := make([]contract.ScriptFrontendView, len(rows))
+	for i, r := range rows {
+		out[i] = contract.ScriptFrontendView{ID: r.ID, Name: r.Name, Frontend: r.Frontend}
+	}
+	return &contract.ListScriptFrontendsResponse{Body: out}, nil
+}
+
 func (s *Server) handleGetScript(ctx context.Context, in *contract.GetScriptRequest) (*contract.GetScriptResponse, error) {
 	r, err := s.queries.GetScript(ctx, in.ID)
 	if err != nil {
@@ -47,10 +61,11 @@ func (s *Server) handleCreateScript(ctx context.Context, in *contract.CreateScri
 		return nil, huma.Error400BadRequest("invalid script id", err)
 	}
 	r, err := s.queries.InsertScript(ctx, db.InsertScriptParams{
-		ID:      id,
-		Name:    in.Body.Name,
-		Source:  in.Body.Source,
-		Enabled: in.Body.Enabled,
+		ID:       id,
+		Name:     in.Body.Name,
+		Source:   in.Body.Source,
+		Frontend: in.Body.Frontend,
+		Enabled:  in.Body.Enabled,
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -69,11 +84,12 @@ func (s *Server) handleUpdateScript(ctx context.Context, in *contract.UpdateScri
 		return nil, huma.Error400BadRequest("invalid script id", err)
 	}
 	r, err := s.queries.UpdateScript(ctx, db.UpdateScriptParams{
-		ID:      in.ID,
-		ID_2:    in.Body.ID,
-		Name:    in.Body.Name,
-		Source:  in.Body.Source,
-		Enabled: in.Body.Enabled,
+		ID:       in.ID,
+		ID_2:     in.Body.ID,
+		Name:     in.Body.Name,
+		Source:   in.Body.Source,
+		Frontend: in.Body.Frontend,
+		Enabled:  in.Body.Enabled,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

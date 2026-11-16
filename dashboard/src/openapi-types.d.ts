@@ -898,6 +898,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/picotera/script-frontends": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List frontend modules of enabled scripts */
+        get: operations["listScriptFrontends"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/picotera/scripts": {
         parameters: {
             query?: never;
@@ -1967,6 +1984,11 @@ export interface components {
             userId?: number;
             userMessagePreview?: string;
         };
+        ScriptFrontendView: {
+            frontend: string;
+            id: string;
+            name: string;
+        };
         ScriptMutateBody: {
             /**
              * Format: uri
@@ -1975,6 +1997,7 @@ export interface components {
              */
             readonly $schema?: string;
             enabled: boolean;
+            frontend: string;
             id: string;
             name: string;
             source: string;
@@ -1988,6 +2011,7 @@ export interface components {
             readonly $schema?: string;
             createdAt: string;
             enabled: boolean;
+            frontend: string;
             id: string;
             name: string;
             source: string;
@@ -4164,6 +4188,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RequestView"][] | null;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicoTeraError"];
+                };
+            };
+        };
+    };
+    listScriptFrontends: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScriptFrontendView"][] | null;
                 };
             };
             /** @description Error */

@@ -8,10 +8,18 @@ import { deleteScript, invalidateScripts, listScripts, updateScript } from '@/ap
 import { queryKeys } from '@/api/queryKeys'
 import ScriptForm from '@/components/ScriptForm.vue'
 import { Button, IconButton, DataCard, DataTable, Th, Td, Tr, StateText, Tag, Icon } from '@/ui'
+import { useExtensionsStore, type ExtensionEntry } from '@/stores/extensions'
 
 const panel = useSidePanel()
 const confirm = useConfirm()
 const queryClient = useQueryClient()
+const extensions = useExtensionsStore()
+
+// The loaded frontend module of an enabled script that has one; the store only
+// holds those, so a disabled script or an empty frontend yields undefined.
+function frontendEntry(s: ScriptView): ExtensionEntry | undefined {
+  return s.enabled && s.frontend !== '' ? extensions.entries[s.id] : undefined
+}
 
 const scriptsQuery = useQuery({
   queryKey: queryKeys.scripts.all,
@@ -30,6 +38,7 @@ const updateScriptMutation = useMutation({
       id: script.id,
       name: script.name,
       source: script.source,
+      frontend: script.frontend,
       enabled: !script.enabled,
     }),
   onSuccess: () => invalidateScripts(queryClient),
@@ -87,6 +96,15 @@ async function toggle(s: ScriptView) {
             <Td>
               <span class="font-medium">{{ s.name }}</span>
               <Tag v-if="!s.enabled" variant="muted" class="ml-1.5">已禁用</Tag>
+              <Tag v-if="frontendEntry(s)?.status === 'ready'" variant="accent" class="ml-1.5"
+                >前端</Tag
+              >
+              <Tag
+                v-else-if="frontendEntry(s)?.status === 'error'"
+                class="ml-1.5"
+                :title="frontendEntry(s)?.error"
+                >前端加载失败</Tag
+              >
               <span class="block font-mono text-2xs text-ink-faint">{{ s.id }}</span>
             </Td>
             <Td actions>

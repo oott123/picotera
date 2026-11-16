@@ -169,6 +169,7 @@ type Script struct {
 	Enabled   bool               `json:"enabled"`
 	CreatedAt pgtype.Timestamptz `json:"createdAt"`
 	UpdatedAt pgtype.Timestamptz `json:"updatedAt"`
+	Frontend  string             `json:"frontend"`
 }
 
 type Trace struct {

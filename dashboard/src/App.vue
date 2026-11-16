@@ -4,13 +4,18 @@ import { useRoute, RouterView } from 'vue-router'
 import AppSidebar from '@/components/AppSidebar.vue'
 import SidePanelHost from '@/components/SidePanelHost.vue'
 import ConfirmDialog from '@/ui/ConfirmDialog.vue'
+import { Icon, IconButton, StateText } from '@/ui'
 import { useExchangeRates } from '@/composables/useExchangeRates'
 import { provideCurrencyContext } from '@/composables/useCurrencyContext'
+import { useExtensionsLoader } from '@/composables/useExtensionsLoader'
 import { usePreferencesStore } from '@/stores/preferences'
+import { useExtensionsStore } from '@/stores/extensions'
 
 const route = useRoute()
 const prefs = usePreferencesStore()
+const extensions = useExtensionsStore()
 useExchangeRates()
+useExtensionsLoader()
 provideCurrencyContext(computed(() => prefs.displayCurrency ?? null))
 
 const pageMeta = computed(() => {
@@ -32,6 +37,10 @@ const pageMeta = computed(() => {
     rates: { title: '汇率', hint: '掌控国际形势' },
     settings: { title: '设置', hint: '总得有个设置吧' },
   }
+  if (route.name === 'extensionPage') {
+    const page = extensions.findPage(String(route.params.scriptId), String(route.params.pageId))
+    return { title: page?.title ?? '扩展', hint: page?.scriptName ?? '' }
+  }
   return map[route.name as string] ?? { title: '', hint: '' }
 })
 </script>
@@ -50,6 +59,16 @@ const pageMeta = computed(() => {
       </header>
       <div class="flex-1 flex min-h-0 min-w-0">
         <div class="flex-1 min-w-0 px-8 pt-3 pb-8 overflow-y-auto">
+          <div v-if="extensions.buttonError" class="flex items-center gap-2 mb-3.5">
+            <StateText :dashed="false" compact class="flex-1 min-w-0 px-3">
+              扩展「{{ extensions.buttonError.scriptId }}」的按钮「{{
+                extensions.buttonError.label
+              }}」执行失败：{{ extensions.buttonError.message }}
+            </StateText>
+            <IconButton title="关闭" aria-label="关闭" @click="extensions.buttonError = null">
+              <Icon name="close" :size="13" />
+            </IconButton>
+          </div>
           <RouterView />
         </div>
         <SidePanelHost />

@@ -19,7 +19,7 @@ func (q *Queries) DeleteScript(ctx context.Context, id string) error {
 }
 
 const getScript = `-- name: GetScript :one
-SELECT id, name, source, enabled, created_at, updated_at FROM script WHERE id = $1 LIMIT 1
+SELECT id, name, source, enabled, created_at, updated_at, frontend FROM script WHERE id = $1 LIMIT 1
 `
 
 func (q *Queries) GetScript(ctx context.Context, id string) (Script, error) {
@@ -32,21 +32,23 @@ func (q *Queries) GetScript(ctx context.Context, id string) (Script, error) {
 		&i.Enabled,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Frontend,
 	)
 	return i, err
 }
 
 const insertScript = `-- name: InsertScript :one
-INSERT INTO script (id, name, source, enabled)
-VALUES ($1, $2, $3, $4)
-RETURNING id, name, source, enabled, created_at, updated_at
+INSERT INTO script (id, name, source, frontend, enabled)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, name, source, enabled, created_at, updated_at, frontend
 `
 
 type InsertScriptParams struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Source  string `json:"source"`
-	Enabled bool   `json:"enabled"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Source   string `json:"source"`
+	Frontend string `json:"frontend"`
+	Enabled  bool   `json:"enabled"`
 }
 
 func (q *Queries) InsertScript(ctx context.Context, arg InsertScriptParams) (Script, error) {
@@ -54,6 +56,7 @@ func (q *Queries) InsertScript(ctx context.Context, arg InsertScriptParams) (Scr
 		arg.ID,
 		arg.Name,
 		arg.Source,
+		arg.Frontend,
 		arg.Enabled,
 	)
 	var i Script
@@ -64,12 +67,45 @@ func (q *Queries) InsertScript(ctx context.Context, arg InsertScriptParams) (Scr
 		&i.Enabled,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Frontend,
 	)
 	return i, err
 }
 
+const listEnabledScriptFrontends = `-- name: ListEnabledScriptFrontends :many
+SELECT id, name, frontend FROM script
+WHERE enabled = TRUE AND frontend <> ''
+ORDER BY id ASC
+`
+
+type ListEnabledScriptFrontendsRow struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Frontend string `json:"frontend"`
+}
+
+func (q *Queries) ListEnabledScriptFrontends(ctx context.Context) ([]ListEnabledScriptFrontendsRow, error) {
+	rows, err := q.db.Query(ctx, listEnabledScriptFrontends)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEnabledScriptFrontendsRow
+	for rows.Next() {
+		var i ListEnabledScriptFrontendsRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Frontend); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listEnabledScripts = `-- name: ListEnabledScripts :many
-SELECT id, name, source, enabled, created_at, updated_at FROM script WHERE enabled = TRUE ORDER BY id ASC
+SELECT id, name, source, enabled, created_at, updated_at, frontend FROM script WHERE enabled = TRUE ORDER BY id ASC
 `
 
 func (q *Queries) ListEnabledScripts(ctx context.Context) ([]Script, error) {
@@ -88,6 +124,7 @@ func (q *Queries) ListEnabledScripts(ctx context.Context) ([]Script, error) {
 			&i.Enabled,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Frontend,
 		); err != nil {
 			return nil, err
 		}
@@ -100,7 +137,7 @@ func (q *Queries) ListEnabledScripts(ctx context.Context) ([]Script, error) {
 }
 
 const listScripts = `-- name: ListScripts :many
-SELECT id, name, source, enabled, created_at, updated_at FROM script ORDER BY created_at DESC, id DESC
+SELECT id, name, source, enabled, created_at, updated_at, frontend FROM script ORDER BY created_at DESC, id DESC
 `
 
 func (q *Queries) ListScripts(ctx context.Context) ([]Script, error) {
@@ -119,6 +156,7 @@ func (q *Queries) ListScripts(ctx context.Context) ([]Script, error) {
 			&i.Enabled,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Frontend,
 		); err != nil {
 			return nil, err
 		}
@@ -132,17 +170,18 @@ func (q *Queries) ListScripts(ctx context.Context) ([]Script, error) {
 
 const updateScript = `-- name: UpdateScript :one
 UPDATE script
-SET id = $2, name = $3, source = $4, enabled = $5, updated_at = now()
+SET id = $2, name = $3, source = $4, frontend = $5, enabled = $6, updated_at = now()
 WHERE id = $1
-RETURNING id, name, source, enabled, created_at, updated_at
+RETURNING id, name, source, enabled, created_at, updated_at, frontend
 `
 
 type UpdateScriptParams struct {
-	ID      string `json:"id"`
-	ID_2    string `json:"id2"`
-	Name    string `json:"name"`
-	Source  string `json:"source"`
-	Enabled bool   `json:"enabled"`
+	ID       string `json:"id"`
+	ID_2     string `json:"id2"`
+	Name     string `json:"name"`
+	Source   string `json:"source"`
+	Frontend string `json:"frontend"`
+	Enabled  bool   `json:"enabled"`
 }
 
 func (q *Queries) UpdateScript(ctx context.Context, arg UpdateScriptParams) (Script, error) {
@@ -151,6 +190,7 @@ func (q *Queries) UpdateScript(ctx context.Context, arg UpdateScriptParams) (Scr
 		arg.ID_2,
 		arg.Name,
 		arg.Source,
+		arg.Frontend,
 		arg.Enabled,
 	)
 	var i Script
@@ -161,6 +201,7 @@ func (q *Queries) UpdateScript(ctx context.Context, arg UpdateScriptParams) (Scr
 		&i.Enabled,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Frontend,
 	)
 	return i, err
 }
