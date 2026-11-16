@@ -522,8 +522,9 @@ async function save() {
                 @click="row.expanded = !row.expanded"
               >
                 <Icon
-                  :name="row.expanded ? 'chevron-down' : 'chevron-down'"
+                  name="chevron-down"
                   :size="12"
+                  class="shrink-0"
                   :class="row.expanded ? '' : '-rotate-90'"
                 />
                 <span
@@ -531,9 +532,13 @@ async function save() {
                   >{{ row.modelName }}</span
                 >
               </button>
-              <TagList v-if="!row.expanded">
-                <Tag v-if="row.upstreamModelName" variant="accent"
-                  >→ {{ row.upstreamModelName }}</Tag
+              <TagList v-if="!row.expanded" class="min-w-0 max-w-1/2">
+                <Tag
+                  v-if="row.upstreamModelName"
+                  variant="accent"
+                  class="max-w-full"
+                  :title="row.upstreamModelName"
+                  ><span class="truncate">→ {{ row.upstreamModelName }}</span></Tag
                 >
                 <Tag v-if="row.priority" variant="more">P{{ row.priority }}</Tag>
                 <Tag v-if="row.endpoints.length" variant="more"
