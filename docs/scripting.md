@@ -619,7 +619,7 @@ picotera.kv.ttl(key: string): number  // 剩余秒数；-1 永不过期，-2 键
 picotera.kv.del(key: string): void
 ```
 
-值以 JSON 序列化存储，`get` 返回反序列化后的对象。
+值以 JSON 序列化存储，`get` 返回反序列化后的对象。数据默认存在数据库里，可通过 `PICOTERA_KV_DRIVER=redis` 改用 Redis，或用 `PICOTERA_KV_DRIVER=memory` 存在进程内存中（重启即丢失，多实例之间不共享）。
 
 ### picotera.fetch(url, init?)
 

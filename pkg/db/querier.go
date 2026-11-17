@@ -21,10 +21,14 @@ type Querier interface {
 	DeleteApiKey(ctx context.Context, arg DeleteApiKeyParams) error
 	DeleteEndpoint(ctx context.Context, path string) error
 	DeleteExchangeRate(ctx context.Context, code string) error
+	// DeleteExpiredKvEntries is the periodic sweeper's statement. Reads already
+	// filter on expires_at, so it only reclaims space. The cutoff is supplied by Go.
+	DeleteExpiredKvEntries(ctx context.Context, expiresAt pgtype.Timestamptz) error
 	// DeleteExpiredUserSessions runs on every successful login and only touches the
 	// logging-in user's rows. Sessions of users who never come back are lazy garbage;
 	// they cost nothing but disk, so there is no background sweeper.
 	DeleteExpiredUserSessions(ctx context.Context, arg DeleteExpiredUserSessionsParams) error
+	DeleteKvEntry(ctx context.Context, key string) error
 	DeleteModel(ctx context.Context, name string) error
 	DeleteProject(ctx context.Context, arg DeleteProjectParams) error
 	DeleteProvider(ctx context.Context, id int32) error
@@ -46,6 +50,10 @@ type Querier interface {
 	GetEndpoints(ctx context.Context) ([]Endpoint, error)
 	GetExchangeRateByCode(ctx context.Context, code string) (ExchangeRate, error)
 	GetExchangeRates(ctx context.Context) ([]ExchangeRate, error)
+	// GetKvEntry returns a live entry only: a row past its expires_at reads as
+	// missing even before the sweeper removes it. now is supplied by Go like every
+	// other timestamp in this schema.
+	GetKvEntry(ctx context.Context, arg GetKvEntryParams) (GetKvEntryRow, error)
 	GetModelByName(ctx context.Context, name string) (Model, error)
 	GetModels(ctx context.Context) ([]Model, error)
 	GetOverviewSpeedBoxplot(ctx context.Context, arg GetOverviewSpeedBoxplotParams) ([]GetOverviewSpeedBoxplotRow, error)
@@ -146,6 +154,10 @@ type Querier interface {
 	// the CALL must not run inside a transaction block — a single Exec of this
 	// statement is auto-committed, which satisfies that.
 	RefreshRequestOverviewBucketed(ctx context.Context, startAt pgtype.Timestamp) error
+	// ScanKvEntries pages live entries by id. pattern is a PostgreSQL regular
+	// expression built by kv.GlobToRegexp; row_limit is count + 1 so the caller can
+	// tell whether another page follows. now is supplied by Go.
+	ScanKvEntries(ctx context.Context, arg ScanKvEntriesParams) ([]KvEntry, error)
 	SetApiKeyAnnotation(ctx context.Context, arg SetApiKeyAnnotationParams) (int64, error)
 	SetProviderAnnotation(ctx context.Context, arg SetProviderAnnotationParams) (int64, error)
 	SetRequestAnnotation(ctx context.Context, arg SetRequestAnnotationParams) (int64, error)
@@ -172,6 +184,10 @@ type Querier interface {
 	UpdateUserIdentityUser(ctx context.Context, arg UpdateUserIdentityUserParams) (UserIdentity, error)
 	UpsertEndpoint(ctx context.Context, arg UpsertEndpointParams) (Endpoint, error)
 	UpsertExchangeRate(ctx context.Context, arg UpsertExchangeRateParams) (ExchangeRate, error)
+	// UpsertKvEntry keeps the row's id when it overwrites an existing key (expired
+	// or not), so a scan cursor never sees the same key twice. A NULL expires_at
+	// clears any previous TTL, like Redis SET.
+	UpsertKvEntry(ctx context.Context, arg UpsertKvEntryParams) error
 	UpsertModel(ctx context.Context, arg UpsertModelParams) (Model, error)
 	UpsertProjectSeen(ctx context.Context, arg UpsertProjectSeenParams) error
 	UpsertProviderEndpoint(ctx context.Context, arg UpsertProviderEndpointParams) (ProviderEndpoint, error)

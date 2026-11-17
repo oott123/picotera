@@ -214,7 +214,7 @@ func NewServer(ctx context.Context) (*Server, error) {
 	mgmtRouter := router.With(auth.Middleware(resolver))
 	api := humachi.New(mgmtRouter, huma.DefaultConfig("PicoTera Management API", "1.0.0"))
 
-	kvStore, err := kv.New(config.KV.Driver, kv.WithRedisURL(config.KV.RedisURL))
+	kvStore, err := kv.New(config.KV.Driver, kv.WithRedisURL(config.KV.RedisURL), kv.WithDatabase(queries))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kv store: %w", err)
 	}
@@ -496,6 +496,12 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.artifacts != nil {
 		if err := s.artifacts.Close(ctx); err != nil {
 			errs = append(errs, fmt.Errorf("artifact sink close: %w", err))
+		}
+	}
+	// The database kv driver's sweeper runs on the pool, so it stops first.
+	if s.kvStore != nil {
+		if err := s.kvStore.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("kv store close: %w", err))
 		}
 	}
 	if s.db != nil {

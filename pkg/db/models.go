@@ -49,6 +49,13 @@ type ExchangeRate struct {
 	UnitsPerUsd pgtype.Numeric `json:"unitsPerUsd"`
 }
 
+type KvEntry struct {
+	ID        int64              `json:"id"`
+	Key       string             `json:"key"`
+	Value     string             `json:"value"`
+	ExpiresAt pgtype.Timestamptz `json:"expiresAt"`
+}
+
 type Model struct {
 	Name        string `json:"name"`
 	Disabled    bool   `json:"disabled"`

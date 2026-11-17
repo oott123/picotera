@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -20,6 +21,9 @@ func (s *Server) handleListKvEntries(ctx context.Context, in *contract.ListKvEnt
 
 	result, err := s.kvStore.ScanEntries(ctx, pattern, in.Cursor, 100)
 	if err != nil {
+		if errors.Is(err, kv.ErrInvalidArgument) {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
 		return nil, huma.Error500InternalServerError("failed to scan kv entries", err)
 	}
 
@@ -51,7 +55,7 @@ func (s *Server) handleListKvEntries(ctx context.Context, in *contract.ListKvEnt
 func (s *Server) handleGetKvEntry(ctx context.Context, in *contract.GetKvEntryRequest) (*contract.GetKvEntryResponse, error) {
 	val, err := s.kvStore.Get(ctx, in.Key)
 	if err != nil {
-		if err == kv.ErrKeyNotFound {
+		if errors.Is(err, kv.ErrKeyNotFound) {
 			return nil, huma.Error404NotFound("key not found")
 		}
 		return nil, huma.Error500InternalServerError("failed to get kv entry", err)

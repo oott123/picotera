@@ -155,7 +155,7 @@ func Parse() (*Config, error) {
 	viper.SetDefault("js_memory_limit", int64(64*1024*1024))
 	viper.SetDefault("js_max_total_attempts", 50)
 	viper.SetDefault("js_max_delay", 60*time.Second)
-	viper.SetDefault("kv.driver", "memory")
+	viper.SetDefault("kv.driver", "database")
 	viper.SetDefault("kv.redis_url", "localhost:6379")
 	viper.SetDefault("llmbridge_plugin_start_timeout", 10*time.Second)
 	viper.SetDefault("heap_dump_dir", os.TempDir())

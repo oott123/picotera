@@ -2,6 +2,7 @@ package jsx
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -215,7 +216,7 @@ func registerKV(s *qjsSession) {
 
 	_ = vm.RegisterFunc("__picotera_kv_get", func(key string) (string, error) {
 		val, err := store.Get(s.ctx, key)
-		if err == kv.ErrKeyNotFound {
+		if errors.Is(err, kv.ErrKeyNotFound) {
 			return "", nil
 		}
 		if err != nil {

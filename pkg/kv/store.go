@@ -9,6 +9,10 @@ import (
 // ErrKeyNotFound is returned when a key does not exist in the store.
 var ErrKeyNotFound = errors.New("kv: key not found")
 
+// ErrInvalidArgument wraps the errors a Store returns for a malformed request
+// argument (such as an invalid scan pattern), as opposed to a backend failure.
+var ErrInvalidArgument = errors.New("kv: invalid argument")
+
 // KvEntry is a key-value entry with its remaining TTL.
 type KvEntry struct {
 	Key   string
